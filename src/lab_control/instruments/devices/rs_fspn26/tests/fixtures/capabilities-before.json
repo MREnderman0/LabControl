@@ -1,0 +1,98 @@
+{
+  "fixture_origin": "Initial read-only FSPN-26 SCPI contract",
+  "adapter": "rs.fspn26",
+  "capabilities": {
+    "category": "phase_noise_analyzer",
+    "channels": [
+      1
+    ],
+    "operations": [
+      {
+        "name": "applications",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+        "section": "INST:LIST?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "transfer_format",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+        "section": "FORM?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "phase_noise_trace",
+        "parameters": {},
+        "readable": false,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+        "section": "11.5.3 / 11.7.3",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "rs.fspn26",
+    "manufacturer": [
+      "Rohde&Schwarz",
+      "Rohde & Schwarz"
+    ],
+    "models": [
+      "FSPN-26"
+    ],
+    "category": "phase_noise_analyzer",
+    "channels": [
+      1
+    ],
+    "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+    "revision": "1179.4363.02 v06",
+    "status": [
+      "applications",
+      "transfer_format"
+    ],
+    "identity_query": "*IDN?",
+    "error_query": "SYST:ERR?",
+    "acquisition": "trace",
+    "channel_limits": {}
+  },
+  "commands": {
+    "applications": {
+      "writes": [],
+      "query": "INST:LIST?",
+      "select": [],
+      "compare": false
+    },
+    "transfer_format": {
+      "writes": [],
+      "query": "FORM?",
+      "select": [],
+      "compare": false
+    },
+    "phase_noise_trace": {
+      "writes": [],
+      "query": "",
+      "select": [],
+      "compare": true
+    }
+  }
+}

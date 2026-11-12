@@ -33,6 +33,9 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 | Teledyne LeCroy WaveRunner 9404M | `lecroy.9404m` | 23 | lecroy | [型号卡片](../devices/oscilloscopes/waverunner-9404m.md) |
 | RIGOL DHO924 | `rigol.dho924` | 36 | dho924 | [型号卡片](../devices/oscilloscopes/rigol-dho924.md) |
 | R&S FPH02 | `rs.fph` | 35 | fph | [型号卡片](../devices/spectrum-analyzers/rs-fph.md) |
+| 思仪 4959E 微波综合测试仪 | `ceyear.4959e` | 14 | spectrum | [型号卡片](../devices/spectrum-analyzers/ceyear-4959e.md) |
+| R&S FSPN-26 | `rs.fspn26` | 3 | trace | [型号卡片](../devices/measurement-analyzers/phase-noise-fspn26.md) |
+| Keysight / Agilent N9030A PXA | `keysight.n9030a` | 10 | spectrum | [型号卡片](../devices/spectrum-analyzers/keysight-n9030a.md) |
 | Ceyear 6362D | `ceyear.6362d` | 23 | ceyear_6362d | [型号卡片](../devices/measurement-analyzers/ceyear-6362d.md) |
 | Microchip 53100A | `microchip.53100a` | 10 | phase_noise/am_noise/stability/streaming/timed_phase | [型号卡片](../devices/measurement-analyzers/phase-noise-53100a.md) |
 | Joinwit JW8105 | `joinwit.jw8105` | 6 | jw8105-power | [型号卡片](../devices/measurement-analyzers/joinwit-jw8105.md) |
@@ -58,6 +61,9 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 | 示波器 | `rs.rtm3004` | `voltage.waveform_statistics` v2 |
 | 示波器 | `rs.rto64` | `voltage.waveform_statistics` v2 |
 | 相噪仪 | `microchip.53100a` | `phase_noise.at_offset` v1 |
+| 相噪仪 | `rs.fspn26` | `phase_noise.at_offset` v1 |
+| 频谱仪 | `ceyear.4959e` | `spectrum.peak_and_snr` v1 |
+| 频谱仪 | `keysight.n9030a` | `spectrum.peak_and_snr` v1 |
 | 频谱仪 | `rigol.dsa815` | `spectrum.peak_and_snr` v1 |
 | 频谱仪 | `rs.fph` | `spectrum.peak_and_snr` v1 |
 

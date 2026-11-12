@@ -48,8 +48,11 @@ def test_manufacturer_control_fixtures(path):
         from lab_control.instruments.base import identity_from_scpi
 
         device.identity = identity_from_scpi(case["identity_reply"].encode())
-    result = device.apply(DeviceCommand(case["operation"], case["parameters"], case["channel"], True))
-    assert result.outcome == "success", result
+    if case.get("access") == "read":
+        assert device.read(case["operation"], case.get("channel", 1)) == case["expected"]
+    else:
+        result = device.apply(DeviceCommand(case["operation"], case["parameters"], case["channel"], True))
+        assert result.outcome == "success", result
     assert not transport.exchanges
 
 

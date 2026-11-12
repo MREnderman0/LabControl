@@ -20,15 +20,15 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.domain.instruments import AcquisitionRequest, DeviceError
-from lab_control.storage.layout import raw_folder
-from lab_control.storage.recording import read_frames
-from lab_control.ui.pages.monitoring.recording_state import update_recording_frame
-from lab_control.ui.widgets.device_selector import DeviceSelector
 from lab_control.instruments.devices.microchip_53100a.profile import (
     PHASE_NOISE_DURATION,
     PHASE_NOISE_POINTS,
     PHASE_NOISE_SAMPLE_RATE,
 )
+from lab_control.storage.layout import raw_folder
+from lab_control.storage.recording import read_frames
+from lab_control.ui.pages.monitoring.recording_state import update_recording_frame
+from lab_control.ui.widgets.device_selector import DeviceSelector
 
 SAMPLE_RATE = PHASE_NOISE_SAMPLE_RATE
 DURATION = PHASE_NOISE_DURATION
@@ -137,7 +137,9 @@ class PhaseNoisePage(QWidget):
         title = QLabel("单设备采集")
         title.setObjectName("controlTitle")
         controls.addWidget(title)
-        form = QFormLayout()
+        self.timing_form = QWidget()
+        form = QFormLayout(self.timing_form)
+        form.setContentsMargins(0, 0, 0, 0)
         for label, value in (
             ("DUT 频率", "Auto"),
             ("参考频率", "Auto"),
@@ -145,17 +147,18 @@ class PhaseNoisePage(QWidget):
             ("采集时长", "1 分钟（60 秒）"),
         ):
             form.addRow(label, QLabel(value))
-        controls.addLayout(form)
+        controls.addWidget(self.timing_form)
         self.estimate = QLabel("预计 60,001 点，覆盖完整 60 秒。\n时长从首个有效相位点开始计算。")
         self.estimate.setWordWrap(True)
         self.estimate.setObjectName("mutedText")
         controls.addWidget(self.estimate)
-        note = QLabel(
+        self.timed_note = (
             "接好 DUT 与参考信号后开始。\n相噪读取仪器频谱；ADEV / MDEV 在结束后由同一段连续相位数据计算。"
         )
-        note.setWordWrap(True)
-        note.setObjectName("mutedText")
-        controls.addWidget(note)
+        self.note = QLabel(self.timed_note)
+        self.note.setWordWrap(True)
+        self.note.setObjectName("mutedText")
+        controls.addWidget(self.note)
         controls.addStretch()
         self.progress = QProgressBar()
         self.progress.setObjectName("phaseProgress")
@@ -174,7 +177,8 @@ class PhaseNoisePage(QWidget):
         scroll.setMinimumWidth(310)
         scroll.setMaximumWidth(360)
         body.addWidget(scroll)
-        self.notice = QLabel("自动保存原始相位、相噪、ADEV 和 MDEV；结束后显示结果，CSV 在后台生成。")
+        self.timed_notice = "自动保存原始相位、相噪、ADEV 和 MDEV；结束后显示结果，CSV 在后台生成。"
+        self.notice = QLabel(self.timed_notice)
         self.notice.setObjectName("mutedText")
         self.notice.setWordWrap(True)
         layout.addWidget(self.notice)
@@ -204,14 +208,31 @@ class PhaseNoisePage(QWidget):
     def select_device(self, device_id):
         self.device_id, self.last_event = device_id, None
         self.supported = False
+        self.passive = False
         if device_id:
             try:
                 caps = self.controller.capabilities(device_id)
-                caps.get("timed_phase")
-                caps.get("sample_rate").parameters["value"].validate("sample_rate", SAMPLE_RATE)
+                self.passive = any(
+                    cap.name == "phase_noise_trace" and cap.available for cap in caps.operations
+                )
+                if not self.passive:
+                    caps.get("timed_phase")
+                    caps.get("sample_rate").parameters["value"].validate("sample_rate", SAMPLE_RATE)
                 self.supported = True
             except DeviceError:
                 pass
+        self.start_button.setText("读取当前相噪曲线" if self.passive else "一键采集 · 1 分钟")
+        self.stop_button.setText("取消读取" if self.passive else "提前停止")
+        for widget in (self.timing_form, self.estimate, self.stability_plot, self.progress):
+            widget.setVisible(not self.passive)
+        self.tabs.setTabVisible(self.tabs.indexOf(self.phase_plot), not self.passive)
+        self.pn_plot.getPlotItem().legend.setVisible(not self.passive)
+        self.note.setText(
+            "在仪器上完成测量后，读取当前显示的单边带相噪曲线。" if self.passive else self.timed_note
+        )
+        self.notice.setText(
+            "保存仪器返回的偏频（Hz）和相噪（dBc/Hz）。" if self.passive else self.timed_notice
+        )
         self.progress.setValue(0)
         self.show_results()
         self.refresh()
@@ -223,30 +244,35 @@ class PhaseNoisePage(QWidget):
         token = self.run_tokens.get(key, 0) + 1
         try:
             self.controller.ensure_applicable(key)
-            request = AcquisitionRequest(
-                "timed_phase",
-                points=PHASE_NOISE_POINTS,
-                initiate=True,
-                confirmed=True,
-                sample_rate=SAMPLE_RATE,
-                duration=DURATION,
+            passive = self.passive
+            request = (
+                AcquisitionRequest("trace", allow_setup=False)
+                if passive
+                else AcquisitionRequest(
+                    "timed_phase",
+                    points=PHASE_NOISE_POINTS,
+                    initiate=True,
+                    confirmed=True,
+                    sample_rate=SAMPLE_RATE,
+                    duration=DURATION,
+                )
             )
             self.controller.clear_recorded_frame(key)
             future = self.controller.runtime.sessions.start_acquisition(
-                key, request, mode=self.controller.mode
+                key, request, mode=self.controller.mode, count=1 if passive else None
             )
             self.results.pop(key, None)
             self.paths.pop(key, None)
             self.starting.add(key)
             self.run_tokens[key] = token
             self.last_event = None
-            self.outcomes[key] = "正在自动设置，等待首个有效相位点…"
+            self.outcomes[key] = "正在读取当前相噪曲线…" if passive else "正在自动设置，等待首个有效相位点…"
             for curve in self.curves.values():
                 curve.clear()
             self.progress.setValue(0)
             self.controller.watch(
                 future,
-                lambda paths: self.finished(key, paths, token),
+                lambda paths: self.finished(key, paths, token, passive=passive),
                 lambda exc: self.failed(key, exc, token),
             )
         except Exception as exc:
@@ -256,10 +282,12 @@ class PhaseNoisePage(QWidget):
     def stop(self):
         if self.device_id:
             self.controller.runtime.sessions.stop_acquisition(self.device_id)
-            self.outcomes[self.device_id] = "正在停止仪器并保存已收到的数据…"
+            self.outcomes[self.device_id] = (
+                "正在取消读取…" if self.passive else "正在停止仪器并保存已收到的数据…"
+            )
             self.refresh()
 
-    def finished(self, key, paths, token=None):
+    def finished(self, key, paths, token=None, *, passive=False):
         if token is not None and token != self.run_tokens.get(key):
             return
         self.starting.discard(key)
@@ -268,7 +296,9 @@ class PhaseNoisePage(QWidget):
             self.paths[key] = str(folder.parent if folder.name == "_raw" else folder)
         event = self.controller.recorded_frame(key)
         config = event["batch"].configuration if event else {}
-        if config.get("final"):
+        if passive:
+            self.outcomes[key] = "当前相噪曲线已保存 · 正在加载曲线" if paths else "本次读取未取得曲线"
+        elif config.get("final"):
             text = "采集完成" if config.get("complete") else "已提前停止 · 部分时段结果"
             if config.get("has_data_gaps"):
                 text += "\n存在通信缺口；ADEV / MDEV 仅对应最后连续数据段"
@@ -334,7 +364,7 @@ class PhaseNoisePage(QWidget):
         self.refresh_frame(self.device_id)
 
     def refresh_frame(self, key):
-        if not self.isVisible() or key != self.device_id:
+        if not self.isVisible() or key != self.device_id or self.passive:
             return
         event = self.controller.recorded_frame(key)
         if event is None or event is self.last_event:

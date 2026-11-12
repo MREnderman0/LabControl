@@ -61,6 +61,9 @@
 | Teledyne LeCroy WaveRunner 9404M | `lecroy.9404m` | LAN PyVISA/VXI-11（仪器选择 LXI） | [卡片](devices/oscilloscopes/waverunner-9404m.md) |
 | RIGOL DHO924 | `rigol.dho924` | LAN PyVISA / VISA SOCKET | [卡片](devices/oscilloscopes/rigol-dho924.md) |
 | R&S FPH02 | `rs.fph` | LAN；优先 PyVISA | [卡片](devices/spectrum-analyzers/rs-fph.md) |
+| 思仪 4959E 微波综合测试仪 | `ceyear.4959e` | LAN / VXI-11 | [卡片](devices/spectrum-analyzers/ceyear-4959e.md) |
+| R&S FSPN-26 | `rs.fspn26` | LAN VISA | [卡片](devices/measurement-analyzers/phase-noise-fspn26.md) |
+| Keysight / Agilent N9030A PXA | `keysight.n9030a` | LAN / VXI-11 | [卡片](devices/spectrum-analyzers/keysight-n9030a.md) |
 | Ceyear 6362D | `ceyear.6362d` | LAN Socket 10001；PyVISA | [卡片](devices/measurement-analyzers/ceyear-6362d.md) |
 | Microchip 53100A | `microchip.53100a` | USB：TimeLab 驱动与项目托管 TSERVE64；也支持已有外部 TSERVE | [卡片](devices/measurement-analyzers/phase-noise-53100a.md) |
 | Joinwit JW8105 | `joinwit.jw8105` | RS232；RJ45 选件待核对 | [卡片](devices/measurement-analyzers/joinwit-jw8105.md) |

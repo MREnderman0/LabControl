@@ -16,12 +16,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pyvisa
 
 from lab_control.application.config import ConnectionConfig, load_config
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.discovery.service import ConfiguredDiscoveryProvider
-from lab_control.domain.instruments import DeviceError, DeviceIdentity, jsonable, utc_now
+from lab_control.domain.frames import validate_recorded_batch
+from lab_control.domain.instruments import (
+    AcquisitionRequest,
+    DeviceError,
+    DeviceIdentity,
+    MeasurementBatch,
+    jsonable,
+    utc_now,
+)
 from lab_control.instruments.base import ScpiAdapter
 from lab_control.instruments.devices.definition import DeviceDefinition
 from lab_control.instruments.registry import create_adapter
@@ -67,6 +76,48 @@ class QueryOnlyTransport:
         self.inner.close()
 
 
+def record_trace(batch: MeasurementBatch, folder: Path) -> list[dict[str, Any]]:
+    from lab_control.storage.recording import SegmentWriter, read_frames
+
+    validate_recorded_batch(batch)
+    writer = SegmentWriter(folder / "trace")
+    try:
+        segment = writer.append(1, batch)
+    finally:
+        writer.close()
+    (saved,) = read_frames(Path(segment).resolve())
+    traces = []
+    for sample, stored in zip(batch.measurements, saved["measurements"], strict=True):
+        x, y = np.asarray(sample.axis), np.asarray(sample.values)
+        if not (
+            x.ndim == y.ndim == 1
+            and x.size == y.size
+            and x.size > 0
+            and np.isfinite(x).all()
+            and np.isfinite(y).all()
+            and np.array_equal(stored["axis"], x)
+            and np.array_equal(stored["values"], y)
+            and stored["unit"] == sample.unit
+            and stored["axis_unit"] == sample.axis_unit
+        ):
+            raise DeviceError("Recorded trace does not match the instrument frame", "readback_mismatch")
+        traces.append(
+            dict(
+                channel=sample.channel,
+                quantity=sample.quantity,
+                points=x.size,
+                axis_unit=sample.axis_unit,
+                x_first=float(x[0]),
+                x_last=float(x[-1]),
+                unit=sample.unit,
+                minimum=float(y.min()),
+                maximum=float(y.max()),
+                segment=str(Path(segment).relative_to(folder)),
+            )
+        )
+    return traces
+
+
 def verify(
     definition: DeviceDefinition,
     config: ConnectionConfig,
@@ -74,6 +125,10 @@ def verify(
     extra_queries: tuple[str, ...] = (),
     *,
     expected_model: str = "",
+    capture_request: Callable[[ScpiAdapter], AcquisitionRequest] | None = None,
+    root: Path | None = None,
+    input_condition: str = "",
+    duration: float = 60,
 ) -> dict[str, Any]:
     profile = definition.profile
     if profile is None or definition.adapter_type is None:
@@ -121,6 +176,9 @@ def verify(
         "reconnections": [],
         "scope": "Read-only verification; output state and error queue are not changed",
     }
+    if capture_request:
+        report["stages"]["acquisition"] = "not_tested"
+        report["input_condition"] = input_condition
     if expected_model:
         report["expected_model"] = expected_model
 
@@ -129,12 +187,20 @@ def verify(
             return
         if config.expected_serial and identity.serial != config.expected_serial:
             raise DeviceError("Configured serial does not match", "identity_conflict")
-        if expected_model and identity.model.upper() != expected_model.upper():
+        if expected_model and not profile.matches_identity(identity, expected_model):
             raise DeviceError("Configured model does not match", "identity_conflict")
 
     app: ApplicationRuntime | None = None
     stage = "scan"
     try:
+        if (
+            config.adapter != definition.adapter_id
+            or config.transport == "mock"
+            or not config.expected_serial.strip()
+        ):
+            raise DeviceError("Require the exact adapter and a real asset serial", "identity_conflict")
+        if root is not None and root.resolve() != application_home().resolve():
+            raise DeviceError("Hardware acceptance requires the normal runtime home", "invalid_parameter")
         app = ApplicationRuntime((config,))  # Fixed per-user hardware ProcessLease.
         runtime = app
 
@@ -217,6 +283,21 @@ def verify(
                 )
         report["stages"][stage] = "passed"
         report["output_state_unchanged"] = True
+        if capture_request:
+            stage = "acquisition"
+            session = runtime.sessions.sessions[device_id]
+
+            def capture() -> MeasurementBatch:
+                adapter = session.adapter
+                assert isinstance(adapter, ScpiAdapter) and capture_request is not None
+                request = capture_request(adapter)
+                if request.initiate or request.allow_setup:
+                    raise DeviceError("Acceptance requires a passive request", "invalid_parameter")
+                return adapter.acquire(request)
+
+            batch = session.worker.submit(capture).result(timeout=max(90, duration))
+            report["traces"] = record_trace(batch, folder)
+            report["stages"][stage] = "passed"
     except (Exception, KeyboardInterrupt) as exc:
         report["error"] = str(exc) or type(exc).__name__
         report["error_code"] = getattr(exc, "code", type(exc).__name__)
@@ -225,6 +306,10 @@ def verify(
             "resource_busy",
             "timeout",
             "disconnected",
+            "unsupported",
+            "waveform_unavailable",
+            "process_busy",
+            "acquisition_setup_blocked",
             "driver_missing",
             "connection_failed",
         }
@@ -237,6 +322,7 @@ def verify(
                 report["session_released"] = True
             except Exception as exc:
                 report["close_error"] = str(exc)
+        report["checks_passed"] = not (report.get("error") or report.get("close_error"))
         report["finished_at"] = utc_now()
         (folder / "results.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -269,10 +355,32 @@ def asset_folder_name(model: str, serial: str, explicit: str | None = None) -> s
     return name
 
 
+def verify_asset(
+    definition: DeviceDefinition,
+    config: ConnectionConfig,
+    folder: Path,
+    extra_queries: tuple[str, ...] = (),
+    *,
+    record_summary: Callable[[Path], None] | None = None,
+    capture_request: Callable[[ScpiAdapter], AcquisitionRequest] | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    from lab_control.storage.hardware_documents import refresh_after_batch
+
+    folder.mkdir(parents=True, exist_ok=True)
+    result = verify(definition, config, folder, extra_queries, capture_request=capture_request, **kwargs)
+    if record_summary:
+        record_summary(folder)
+    refresh_after_batch(folder)
+    return result
+
+
 def main(
     definition: DeviceDefinition,
     extra_queries: tuple[str, ...] = (),
     record_summary: Callable[[Path], None] | None = None,
+    *,
+    capture_request: Callable[[ScpiAdapter], AcquisitionRequest] | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -300,12 +408,14 @@ def main(
         / (datetime.now().strftime("%Y-%m-%d-%H%M%S-%f") + "-module-readonly")
     )
     folder.mkdir(parents=True, exist_ok=False)
-    result = verify(definition, config, folder, extra_queries)
-    if record_summary:
-        record_summary(folder)
-    from lab_control.storage.hardware_documents import refresh_after_batch
-
-    refresh_after_batch(folder)
+    result = verify_asset(
+        definition,
+        config,
+        folder,
+        extra_queries,
+        record_summary=record_summary,
+        capture_request=capture_request,
+    )
     print(folder, flush=True)
     print(json.dumps(result["stages"], ensure_ascii=False), flush=True)
     return int(bool(result.get("error") or result.get("close_error")))

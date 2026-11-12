@@ -80,13 +80,8 @@ def describe_definition(
 
 
 def match(identity: DeviceIdentity) -> str:
-    def normalize(text: str) -> str:
-        return re.sub(r"[\s_-]", "", text).upper()
-
     for profile in PROFILES.values():
-        if normalize(identity.model) in {normalize(value) for value in profile.models} and any(
-            normalize(maker) in normalize(identity.manufacturer) for maker in profile.manufacturer
-        ):
+        if profile.matches_identity(identity):
             return profile.adapter_id
     return ""
 

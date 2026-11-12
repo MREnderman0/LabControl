@@ -1,0 +1,11 @@
+{
+  "fixture_origin": "Synthetic PXA swept-SA query fixture based on the manufacturer programming reference",
+  "adapter": "keysight.n9030a",
+  "identity_reply": "Agilent Technologies,N9030A,FIXTURE,A.14.59",
+  "access": "read",
+  "operation": "transfer_format",
+  "channel": 1,
+  "parameters": {},
+  "exchanges": [["FORM:DATA?", "ASC,8"]],
+  "expected": "ASC,8"
+}

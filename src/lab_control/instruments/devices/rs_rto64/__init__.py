@@ -7,11 +7,19 @@ from lab_control.instruments.devices.definition import DeviceDefinition, DeviceD
 
 from .adapter import Rto64Adapter, rto64
 
+
+def _verify(*args, **kwargs):
+    from .hardware.readonly import verify
+
+    return verify(*args, **kwargs)
+
+
 DEFINITION = DeviceDefinition(
     rto64(),
     Rto64Adapter,
     DeviceDocumentation("R&S RTO64", "oscilloscopes/rto64", "LAN / USB VISA", "64 位 VISA Runtime"),
     Path(__file__).parent,
+    readonly_check=_verify,
     deployment_components=("rs-visa",),
     metric_profiles=(VOLTAGE_WAVEFORM_STATISTICS_PROFILE,),
 )

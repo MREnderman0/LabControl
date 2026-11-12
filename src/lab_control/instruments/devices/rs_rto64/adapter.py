@@ -1,10 +1,22 @@
 from __future__ import annotations
 
-from lab_control.domain.instruments import Parameter
+import re
+
+from lab_control.domain.instruments import DeviceIdentity, Parameter
 from lab_control.instruments.base import Profile, ScpiAdapter, command, enum, parameter, read_command
 
 BOOL = Parameter("boolean")
 RTO_SOURCE = "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1801_6687_01/RTO6_UserManual_en_14.pdf"
+
+
+def canonical_model(identity: DeviceIdentity) -> str:
+    if (
+        identity.manufacturer.casefold() in {"rohde&schwarz", "rohde-schwarz"}
+        and identity.model.upper() == "RTO6"
+        and re.fullmatch(r"1802\.0001K04/[^/\s,]+", identity.serial, re.IGNORECASE)
+    ):
+        return "RTO64"
+    return identity.model
 
 
 def rto64() -> Profile:
@@ -55,6 +67,7 @@ def rto64() -> Profile:
         commands,
         ("channel_enabled", "scale", "timebase", "trigger_mode"),
         acquisition="rto",
+        model_alias=canonical_model,
     )
 
 

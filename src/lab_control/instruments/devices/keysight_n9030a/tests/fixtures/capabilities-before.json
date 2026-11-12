@@ -1,0 +1,347 @@
+{
+  "capabilities": {
+    "category": "spectrum_analyzer",
+    "channels": [
+      1
+    ],
+    "operations": [
+      {
+        "name": "measurement_mode",
+        "parameters": {
+          "value": {
+            "kind": "text",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "CONF?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "start_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FREQ:STAR?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "stop_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FREQ:STOP?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "center_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FREQ:CENT?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "span",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FREQ:SPAN?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "sweep_time",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "s",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "SWE:TIME?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "sweep_points",
+        "parameters": {
+          "value": {
+            "kind": "integer",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "SWE:POIN?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "amplitude_unit",
+        "parameters": {
+          "value": {
+            "kind": "text",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "UNIT:POW?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "transfer_format",
+        "parameters": {
+          "value": {
+            "kind": "text",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FORM:DATA?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "byte_order",
+        "parameters": {
+          "value": {
+            "kind": "text",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FORM:BORD?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "keysight.n9030a",
+    "manufacturer": [
+      "Agilent Technologies",
+      "Keysight Technologies"
+    ],
+    "models": [
+      "N9030A"
+    ],
+    "category": "spectrum_analyzer",
+    "channels": [
+      1
+    ],
+    "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+    "revision": "PXA X-Series SA Mode User's & Programmer's Reference; Swept SA and numeric data format",
+    "status": [
+      "measurement_mode",
+      "transfer_format"
+    ],
+    "identity_query": "*IDN?",
+    "error_query": "SYST:ERR?",
+    "acquisition": "spectrum",
+    "channel_limits": {},
+    "model_alias": null
+  },
+  "commands": {
+    "measurement_mode": {
+      "writes": [],
+      "query": "CONF?",
+      "select": [],
+      "compare": false
+    },
+    "start_frequency": {
+      "writes": [],
+      "query": "FREQ:STAR?",
+      "select": [],
+      "compare": false
+    },
+    "stop_frequency": {
+      "writes": [],
+      "query": "FREQ:STOP?",
+      "select": [],
+      "compare": false
+    },
+    "center_frequency": {
+      "writes": [],
+      "query": "FREQ:CENT?",
+      "select": [],
+      "compare": false
+    },
+    "span": {
+      "writes": [],
+      "query": "FREQ:SPAN?",
+      "select": [],
+      "compare": false
+    },
+    "sweep_time": {
+      "writes": [],
+      "query": "SWE:TIME?",
+      "select": [],
+      "compare": false
+    },
+    "sweep_points": {
+      "writes": [],
+      "query": "SWE:POIN?",
+      "select": [],
+      "compare": false
+    },
+    "amplitude_unit": {
+      "writes": [],
+      "query": "UNIT:POW?",
+      "select": [],
+      "compare": false
+    },
+    "transfer_format": {
+      "writes": [],
+      "query": "FORM:DATA?",
+      "select": [],
+      "compare": false
+    },
+    "byte_order": {
+      "writes": [],
+      "query": "FORM:BORD?",
+      "select": [],
+      "compare": false
+    }
+  }
+}

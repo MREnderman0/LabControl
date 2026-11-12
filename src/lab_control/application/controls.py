@@ -108,6 +108,8 @@ trigger_setup=触发配置
 sequence_setup=分段采集配置
 interleaved=随机交织采样
 measurement_mode=测量模式
+available_modes=可用测量模式
+display_scale=幅度刻度（每格）
 power_config=控制器配置
 raw_channel_data=原始通道数据
 report=原始协议报告
@@ -311,6 +313,8 @@ selected_trace=当前轨迹
 start=开始仪器测量
 input_frequency=输入频率
 reference_frequency=参考频率
+applications=活动测量通道
+phase_noise_trace=当前相噪曲线
 phase_noise=相位噪声
 am_noise=AM 噪声
 stability=稳定度
@@ -495,7 +499,18 @@ def data_sources(config: ConnectionConfig) -> tuple[DataSource, ...]:
         )
     if category == "phase_noise_analyzer":
         result = []
-        if any(c.name == "timed_phase" and c.available for c in schema.operations):
+        available = {cap.name for cap in schema.operations if cap.available}
+        if "phase_noise_trace" in available:
+            result.append(
+                DataSource(
+                    "phase_noise_trace",
+                    "当前单边带相噪曲线",
+                    "trace",
+                    measurement="phase_noise",
+                    request_defaults={"allow_setup": False, "initiate": False},
+                )
+            )
+        if "timed_phase" in available:
             result.append(
                 DataSource(
                     "phase_noise_capture",
@@ -515,8 +530,9 @@ def data_sources(config: ConnectionConfig) -> tuple[DataSource, ...]:
         result.extend(
             DataSource(name, OPERATION_LABELS[name], "scalar", name)
             for name in ("phase_noise", "am_noise", "stability")
+            if name in available
         )
-        if any(c.name == "data_stream" and c.available for c in schema.operations):
+        if "data_stream" in available:
             result.append(DataSource("data_stream", "相位 / 频率流", "streaming"))
         return tuple(result)
     if category == "frequency_counter":

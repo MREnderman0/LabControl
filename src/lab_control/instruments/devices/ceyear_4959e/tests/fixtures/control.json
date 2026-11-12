@@ -1,0 +1,28 @@
+{
+  "fixture_origin": "Manufacturer manual C, section 3.3. Synthetic SA example.",
+  "adapter": "ceyear.4959e",
+  "identity_reply": "Ceyear Technologies,4959E,EXAMPLE,2.6.14",
+  "operation": "display_scale",
+  "channel": 1,
+  "parameters": {
+    "value": 5
+  },
+  "exchanges": [
+    [
+      ":INST?",
+      "SA"
+    ],
+    [
+      ":DISP:WIND:TRAC:Y:PDIV 5",
+      ""
+    ],
+    [
+      ":DISP:WIND:TRAC:Y:PDIV?",
+      "5"
+    ],
+    [
+      "SYST:ERR?",
+      "0,No error"
+    ]
+  ]
+}

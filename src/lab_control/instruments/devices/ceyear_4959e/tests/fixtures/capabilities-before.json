@@ -1,0 +1,391 @@
+{
+  "capabilities": {
+    "category": "spectrum_analyzer",
+    "channels": [
+      1
+    ],
+    "operations": [
+      {
+        "name": "start_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": 26500000000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":FREQ:STAR",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "stop_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": 26500000000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":FREQ:STOP",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "center_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": 26500000000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":FREQ:CENT",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "span",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": 26500000000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":FREQ:SPAN",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "display_scale",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "dB/div",
+            "minimum": 0.2,
+            "maximum": 40,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":DISP:WIND:TRAC:Y:PDIV",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "measurement_mode",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":INST?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "available_modes",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":INST:CAT?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "transfer_format",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":FORM?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "sweep_points",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":SWE:POIN?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "sweep_mode",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":SWE:MODE?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "trace_mode",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":TRAC1:TYPE?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "detector",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":DET:FUNC?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "sweep_time",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":SWE:TIME?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "rbw",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+        "section": ":BAND?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "ceyear.4959e",
+    "manufacturer": [
+      "Ceyear Technologies"
+    ],
+    "models": [
+      "4959E"
+    ],
+    "category": "spectrum_analyzer",
+    "channels": [
+      1
+    ],
+    "source": "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf",
+    "revision": "4959 系列程控手册 C，第 3.3 节",
+    "status": [
+      "measurement_mode"
+    ],
+    "identity_query": "*IDN?",
+    "error_query": "SYST:ERR?",
+    "acquisition": "spectrum",
+    "channel_limits": {},
+    "model_alias": null
+  },
+  "commands": {
+    "start_frequency": {
+      "writes": [
+        ":FREQ:STAR {value}"
+      ],
+      "query": ":FREQ:STAR?",
+      "select": [],
+      "compare": true
+    },
+    "stop_frequency": {
+      "writes": [
+        ":FREQ:STOP {value}"
+      ],
+      "query": ":FREQ:STOP?",
+      "select": [],
+      "compare": true
+    },
+    "center_frequency": {
+      "writes": [
+        ":FREQ:CENT {value}"
+      ],
+      "query": ":FREQ:CENT?",
+      "select": [],
+      "compare": true
+    },
+    "span": {
+      "writes": [
+        ":FREQ:SPAN {value}"
+      ],
+      "query": ":FREQ:SPAN?",
+      "select": [],
+      "compare": true
+    },
+    "display_scale": {
+      "writes": [
+        ":DISP:WIND:TRAC:Y:PDIV {value}"
+      ],
+      "query": ":DISP:WIND:TRAC:Y:PDIV?",
+      "select": [],
+      "compare": true
+    },
+    "measurement_mode": {
+      "writes": [],
+      "query": ":INST?",
+      "select": [],
+      "compare": false
+    },
+    "available_modes": {
+      "writes": [],
+      "query": ":INST:CAT?",
+      "select": [],
+      "compare": false
+    },
+    "transfer_format": {
+      "writes": [],
+      "query": ":FORM?",
+      "select": [],
+      "compare": false
+    },
+    "sweep_points": {
+      "writes": [],
+      "query": ":SWE:POIN?",
+      "select": [],
+      "compare": false
+    },
+    "sweep_mode": {
+      "writes": [],
+      "query": ":SWE:MODE?",
+      "select": [],
+      "compare": false
+    },
+    "trace_mode": {
+      "writes": [],
+      "query": ":TRAC1:TYPE?",
+      "select": [],
+      "compare": false
+    },
+    "detector": {
+      "writes": [],
+      "query": ":DET:FUNC?",
+      "select": [],
+      "compare": false
+    },
+    "sweep_time": {
+      "writes": [],
+      "query": ":SWE:TIME?",
+      "select": [],
+      "compare": false
+    },
+    "rbw": {
+      "writes": [],
+      "query": ":BAND?",
+      "select": [],
+      "compare": false
+    }
+  }
+}

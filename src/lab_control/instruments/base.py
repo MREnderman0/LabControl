@@ -81,6 +81,17 @@ class Profile:
     error_query: str = "SYST:ERR?"
     acquisition: str = ""
     channel_limits: dict[int, dict[str, float]] = field(default_factory=dict)
+    model_alias: Callable[[DeviceIdentity], str] | None = None
+
+    def matches_identity(self, identity: DeviceIdentity, expected_model: str = "") -> bool:
+        def key(value: str) -> str:
+            return re.sub(r"[\s_-]", "", value).upper()
+
+        if not any(key(maker) in key(identity.manufacturer) for maker in self.manufacturer):
+            return False
+        model = self.model_alias(identity) if self.model_alias else identity.model
+        declared = {key(name) for name in self.models}
+        return key(model) in declared and (not expected_model or key(model) == key(expected_model))
 
 
 def parameter(unit: str = "", low: float | None = None, high: float | None = None) -> Parameter:
@@ -145,17 +156,11 @@ class ScpiAdapter:
         raw = self.transport.query(self.profile.identity_query)
         identity = self.decode_identity(raw)
 
-        def normalize(value: str) -> str:
-            return re.sub(r"[\s_-]", "", value).upper()
-
-        if normalize(identity.model) not in {normalize(model) for model in self.profile.models}:
+        if not self.profile.matches_identity(identity):
             raise DeviceError(
-                f"Expected {self.profile.models}; received {identity.model}", "identity_conflict"
+                f"Identity does not match {self.profile.adapter_id}: {identity.manufacturer} {identity.model}",
+                "identity_conflict",
             )
-        if not any(
-            normalize(maker) in normalize(identity.manufacturer) for maker in self.profile.manufacturer
-        ):
-            raise DeviceError("Manufacturer does not match adapter", "identity_conflict")
         self.identity = identity
         return identity
 

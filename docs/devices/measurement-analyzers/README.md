@@ -7,6 +7,7 @@
 | Thorlabs PM100D + S154C | PM100D USB；S154C 接控制台传感器接口 | [型号说明](thorlabs-pm100d-s154c.md) |
 | R&S ZNB3004 | LAN / USB VISA | [型号说明](rs-znb3004.md) |
 | Keysight / Agilent / HP 3458A | GPIB + USB-GPIB/LAN-GPIB 控制器 | [型号说明](keysight-3458a.md) |
+| R&S FSPN-26 | LAN VISA | [型号说明](phase-noise-fspn26.md) |
 | Ceyear 6362D | LAN Socket 10001；PyVISA | [型号说明](ceyear-6362d.md) |
 | Microchip 53100A | USB：TimeLab 驱动与项目托管 TSERVE64；也支持已有外部 TSERVE | [型号说明](phase-noise-53100a.md) |
 | Joinwit JW8105 | RS232；RJ45 选件待核对 | [型号说明](joinwit-jw8105.md) |

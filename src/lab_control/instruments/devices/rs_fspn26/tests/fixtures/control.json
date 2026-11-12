@@ -1,0 +1,8 @@
+{
+  "fixture_origin": "Synthetic read-only command sample from the R&S FSPN user manual",
+  "adapter": "rs.fspn26",
+  "operation": "transfer_format",
+  "access": "read",
+  "expected": "ASC,0",
+  "exchanges": [["FORM?", "ASC,0"]]
+}
