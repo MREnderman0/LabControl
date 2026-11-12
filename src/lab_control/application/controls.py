@@ -29,6 +29,7 @@ MEASUREMENT_CATEGORIES = {
 OPERATION_LABELS = dict(
     line.split("=", 1)
     for line in """
+input_raw=输入寄存器原始值
 waveform=波形
 control_state=控制状态
 standard_waveform=标准波形

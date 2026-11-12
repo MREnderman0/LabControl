@@ -69,6 +69,7 @@
 | Joinwit JW8105 | `joinwit.jw8105` | RS232；RJ45 选件待核对 | [卡片](devices/measurement-analyzers/joinwit-jw8105.md) |
 | 芯明天 XMT（完整型号待核） | `coremorrow.xmt` | USB 串口 / VISA ASRL；COM 参数由现场配置指定 | [卡片](devices/power-supplies/coremorrow-xmt.md) |
 | RIGOL M300 | `rigol.m300` | LAN / USB VISA；优先 PyVISA | [卡片](devices/measurement-analyzers/rigol-m300.md) |
+| 盘古 KT616R | `pangu.kt616r` | 以太网 / Modbus TCP | [卡片](devices/measurement-analyzers/pangu-kt616r.md) |
 | K+K FXE / FXE2 | `kplusk.fxe` | Ethernet（FXE2 使用 DHCP，已登记身份随租约更新地址） | [卡片](devices/measurement-analyzers/kplusk-fxe.md) |
 | Keysight / Agilent 53220A | `keysight.53220a` | LAN VXI-11 / VISA SOCKET；优先 PyVISA | [卡片](devices/measurement-analyzers/keysight-53220a.md) |
 | 光梳地检泵浦驱动 | `custom.optical_comb_pump` | RS232，手动选择 COM 口，115200 8N1 | [卡片](devices/temperature-load-drivers/pump-driver.md) |

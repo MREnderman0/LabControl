@@ -109,6 +109,9 @@ class ConnectionDialogs:
             if len(profile.models) > 2:
                 name = DEVICE_DEFINITIONS[adapter_id].documentation.title
             model.addItem(f"{name} · {adapter_id}", adapter_id)
+        for adapter_id, definition in sorted(DEVICE_DEFINITIONS.items()):
+            if adapter_id not in PROFILES and definition.socket_port is not None:
+                model.addItem(f"{definition.documentation.title} · {adapter_id}", adapter_id)
         default_model = model.findData("ceyear.6362d")
         if default_model >= 0:
             model.setCurrentIndex(default_model)

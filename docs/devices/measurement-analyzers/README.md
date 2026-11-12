@@ -12,6 +12,7 @@
 | Microchip 53100A | USB：TimeLab 驱动与项目托管 TSERVE64；也支持已有外部 TSERVE | [型号说明](phase-noise-53100a.md) |
 | Joinwit JW8105 | RS232；RJ45 选件待核对 | [型号说明](joinwit-jw8105.md) |
 | RIGOL M300 | LAN / USB VISA；优先 PyVISA | [型号说明](rigol-m300.md) |
+| 盘古 KT616R | 以太网 / Modbus TCP | [型号说明](pangu-kt616r.md) |
 | K+K FXE / FXE2 | Ethernet（FXE2 使用 DHCP，已登记身份随租约更新地址） | [型号说明](kplusk-fxe.md) |
 | Keysight / Agilent 53220A | LAN VXI-11 / VISA SOCKET；优先 PyVISA | [型号说明](keysight-53220a.md) |
 | GOCA-8-NK2603212 | 未注册，待补资料 | [待补卡片](goca-8.md) |

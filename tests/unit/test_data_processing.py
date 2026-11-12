@@ -85,6 +85,7 @@ def test_qualified_model_processing_profiles_are_registered():
     assert profiles == {
         "joinwit.jw8105": "scalar",
         "rigol.m300": "scalar",
+        "pangu.kt616r": "scalar",
         "kplusk.fxe": "scalar",
         "ceyear.6362d": "frames",
         "ceyear.4959e": "frames",

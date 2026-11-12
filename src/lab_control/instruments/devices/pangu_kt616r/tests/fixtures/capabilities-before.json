@@ -1,0 +1,40 @@
+{
+  "profile": null,
+  "capabilities": {
+    "category": "multimeter",
+    "channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "operations": [
+      {
+        "name": "input_raw",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://en.pangu.com.hk/download/manual/KT600_EN.pdf",
+        "section": "13.6, 30001–30016",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      }
+    ]
+  }
+}
