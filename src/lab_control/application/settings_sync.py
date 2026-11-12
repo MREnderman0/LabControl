@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from lab_control.application.sessions import SessionManager, SettingsFrame
-from lab_control.domain.instruments import ParameterReading
+from lab_control.domain.instruments import DeviceError, ParameterReading
 from lab_control.domain.oscilloscope import CONTROL_NAMES as SCOPE_SETTINGS
 from lab_control.domain.readback import usable_reading
 from lab_control.domain.spectrum import SETTINGS as SPECTRUM_SETTINGS
@@ -30,6 +30,8 @@ class SyncTask:
     pending: Future[Any] | None = None
     keys: tuple[Key, ...] = ()
     errors: dict[Key, str] = field(default_factory=dict)
+    isolated: set[Key] = field(default_factory=set)
+    retry_key_at: dict[Key, float] = field(default_factory=dict)
     retry_at: float = 0
     failures: int = 0
     force_after: float = 0
@@ -153,6 +155,8 @@ class SettingsSync:
             if version != task.configuration_version:
                 task.configuration_version = version
                 task.errors.clear()
+                task.isolated.clear()
+                task.retry_key_at.clear()
                 task.failures, task.retry_at = 0, 0
             if task.pending and task.pending.done():
                 future, task.pending = task.pending, None
@@ -163,6 +167,21 @@ class SettingsSync:
                     continue
                 try:
                     readings: tuple[ParameterReading, ...] = future.result()
+                except DeviceError as exc:
+                    if exc.code != "unsupported":
+                        self._back_off(device_id, task, now, exc)
+                        continue
+                    # A model can reject one field for the current mode. Find it
+                    # using single queries without holding up other channels.
+                    task.isolated.update(task.keys)
+                    if len(task.keys) == 1:
+                        key = task.keys[0]
+                        task.errors[key] = str(exc)
+                        task.retry_key_at[key] = now + self.poll_interval(device_id)
+                        self._transition(device_id, task, "failed", str(exc))
+                except Exception as exc:
+                    self._back_off(device_id, task, now, exc)
+                else:
                     wanted = self.wanted(device_id)
                     returned = {(r.channel, r.operation): r for r in readings}
                     for key in task.keys:
@@ -170,20 +189,18 @@ class SettingsSync:
                         cap = wanted.get(key)
                         if cap and (reading is None or not usable_reading(reading, cap.parameters)):
                             task.errors[key] = (reading.error if reading else "") or f"{key[1]} 读回无效"
+                            task.retry_key_at[key] = now + self.poll_interval(device_id)
                         else:
                             task.errors.pop(key, None)
-                    if any(k in task.errors for k in task.keys):
-                        raise ValueError("；".join(task.errors[k] for k in task.keys if k in task.errors))
-                    if not task.errors:
-                        task.failures, task.retry_at = 0, 0
+                            task.retry_key_at.pop(key, None)
+                            task.isolated.discard(key)
+                    task.failures, task.retry_at = 0, 0
+                    if task.errors:
+                        self._transition(
+                            device_id, task, "failed", "；".join(dict.fromkeys(task.errors.values()))
+                        )
+                    else:
                         self._transition(device_id, task, "healthy")
-                except Exception as exc:
-                    for key in task.keys:
-                        task.errors[key] = str(exc)
-                    delays = (2, 5, 10, 30)
-                    task.retry_at = now + delays[min(task.failures, len(delays) - 1)]
-                    task.failures += 1
-                    self._transition(device_id, task, "failed", str(exc))
         for device_id, state in states.items():
             if device_id not in self.tasks and self.wanted(device_id):
                 self.tasks[device_id] = SyncTask(
@@ -211,10 +228,13 @@ class SettingsSync:
             due = [
                 key
                 for key in wanted
-                if not self.current(frames.get(key), state)
-                or key in task.errors
-                or frames[key].received_at < task.force_after
-                or now - frames[key].received_at >= interval
+                if now >= task.retry_key_at.get(key, 0)
+                and (
+                    not self.current(frames.get(key), state)
+                    or key in task.errors
+                    or frames[key].received_at < task.force_after
+                    or now - frames[key].received_at >= interval
+                )
             ]
             # Oldest channel first prevents starvation when queries take longer than the interval.
             due.sort(
@@ -227,7 +247,11 @@ class SettingsSync:
             if not due:
                 continue
             channel = due[0][0]
-            keys = tuple(k for k in due if k[0] == channel)[:4]
+            keys = (
+                (due[0],)
+                if due[0] in task.isolated
+                else tuple(k for k in due if k[0] == channel and k not in task.isolated)[:4]
+            )
             submitted = self.sessions.try_submit_idle(
                 device_id, "read_settings", (tuple(k[1] for k in keys), channel), quiet=True
             )
@@ -243,6 +267,14 @@ class SettingsSync:
             self.max_observed_concurrent = max(self.max_observed_concurrent, active)
             self.round_robin.remove(device_id)
             self.round_robin.append(device_id)
+
+    def _back_off(self, device_id: str, task: SyncTask, now: float, error: Exception) -> None:
+        for key in task.keys:
+            task.errors[key] = str(error)
+        delays = (2, 5, 10, 30)
+        task.retry_at = now + delays[min(task.failures, len(delays) - 1)]
+        task.failures += 1
+        self._transition(device_id, task, "failed", str(error))
 
     def stop(self) -> None:
         self.enabled = False

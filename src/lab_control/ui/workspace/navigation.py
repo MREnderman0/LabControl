@@ -132,7 +132,13 @@ class WorkspaceNavigation:
             window.submenu.setTabData(0, "")
             selected_index = 0
             for value in categories:
+                # Keep source detail links from overview cards without a monitoring tab.
+                source_detail = module == "实时监测" and value == "signal_generator"
+                if source_detail and value != selected_category:
+                    continue
                 index = window.submenu.addTab(CATEGORY_LABELS[value])
+                if source_detail:
+                    window.submenu.setTabVisible(index, False)
                 window.submenu.setTabData(index, value)
                 if value == selected_category:
                     selected_index = index

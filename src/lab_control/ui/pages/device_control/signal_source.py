@@ -449,7 +449,7 @@ class OutputControl(QWidget):
         health, reason = self.channel_status or output_health
         self.state.setText(
             ("输出" if self.embedded else "RF " if self.rf else f"CH {self.channel} ")
-            + ("开启" if self.value is True else "关闭" if self.value is False else "输出未知")
+            + ("开启" if self.value is True else "关闭" if self.value is False else "未知")
             + " · "
             + health
         )

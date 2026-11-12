@@ -74,6 +74,16 @@ def test_configured_float_byte_order_and_units(order):
         dev.acquire(AcquisitionRequest(channels=(3,)))
 
 
+def test_disconnected_celsius_float_after_valid_integer_is_not_a_temperature():
+    config = replace(CONFIG, options=("unit=°C", "float_order=CDAB"))
+    block = bytes.fromhex("0000c54c") + bytes(60)
+    device = RecorderAdapter(config, Banks(floats=block))
+    device.identify()
+    with pytest.raises(DeviceError, match="CH1") as exc:
+        device.acquire(AcquisitionRequest(channels=(1,)))
+    assert exc.value.code == "acquisition_setup_blocked"
+
+
 @pytest.mark.parametrize("option", ["unit=V", "channels=1,1", "station=0", "channels=17", "float_order=bad"])
 def test_reject_misconfiguration(option):
     with pytest.raises(DeviceError):

@@ -24,8 +24,17 @@ class Dg5504ProAdapter(ScpiAdapter):
         if operation in MODEL_QUERIES:
             self._context(channel, {})
             return text_value(self.transport.query(f"SOUR{channel}:{MODEL_QUERIES[operation]}?"))
-        if operation == "amplitude" and str(super().read("amplitude_unit", channel)).upper() != "VPP":
-            raise Unsupported("Amplitude readback requires VPP; select the unit explicitly")
+        if operation == "amplitude":
+            unit = str(super().read("amplitude_unit", channel)).upper()
+            if unit in {"DBM", "VRMS"}:
+                # HIGH and LOW are volts regardless of the front-panel amplitude unit.
+                high = number(self.transport.query(f"SOUR{channel}:VOLT:HIGH?"))
+                low = number(self.transport.query(f"SOUR{channel}:VOLT:LOW?"))
+                if high < low:
+                    raise DeviceError("DG high level below low level", "parse_error")
+                return high - low
+            if unit != "VPP":
+                raise Unsupported(f"Unknown DG amplitude unit: {unit!r}")
         return super().read(operation, channel)
 
     def validate_command(self, cmd: DeviceCommand) -> tuple[CommandSpec, dict[str, Any]]:

@@ -16,6 +16,8 @@
 
 Advanced Arb 采样率按手册限制为 1 μSa/s..1.25 GSa/s，不能把 DAC 标称采样率 2.5 GSa/s 当作该接口上限；该查询没有 MIN/MAX 形式。加载和采样率设置要求仪器已明确处于 Advanced Arb 模式；未经核实的 Advanced 模式切换不由兼容层自动执行。
 
+幅度统一显示 Vpp。仪器使用 Vpp 时直接查询幅度，使用 dBm 或 Vrms 时查询高、低电平并取电压差；读取过程保留面板单位和输出状态。
+
 ## 协议依据
 
 - [DG5000 Pro 编程手册 PGB18101-1110](https://www.rigol.com/dam/global/downloads/brochures/en/program-guide/waveform-generators/DG5000Pro_ProgrammingGuide_EN.pdf)：3.9 文件、3.10 输出、3.11 同步、3.12 信号参数、3.14 触发；表 3.59/3.61 为波形频率与电压限制。

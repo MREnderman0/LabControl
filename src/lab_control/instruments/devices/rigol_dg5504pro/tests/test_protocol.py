@@ -33,6 +33,31 @@ def test_voltage_bands(frequency, maximum):
     assert amplitude_envelope(frequency, "NOIS", 50) == (0.001, 1)
 
 
+@pytest.mark.parametrize("unit", [b"DBM", b"VRMS"])
+def test_native_amplitude_readback_in_vpp(unit):
+    device, wire = make(
+        [
+            ("SOUR3:VOLT:UNIT?", unit),
+            ("SOUR3:VOLT:HIGH?", b"+1.778280E-01"),
+            ("SOUR3:VOLT:LOW?", b"-1.778279E-01"),
+        ]
+    )
+    assert device.read("amplitude", 3) == pytest.approx(0.3556559)
+    assert len(wire.history) == 3
+
+
+def test_native_amplitude_rejects_inverted_levels():
+    device, _ = make(
+        [
+            ("SOUR1:VOLT:UNIT?", b"DBM"),
+            ("SOUR1:VOLT:HIGH?", b"-1"),
+            ("SOUR1:VOLT:LOW?", b"1"),
+        ]
+    )
+    with pytest.raises(DeviceError, match="high level below"):
+        device.read("amplitude", 1)
+
+
 def test_unknown_load_and_catalog():
     with pytest.raises(ValidationError):
         amplitude_envelope(1000, "SIN", 75)

@@ -138,7 +138,7 @@ def test_submenus_only_show_connected_categories_and_restore_after_reconnect(wor
         return [window.submenu.tabData(index) for index in range(window.submenu.count())]
 
     assert tabs("设备管理") == ["", "signal_generator"]
-    assert tabs("实时监测") == ["", "signal_generator", "power_supply"]
+    assert tabs("实时监测") == ["", "power_supply"]
 
     original_snapshots = runtime.sessions.snapshots
 
@@ -156,9 +156,12 @@ def test_submenus_only_show_connected_categories_and_restore_after_reconnect(wor
     for state in ("busy", "degraded"):
         monkeypatch.setattr(runtime.sessions, "snapshots", with_states({ids["first"]: state}))
         window.refresh()
-        assert "signal_generator" in tabs("实时监测")
+        assert "signal_generator" in tabs("设备管理")
+        assert "signal_generator" not in tabs("实时监测")
 
     window.navigate("实时监测", "signal_generator", ids["first"])
+    assert window.stack.currentWidget().selector.device_id == ids["first"]
+    assert not window.submenu.isTabVisible(window.submenu.currentIndex())
     monkeypatch.setattr(
         runtime.sessions,
         "snapshots",
@@ -179,7 +182,8 @@ def test_submenus_only_show_connected_categories_and_restore_after_reconnect(wor
         with_states({ids["first"]: "connected", ids["second"]: "connected"}),
     )
     window.refresh()
-    assert "signal_generator" in tabs("实时监测")
+    assert "signal_generator" in tabs("设备管理")
+    assert "signal_generator" not in tabs("实时监测")
 
 
 @pytest.mark.parametrize("module", ["设备管理", "实时监测"])

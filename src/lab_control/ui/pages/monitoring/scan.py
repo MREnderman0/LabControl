@@ -121,7 +121,7 @@ class ScanReadoutCard(PowerMeterReadoutCard):
         self.unit.setText(self.display_unit)
         self.value.setAccessibleName(f"CH {self.channel} · {self.value.text()} {self.display_unit}")
         if measurement and measurement.quantity == "temperature":
-            self.meta.setText("实测电阻按传感器曲线换算温度")
+            self.meta.setText("通道温度")
         elif measurement:
             self.meta.setText(
                 {"resistance": "两线电阻", "voltage": "直流电压"}.get(measurement.quantity, "仪器读数")
@@ -191,7 +191,7 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
 
     def __init__(self, controller, add_card, parent=None, *, manage_selection=True):
         super().__init__(controller, add_card, parent, manage_selection=manage_selection)
-        self.notice = QLabel("温度由实测电阻按绑定的传感器曲线换算；峰峰值使用最近 30 min 的有效温度。")
+        self.notice = QLabel("温度峰峰值使用最近 30 min 的有效温度。")
         self.notice.setObjectName("mutedText")
         self.notice.setWordWrap(True)
         self.main_layout.insertWidget(2, self.notice)

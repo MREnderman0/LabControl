@@ -119,6 +119,9 @@ class RecorderAdapter:
                 # Same field observation as int16 0x8080. Preserve the wire value in status/trace.
                 unconfirmed = unconfirmed or not math.isfinite(value) or value == UNCONFIRMED_FLOAT
                 unit = self.settings.unit
+                # A channel may disconnect between the integer and floating bank reads.
+                if unit == "°C" and value < -273.15:
+                    unconfirmed = True
                 quantity = "temperature" if unit in {"°C", "°F", "K"} else "process_value"
             else:
                 value = raw[ch - 1]

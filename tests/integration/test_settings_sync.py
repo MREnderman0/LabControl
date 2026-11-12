@@ -194,7 +194,7 @@ def test_recoverable_errors_back_off_and_unchanged_reads_do_not_flood_audit(tmp_
 
         def bad(names, channel):
             calls.append((names, channel))
-            raise DeviceError("fixture unavailable", "unsupported")
+            raise DeviceError("fixture unavailable", "acquisition_setup_required")
 
         session.adapter.read_settings = bad
         events = []
@@ -221,6 +221,40 @@ def test_recoverable_errors_back_off_and_unchanged_reads_do_not_flood_audit(tmp_
                 service.tasks[key].pending.result()
         assert not service.tasks[key].errors
         assert len(events) == 2
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_unavailable_field_does_not_starve_other_readbacks(tmp_path, partial):
+    with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
+        device = add(runtime)
+        service = SettingsSync(runtime.sessions)
+        service.enabled = True
+        service.dispatch_interval = 0
+        adapter = runtime.sessions.sessions[device].adapter
+        original = adapter.read_settings
+
+        def missing(names, channel):
+            if channel == 1 and "amplitude" in names and not partial:
+                raise DeviceError("unsupported native unit", "unsupported")
+            return tuple(
+                replace(r, value=None, error="unsupported native unit")
+                if (r.channel, r.operation) == (1, "amplitude")
+                else r
+                for r in original(names, channel)
+            )
+
+        adapter.read_settings = missing
+        for _ in range(30):
+            service.tick({s["stableDeviceId"]: s for s in runtime.sessions.snapshots()})
+            pending = service.tasks[device].pending
+            if pending:
+                try:
+                    pending.result(3)
+                except DeviceError as exc:
+                    assert exc.code == "unsupported"
+        assert set(service.tasks[device].errors) == {(1, "amplitude")}
+        assert service.status(device, ((1, "output"), (4, "amplitude")))[0] == "正常"
+        assert service.status(device, ((1, "amplitude"),))[0] == "同步异常"
 
 
 def test_monitoring_readback_is_reused_by_sync(tmp_path):
