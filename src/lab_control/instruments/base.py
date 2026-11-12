@@ -158,7 +158,8 @@ class ScpiAdapter:
 
         if not self.profile.matches_identity(identity):
             raise DeviceError(
-                f"Identity does not match {self.profile.adapter_id}: {identity.manufacturer} {identity.model}",
+                f"Expected {self.profile.manufacturer} {self.profile.models}; "
+                f"received {identity.manufacturer} {identity.model}",
                 "identity_conflict",
             )
         self.identity = identity

@@ -35,12 +35,14 @@ def frame(number=0, *, measurements=None, configuration=None):
     )
 
 
-def capture(root, batches=None, *, adapter="joinwit.jw8105", batch=None, layout_version=2, size=1):
+def capture(
+    root, batches=None, *, adapter="joinwit.jw8105", identity=IDENTITY, batch=None, layout_version=2, size=1
+):
     context = SaveContext(
         root,
         "general",
         "continuous",
-        identity=IDENTITY,
+        identity=identity,
         adapter_id=adapter,
         started_at=START,
         batch=batch,
@@ -85,6 +87,8 @@ def test_qualified_model_processing_profiles_are_registered():
         "rigol.m300": "scalar",
         "kplusk.fxe": "scalar",
         "ceyear.6362d": "frames",
+        "ceyear.4959e": "frames",
+        "rs.fspn26": "frames",
         "rigol.dho924": "frames",
         "rs.rtm3004": "frames",
     }
@@ -163,6 +167,62 @@ def test_random_frames_across_segments_and_channels(tmp_path, adapter, quantity,
             np.testing.assert_array_equal(actual["values"], expected.values)
             np.testing.assert_array_equal(actual["axis"], expected.axis)
     assert reader.info()["points"] == 5 * 56
+
+
+@pytest.mark.parametrize(
+    "adapter,maker,model,quantity,unit,axis_unit,axis,levels",
+    [
+        (
+            "rs.fspn26",
+            "Rohde&Schwarz",
+            "FSPN-26",
+            "phase_noise",
+            "dBc/Hz",
+            "Hz",
+            [10.0, 42.0, 1000.0],
+            [-103.1, -115.3, -128.5],
+        ),
+        (
+            "ceyear.4959e",
+            "Ceyear Technologies",
+            "4959E",
+            "spectrum",
+            "dBm",
+            "Hz",
+            [1.0e8, 1.001e8, 1.002e8],
+            [-80.25, -17.125, -79.75],
+        ),
+        (
+            "ceyear.4959e",
+            "Ceyear Technologies",
+            "4959E",
+            "spectrum",
+            "dBm",
+            "s",
+            [0.0, 0.05, 0.1],
+            [-42.5, -23.75, -41.75],
+        ),
+    ],
+)
+def test_analyzer_trace_replays_original_single_channel_frame(
+    tmp_path, adapter, maker, model, quantity, unit, axis_unit, axis, levels
+):
+    identity = DeviceIdentity(maker, model, "OFFLINE-FIXTURE")
+    measurement = Measurement(quantity, unit, np.array(levels), 1, np.array(axis), axis_unit)
+    batch = MeasurementBatch(identity, (measurement,), {})
+    context = capture(tmp_path, [batch], adapter=adapter, identity=identity)
+    reader = ResultReader(processed(context))
+    info = reader.info()
+    assert (info["kind"], info["frames"], info["points"]) == ("frames", 1, len(levels))
+    (actual,) = reader.frame(1)["measurements"]
+    assert (actual["channel"], actual["quantity"], actual["unit"], actual["axis_unit"]) == (
+        1,
+        quantity,
+        unit,
+        axis_unit,
+    )
+    np.testing.assert_array_equal(actual["values"], levels)
+    np.testing.assert_array_equal(actual["axis"], axis)
 
 
 @pytest.mark.parametrize("layout,npz_only", [(1, False), (2, False), (1, True)])

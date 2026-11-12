@@ -268,6 +268,7 @@ class SpectrumControls(QFrame):
             op.dirty
             for name, op in self.editors.items()
             if name not in AUTOMATIC
+            or AUTOMATIC[name] not in self.editors
             or not cast(QCheckBox, self.editors[AUTOMATIC[name]].editors["value"].input).isChecked()
         )
 
