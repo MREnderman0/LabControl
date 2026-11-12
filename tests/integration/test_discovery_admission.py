@@ -1,6 +1,7 @@
 """Shared discovery admission, with no physical transports or vendor drivers."""
 
 import threading
+import time
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -409,3 +410,24 @@ def test_failed_factory_returns_uncertain_partial_transport_to_session(lab, monk
     lab.sessions.disconnect("active")
     assert session.cleanup_handle is None and transport.closes == 2
     assert not lab.leases.owns_resources("active")
+
+
+def test_scan_queries_default_board_once_and_identifies_both_protocols(lab):
+    spellings = [
+        "TCPIP::192.0.2.21::inst0::INSTR",
+        "TCPIP0::192.0.2.21::inst0::INSTR",
+        "TCPIP::192.0.2.21::hislip0::INSTR",
+    ]
+    targets = [DiscoveryCandidate(ConnectionConfig(address), "lan", safe_scpi=True) for address in spellings]
+    queried = []
+
+    def probe(candidate):
+        queried.append(candidate.config.resource)
+        time.sleep(0.03)
+        return DeviceIdentity("Rohde&Schwarz", "FSPN-26", "TEST"), "rs.fspn26"
+
+    result = lab.scanner(targets, probe).scan().result(5)
+    assert len(queried) == len(result["items"]) == 2
+    assert {item["reason"] for item in result["items"]} == {"identified"}
+    assert len({item["device_id"] for item in result["items"]}) == 1
+    assert len(lab.inventory.all()) == 1

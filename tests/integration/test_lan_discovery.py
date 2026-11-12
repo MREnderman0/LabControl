@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from lab_control.application.config import ConnectionConfig
+from lab_control.application.config import ConnectionConfig, canonical_resource
 from lab_control.discovery.addresses import verified_connection
 from lab_control.discovery.lan import (
     LanDiscoveryProvider,
@@ -324,3 +324,60 @@ def test_twenty_assets_change_addresses_without_changing_asset_ids(inventory):
     inventory.stale("after", {"lan"})
     assert len(inventory.all()) == 20
     assert all(not verified_connection(item).aliases for item in inventory.all())
+
+
+@pytest.mark.parametrize("spelling", ["TCPIP::host::inst0::INSTR", "TCPIP0::host::INSTR", "TCPIP::host"])
+def test_default_visa_lan_address(spelling):
+    expected = canonical_resource("TCPIP0::host::inst0::INSTR")
+    assert canonical_resource(spelling) == expected
+    for other in (
+        "TCPIP1::host::inst0::INSTR",
+        "TCPIP0::other::inst0::INSTR",
+        "TCPIP::host::hislip0::INSTR",
+        "TCPIP::host::5025::SOCKET",
+    ):
+        assert canonical_resource(other) != expected
+
+
+@pytest.mark.parametrize("customized", [True, False])
+def test_restart_reconciles_only_plain_discovery_rows(inventory, customized):
+    # Persist the two records an older scanner created, with distinct stable IDs.
+    primary = candidate("192.0.2.21", limits={"amplitude": 0.2})
+    short = DiscoveryCandidate(ConnectionConfig(primary.config.resource.replace("TCPIP0", "TCPIP")), "lan")
+    legacy = inventory.merge(short, "previous", reason="deferred_possible_alias_of_active_device")
+    if customized:
+        inventory.edit(legacy["id"], display_name="Operator label")
+        legacy = inventory.by_resource(short.config.resource)
+    repo = inventory.repository
+    repo.remove_inventory(legacy["id"])
+    owner = Inventory(repo).merge(
+        primary, "verified", identity(), primary.config.adapter, reason="identified"
+    )
+    repo.save(legacy)
+
+    reopened = Inventory(repo)
+    assert len(reopened.all()) == (2 if customized else 1)
+    assert reopened.by_resource(primary.config.resource)["id"] == owner["id"]
+    row = reopened.by_resource(short.config.resource)
+    if customized:
+        assert row["id"] == legacy["id"] and row["displayName"] == "Operator label"
+    else:
+        assert row["id"] == owner["id"] and row["config"]["limits"] == {"amplitude": 0.2}
+        assert (
+            row["candidates"][short.config.resource]["candidateId"]
+            == legacy["candidates"][short.config.resource]["candidateId"]
+        )
+        assert len(Inventory(repo).all()) == 1
+
+
+def test_reassigned_visa_endpoint_retires_all_equivalent_spellings(inventory):
+    primary = candidate("192.0.2.21", limits={"amplitude": 0.1})
+    short = DiscoveryCandidate(
+        ConnectionConfig(primary.config.resource.replace("TCPIP0", "TCPIP")), "lan", safe_scpi=True
+    )
+    old = inventory.merge(primary, "first", identity(), primary.config.adapter, reason="identified")
+    inventory.merge(short, "first")
+    other = inventory.merge(short, "new", identity("REPLACED"), primary.config.adapter, reason="identified")
+    assert old["id"] != other["id"] and other["config"]["limits"] == {}
+    assert all(entry["retired"] for entry in old["candidates"].values())
+    assert inventory.by_resource(primary.config.resource)["id"] == other["id"]

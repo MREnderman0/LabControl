@@ -81,6 +81,11 @@ def canonical_resource(resource: str) -> str:
     match = socket_resource or direct_socket
     if match:
         return f"SOCKET:{match[1]}:{int(match[2])}"
+    # VISA defaults are board 0, LAN device inst0 and resource class INSTR.
+    instr = re.fullmatch(r"TCPIP(\d*)::(\[[^]]+\]|[^:]+)(?:::([^:]+))?(?:::INSTR)?", value)
+    if instr and instr[3] != "SOCKET":
+        device = "INST0" if instr[3] in (None, "INSTR") else instr[3]
+        return f"TCPIP{instr[1] or '0'}::{instr[2]}::{device}::INSTR"
     return value
 
 

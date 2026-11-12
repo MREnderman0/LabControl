@@ -35,6 +35,7 @@ class Inventory:
         self.repository = repository
         self.lock = threading.RLock()
         self.records = {item["id"]: item for item in repository.records()}
+        self._merge_legacy_visa_spellings()
         renamed = tuple(record for record in self.records.values() if _promote_display_name(record))
         if renamed:
             repository.save_many(renamed)
@@ -46,6 +47,63 @@ class Inventory:
                 candidate.pop("evidenceScanRunId", None)
             update_record_presence(record)
 
+    def _merge_legacy_visa_spellings(self) -> None:
+        """Retain the verified asset and its settings when old scans split one VISA endpoint."""
+        owners: dict[str, set[str]] = {}
+        for record in self.records.values():
+            for address, entry in record["candidates"].items():
+                if not entry.get("retired"):
+                    owners.setdefault(canonical_resource(address), set()).add(record["id"])
+
+        for record in tuple(self.records.values()):
+            if len(record.get("resources", ())) != 1 or any(
+                record.get(field)
+                for field in (
+                    "adapterId",
+                    "identity",
+                    "identityKey",
+                    "identityConflict",
+                    "slots",
+                    "displayName",
+                    "primaryResourceExplicit",
+                )
+            ):
+                continue
+            address = record["resources"][0]
+            key = canonical_resource(address)
+            entry = record["candidates"].get(address)
+            if not entry:
+                continue
+            sources = set(entry.get("sources", {})) or {entry.get("source")}
+            if not (
+                key.startswith("TCPIP")
+                and key.endswith("::INSTR")
+                and sources <= {"visa", "lan", "remembered_lan"}
+            ):
+                continue
+            other_ids = owners.get(key, set()) - {record["id"]}
+            if len(other_ids) != 1 or entry.get("retired"):
+                continue
+            target = self.records[next(iter(other_ids))]
+            if (
+                not target.get("identityKey")
+                or target.get("identityConflict")
+                or address in target["candidates"]
+            ):
+                continue
+            if not any(
+                canonical_resource(resource) == key
+                and not candidate.get("retired")
+                and candidate.get("verifiedIdentityKey") == target["identityKey"]
+                for resource, candidate in target["candidates"].items()
+            ):
+                continue
+            target["resources"].append(address)
+            target["candidates"][address] = entry
+            self.repository.save_many((target,), remove_ids=(record["id"],))
+            owners[key].discard(record["id"])
+            del self.records[record["id"]]
+
     def all(self) -> tuple[dict[str, Any], ...]:
         import copy
 
@@ -55,18 +113,16 @@ class Inventory:
     def by_resource(self, resource: str) -> dict[str, Any] | None:
         normalized = canonical_resource(resource)
         with self.lock:
-            return next(
-                (
-                    item
-                    for item in self.records.values()
-                    if any(
-                        canonical_resource(res) == normalized
-                        and not item["candidates"].get(res, {}).get("retired")
-                        for res in item["resources"]
-                    )
-                ),
-                None,
-            )
+            fallback = None
+            for item in self.records.values():
+                for address in item["resources"]:
+                    if item["candidates"].get(address, {}).get("retired"):
+                        continue
+                    if address == resource:
+                        return item
+                    if fallback is None and canonical_resource(address) == normalized:
+                        fallback = item
+            return fallback
 
     def by_stable_id(self, usb_instance_id: str) -> dict[str, Any] | None:
         """Find a serial device by its USB bridge identity, independent of COM."""
@@ -194,9 +250,12 @@ class Inventory:
                 and reason == "identified"
             ):
                 # DHCP reuse does not transfer ownership, limits or historical data.
-                existing["candidates"][resource].update(
-                    retired=True, presenceState="unreachable", probeReason="address_reassigned"
-                )
+                endpoint = canonical_resource(resource)
+                for address, entry in existing["candidates"].items():
+                    if canonical_resource(address) == endpoint:
+                        entry.update(
+                            retired=True, presenceState="unreachable", probeReason="address_reassigned"
+                        )
                 update_record_presence(existing)
                 self.repository.save(existing)
                 existing = None

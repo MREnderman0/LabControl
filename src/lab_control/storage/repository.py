@@ -73,7 +73,7 @@ class Repository:
     def save(self, record: dict[str, Any]) -> None:
         self.save_many((record,))
 
-    def save_many(self, records: tuple[dict[str, Any], ...]) -> None:
+    def save_many(self, records: tuple[dict[str, Any], ...], *, remove_ids: tuple[str, ...] = ()) -> None:
         """Commit related inventory changes together, rolling back every row on failure."""
         rows = [(record["id"], json.dumps(jsonable(record), ensure_ascii=False)) for record in records]
         with self.lock, self.db:
@@ -81,6 +81,8 @@ class Repository:
                 "INSERT OR REPLACE INTO inventory VALUES (?, ?)",
                 rows,
             )
+            if remove_ids:
+                self.db.executemany("DELETE FROM inventory WHERE id = ?", ((key,) for key in remove_ids))
 
     def scan(self, record: dict[str, Any]) -> None:
         with self.lock, self.db:

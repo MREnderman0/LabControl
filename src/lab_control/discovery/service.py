@@ -354,27 +354,25 @@ class DiscoveryService:
         # Mock candidates remain serial because their fixture adapters share a
         # process-global simulation state; real resources are endpoint-locked.
         results: dict[int, dict[str, Any]] = {}
-        parallel = [
-            (index, candidate)
-            for index, candidate in enumerate(candidates)
-            if candidate.config.transport != "mock"
-        ]
-        serial = [
-            (index, candidate)
-            for index, candidate in enumerate(candidates)
-            if candidate.config.transport == "mock"
-        ]
-        for index, candidate in serial:
-            results[index] = process(candidate)
-        if parallel:
+        groups: dict[str | int, list[tuple[int, DiscoveryCandidate]]] = {}
+        for index, candidate in enumerate(candidates):
+            if candidate.config.transport == "mock":
+                results[index] = process(candidate)
+                continue
+            # The host lease is shared by VXI-11 and HiSLIP. Schedule them in sequence
+            # so this scan never defers one protocol behind its own probe of the other.
+            host = network_host(candidate.config.resource).rstrip(".")
+            groups.setdefault(host or index, []).append((index, candidate))
+
+        def process_group(group: list[tuple[int, DiscoveryCandidate]]) -> list[tuple[int, dict[str, Any]]]:
+            return [(index, process(candidate)) for index, candidate in group]
+
+        if groups:
             with ThreadPoolExecutor(
-                max_workers=min(self.probe_workers, len(parallel)), thread_name_prefix="probe"
+                max_workers=min(self.probe_workers, len(groups)), thread_name_prefix="probe"
             ) as probe_executor:
-                probe_futures = {
-                    probe_executor.submit(process, candidate): index for index, candidate in parallel
-                }
-                for probe_future in as_completed(probe_futures):
-                    results[probe_futures[probe_future]] = probe_future.result()
+                for completed in probe_executor.map(process_group, groups.values()):
+                    results.update(completed)
         report["items"] = [results[index] for index in range(len(candidates))]
         if not preserve_presence:
             self.inventory.stale(scan_id, successful - {"configured"}, cancelled=self.cancelled.is_set())
