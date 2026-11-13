@@ -6,6 +6,8 @@ from ..adapter import TRACES, WINDOWS
 from .records import publish_report
 
 EXTRA_QUERIES = (
+    "STAT:QUES:PNO:COND?",
+    "STAT:QUES:FREQ:COND?",
     "INST:SEL?",
     "CONF:PNO:MEAS?",
     "LAY:CAT?",

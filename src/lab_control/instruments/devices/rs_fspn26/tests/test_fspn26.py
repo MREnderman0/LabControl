@@ -25,6 +25,8 @@ class TraceInstrument:
             "TRAC3:POIN? TRACE1": b"3",
             "CONF:PNO:MEAS?": b"PNO",
             "FORM?": b"ASC,0",
+            "STAT:QUES:PNO:COND?": b"0",
+            "STAT:QUES:FREQ:COND?": b"0",
             "TRAC3? TRACE1": b"10,-103.1,42,-115.3,1000,-128.5",
         }
         self.history = []
@@ -114,3 +116,21 @@ def test_ineligible_first_trace_is_skipped(first_type, points):
     batch = adapter(transport).acquire(AcquisitionRequest("trace"))
     assert batch.measurements[0].metadata["trace"] == 2
     assert "TRAC3? TRACE1" not in transport.history
+
+
+@pytest.mark.parametrize(("phase", "reference"), [(2, 0), (0, 256), (2, 256), (0, 0)])
+def test_empty_curve_reports_current_conditions(phase, reference):
+    transport = TraceInstrument()
+    transport.replies.update(
+        {
+            "TRAC3:POIN? TRACE1": b"0",
+            "STAT:QUES:PNO:COND?": str(phase).encode(),
+            "STAT:QUES:FREQ:COND?": str(reference).encode(),
+        }
+    )
+    with pytest.raises(DeviceError) as exc:
+        adapter(transport).acquire(AcquisitionRequest("trace"))
+    assert ("未找到载波" in str(exc.value)) == bool(phase)
+    assert ("外部参考异常" in str(exc.value)) == bool(reference)
+    assert "窗口 3 迹线 1" in str(exc.value)
+    assert all("?" in command for command in transport.history)

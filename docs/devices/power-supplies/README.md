@@ -5,6 +5,7 @@
 | 型号 | 接入路线 | 文档 |
 | --- | --- | --- |
 | Keithley 2231A-30-3 | 2231A-001 USB 适配器 / 虚拟串口 | [型号说明](keithley-2231a.md) |
+| Keysight E36313A | LAN / VXI-11 | [型号说明](keysight-e36313a.md) |
 | Siglent SPD4306X | USB / LAN VISA / 已配置 TCP Socket | [型号说明](spd4306x.md) |
 | SIGLENT SPS5000X 系列 | USB-TMC / LAN VXI-11 / TCP Socket 5025 | [型号说明](sps5000x.md) |
 | ITECH IT6322 | RS-232 / 已安装 USB 或 GPIB 接口 | [型号说明](it6322.md) |

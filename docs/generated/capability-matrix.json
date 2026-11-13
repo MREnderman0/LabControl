@@ -7348,6 +7348,204 @@
       ]
     },
     {
+      "adapter_id": "keysight.e36313a",
+      "model": "Keysight E36313A",
+      "category": "power_supply",
+      "control_page": "实时监测 / 电源",
+      "channels": [
+        1,
+        2,
+        3
+      ],
+      "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+      "revision": "E36300 Series Programming Guide, CURRent / MEASure / OUTPut / VOLTage",
+      "acquisition": "power",
+      "metric_profiles": [],
+      "channel_limits": {
+        "1": {
+          "voltage": 6
+        },
+        "2": {
+          "current": 2
+        },
+        "3": {
+          "current": 2
+        }
+      },
+      "hardware_passed": false,
+      "operations": [
+        {
+          "name": "voltage",
+          "parameters": {
+            "value": {
+              "kind": "number",
+              "unit": "V",
+              "minimum": 0,
+              "maximum": 25,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": true,
+          "writable": true,
+          "requires_confirmation": false,
+          "channel_scoped": true,
+          "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+          "section": "VOLT",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": true,
+          "hardware_passed": false,
+          "ui_label": "电压设定",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [
+              "VOLT {value},(@{ch})"
+            ],
+            "query": "VOLT? (@{ch})",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "current",
+          "parameters": {
+            "value": {
+              "kind": "number",
+              "unit": "A",
+              "minimum": 0,
+              "maximum": 10,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": true,
+          "writable": true,
+          "requires_confirmation": false,
+          "channel_scoped": true,
+          "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+          "section": "CURR",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "电流设定",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [
+              "CURR {value},(@{ch})"
+            ],
+            "query": "CURR? (@{ch})",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "output",
+          "parameters": {
+            "value": {
+              "kind": "boolean",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": true,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": true,
+          "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+          "section": "OUTP",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "通道输出",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [
+              "OUTP {value},(@{ch})"
+            ],
+            "query": "OUTP? (@{ch})",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "measured_voltage",
+          "parameters": {},
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": true,
+          "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+          "section": "MEAS:VOLT? (@{ch})",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "实测电压",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [],
+            "query": "MEAS:VOLT? (@{ch})",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "measured_current",
+          "parameters": {},
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": true,
+          "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+          "section": "MEAS:CURR? (@{ch})",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "实测电流",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [],
+            "query": "MEAS:CURR? (@{ch})",
+            "custom_encoder": false
+          }
+        }
+      ]
+    },
+    {
       "adapter_id": "siglent.spd4306x",
       "model": "Siglent SPD4306X",
       "category": "power_supply",

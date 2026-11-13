@@ -22,6 +22,7 @@ DEVICE_MODULES = (
     "lab_control.instruments.devices.siglent_sdg6032x",
     "lab_control.instruments.devices.siglent_sdg6032xe",
     "lab_control.instruments.devices.keithley_2231a",
+    "lab_control.instruments.devices.keysight_e36313a",
     "lab_control.instruments.devices.siglent_spd4306x",
     "lab_control.instruments.devices.siglent_sps5000x",
     "lab_control.instruments.devices.itech_it6322",

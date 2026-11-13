@@ -1,0 +1,191 @@
+{
+  "fixture_origin": "Initial E36313A capability contract from the Keysight E36300 Series Programming Guide, reviewed against the model and channel ratings.",
+  "adapter": "keysight.e36313a",
+  "capabilities": {
+    "category": "power_supply",
+    "channels": [
+      1,
+      2,
+      3
+    ],
+    "operations": [
+      {
+        "name": "voltage",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "V",
+            "minimum": 0,
+            "maximum": 25,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+        "section": "VOLT",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "current",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "A",
+            "minimum": 0,
+            "maximum": 10,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+        "section": "CURR",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "output",
+        "parameters": {
+          "value": {
+            "kind": "boolean",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+        "section": "OUTP",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "measured_voltage",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+        "section": "MEAS:VOLT? (@{ch})",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "measured_current",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+        "section": "MEAS:CURR? (@{ch})",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "keysight.e36313a",
+    "manufacturer": [
+      "Keysight Technologies"
+    ],
+    "models": [
+      "E36313A"
+    ],
+    "category": "power_supply",
+    "channels": [
+      1,
+      2,
+      3
+    ],
+    "source": "https://www.keysight.com/us/en/assets/9018-04577/programming-guides/9018-04577.pdf",
+    "revision": "E36300 Series Programming Guide, CURRent / MEASure / OUTPut / VOLTage",
+    "status": [
+      "voltage",
+      "current",
+      "output"
+    ],
+    "identity_query": "*IDN?",
+    "error_query": "SYST:ERR?",
+    "acquisition": "power",
+    "channel_limits": {
+      "1": {
+        "voltage": 6
+      },
+      "2": {
+        "current": 2
+      },
+      "3": {
+        "current": 2
+      }
+    }
+  },
+  "commands": {
+    "voltage": {
+      "writes": [
+        "VOLT {value},(@{ch})"
+      ],
+      "query": "VOLT? (@{ch})",
+      "select": [],
+      "compare": true
+    },
+    "current": {
+      "writes": [
+        "CURR {value},(@{ch})"
+      ],
+      "query": "CURR? (@{ch})",
+      "select": [],
+      "compare": true
+    },
+    "output": {
+      "writes": [
+        "OUTP {value},(@{ch})"
+      ],
+      "query": "OUTP? (@{ch})",
+      "select": [],
+      "compare": true
+    },
+    "measured_voltage": {
+      "writes": [],
+      "query": "MEAS:VOLT? (@{ch})",
+      "select": [],
+      "compare": false
+    },
+    "measured_current": {
+      "writes": [],
+      "query": "MEAS:CURR? (@{ch})",
+      "select": [],
+      "compare": false
+    }
+  }
+}

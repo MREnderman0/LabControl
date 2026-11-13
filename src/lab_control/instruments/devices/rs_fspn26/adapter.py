@@ -108,7 +108,19 @@ class Fspn26Adapter(ScpiAdapter):
                     )
                 return selected, window, display, trace, points, transfer
         if empty:
-            raise DeviceError("已启用的相噪曲线均为 0 点：" + "、".join(empty), "waveform_unavailable")
+            detail = "已启用的相噪曲线均为 0 点：" + "、".join(empty)
+            for query, mask, reason in (
+                ("STAT:QUES:PNO:COND?", 2, "仪器未找到载波，请检查 RF INPUT 的待测信号"),
+                ("STAT:QUES:FREQ:COND?", 256, "仪器报告外部参考异常，请检查参考输入"),
+            ):
+                try:
+                    condition = int(self.query_token(query))
+                except (ValueError, DeviceError, OSError) as exc:
+                    detail += f"。状态查询 {query} 失败（{exc}）"
+                    break
+                if condition & mask:
+                    detail += "。" + reason
+            raise DeviceError(detail, "waveform_unavailable")
         raise DeviceError("请在面板显示 L(f) 单边带相噪图并启用 PN 迹线。", "acquisition_setup_blocked")
 
     def acquire_measurements(self, request):

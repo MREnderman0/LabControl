@@ -88,27 +88,37 @@ def record_trace(batch: MeasurementBatch, folder: Path) -> list[dict[str, Any]]:
     (saved,) = read_frames(Path(segment).resolve())
     traces = []
     for sample, stored in zip(batch.measurements, saved["measurements"], strict=True):
-        x, y = np.asarray(sample.axis), np.asarray(sample.values)
+        y = np.asarray(sample.values)
+        x = None if sample.axis is None else np.asarray(sample.axis)
+        if x is None:
+            axis_matches = stored["axis"] is None and y.size == 1
+        else:
+            axis_matches = (
+                x.ndim == 1
+                and x.size == y.size
+                and bool(np.isfinite(x).all())
+                and np.array_equal(stored["axis"], x)
+            )
         if not (
-            x.ndim == y.ndim == 1
-            and x.size == y.size
-            and x.size > 0
-            and np.isfinite(x).all()
+            y.ndim == 1
+            and y.size > 0
             and np.isfinite(y).all()
-            and np.array_equal(stored["axis"], x)
+            and axis_matches
             and np.array_equal(stored["values"], y)
             and stored["unit"] == sample.unit
+            and stored["channel"] == sample.channel
+            and stored["quantity"] == sample.quantity
             and stored["axis_unit"] == sample.axis_unit
         ):
-            raise DeviceError("Recorded trace does not match the instrument frame", "readback_mismatch")
+            raise DeviceError("Recorded sample does not match the instrument frame", "readback_mismatch")
         traces.append(
             dict(
                 channel=sample.channel,
                 quantity=sample.quantity,
-                points=x.size,
+                points=int(y.size),
                 axis_unit=sample.axis_unit,
-                x_first=float(x[0]),
-                x_last=float(x[-1]),
+                x_first=float(x[0]) if x is not None else None,
+                x_last=float(x[-1]) if x is not None else None,
                 unit=sample.unit,
                 minimum=float(y.min()),
                 maximum=float(y.max()),
