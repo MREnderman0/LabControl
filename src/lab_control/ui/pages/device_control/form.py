@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import math
+from collections import deque
 from typing import Any, Callable
 
 import shiboken6
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTime
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLayout,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -65,9 +68,11 @@ class OperationEditor(QFrame):
         follow_readback: bool = True,
         workspace_mode: str | None = None,
         status_only: bool = False,
+        log_result: Callable[[str, str, str], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.compact = compact
+        self.log_result = log_result
         self.status_only = status_only
         self.show_actions = actions
         # Some devices expose a deliberately rounded or delayed readback.  Their
@@ -110,6 +115,11 @@ class OperationEditor(QFrame):
         if not compact and not self.direct_action:
             heading.addWidget(QLabel(f"CH {self.channel}" if cap.channel_scoped else "整机"))
         layout.addLayout(heading)
+        if self.log_result:
+            title.hide()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            self.setObjectName("directAction")
         form = QFormLayout()
         fields = {} if status_only else cap.parameters
         for name, parameter in fields.items():
@@ -155,7 +165,7 @@ class OperationEditor(QFrame):
         if arrays:
             self.array_editor = ArrayEditor(arrays)
             layout.addWidget(self.array_editor)
-        self.readback = QLabel("当前值：尚未读取", self)
+        self.readback = QLabel("" if self.log_result else "当前值：尚未读取", self)
         if self.data_only:
             self.readback.setText("在上方选择对应数据项目，使用“单次读取”或“开始监测”获取数据。")
         self.readback.setWordWrap(True)
@@ -176,6 +186,8 @@ class OperationEditor(QFrame):
         self.read_button.setVisible(not self.data_only and (cap.readable or bool(fields)))
         self.read_button.clicked.connect(self.read)
         self.apply_button = QPushButton("应用" if cap.parameters else "执行", self)
+        if self.log_result:
+            self.apply_button.setText(OPERATION_LABELS.get(cap.name, cap.name))
         self.apply_button.setObjectName("primaryButton")
         self.apply_button.clicked.connect(self.apply)
         self.apply_button.setVisible(cap.writable)
@@ -473,7 +485,8 @@ class OperationEditor(QFrame):
                 confirmed = True
             self.busy = True
             self._submitted_revision = self._edit_revision
-            self.status.setText("发送中…" if self.direct_action else "等待当前读取完成 / 正在应用…")
+            if not self.log_result:
+                self.status.setText("发送中…" if self.direct_action else "等待当前读取完成 / 正在应用…")
             self.refresh_enabled()
             command = DeviceCommand(self.cap.name, values, self.channel, confirmed)
             if self.workspace_mode is None:
@@ -486,6 +499,12 @@ class OperationEditor(QFrame):
             self.failed(exc)
 
     def applied(self, result) -> None:
+        if self.log_result:
+            self.log_result(self.device_id, self.cap.name, result.user_message or "发送结果未知")
+            if shiboken6.isValid(self):
+                self.busy = False
+                self.refresh_enabled()
+            return
         if not shiboken6.isValid(self):
             return
         self.busy = False
@@ -532,6 +551,15 @@ class OperationEditor(QFrame):
         self.refresh_enabled()
 
     def failed(self, error: Exception) -> None:
+        if self.log_result:
+            message = (
+                "设备忙，请稍后再试" if getattr(error, "code", "") == "task_busy" else "操作失败，请检查连接"
+            )
+            self.log_result(self.device_id, self.cap.name, message)
+            if shiboken6.isValid(self):
+                self.busy = False
+                self.refresh_enabled()
+            return
         if not shiboken6.isValid(self):
             return
         self.busy = False
@@ -566,10 +594,32 @@ class ControlForm(QWidget):
         controller.refreshed.connect(self.show_snapshot_status)
         self.tabs = QTabWidget()
         self.tabs.currentChanged.connect(self.read_visible)
-        layout.addWidget(self.tabs)
+        layout.addWidget(self.tabs, 1)
+        self.log_title = QLabel("操作日志")
+        self.log_title.setObjectName("spectrumChartTitle")
+        self.action_log = QPlainTextEdit()
+        self.action_log.setReadOnly(True)
+        self.action_log.setAccessibleName("操作日志")
+        self.action_log.setPlaceholderText("暂无操作")
+        self.action_log.setMaximumBlockCount(200)
+        self.action_log.setMinimumHeight(95)
+        self.log_title.hide()
+        self.action_log.hide()
+        layout.addWidget(self.log_title)
+        layout.addWidget(self.action_log, 1)
+        self.log_history: dict[str, deque[str]] = {}
         self.groups: list[list[str]] = []
         self._operation_access: tuple[tuple[str, bool], ...] = ()
         controller.refreshed.connect(self.refresh_access)
+
+    def append_action_result(self, device_id: str, operation: str, message: str) -> None:
+        if not shiboken6.isValid(self):
+            return
+        time_text = QTime.currentTime().toString("HH:mm:ss")
+        line = f"{time_text}   {OPERATION_LABELS.get(operation, operation)}   ·   {message}"
+        self.log_history.setdefault(device_id, deque(maxlen=self.action_log.maximumBlockCount())).append(line)
+        if self.device_id == device_id:
+            self.action_log.appendPlainText(line)
 
     def show_snapshot_status(self) -> None:
         self.refresh_button.setEnabled(
@@ -620,6 +670,12 @@ class ControlForm(QWidget):
         fixed_actions = bool(direct_operations) and all(
             not cap.parameters and (not cap.writable or cap.name in direct_operations) for cap in operations
         )
+        self.log_title.setVisible(fixed_actions)
+        self.action_log.setVisible(fixed_actions)
+        if fixed_actions:
+            self.action_log.setPlainText("\n".join(self.log_history.get(device_id, ())))
+            scrollbar = self.action_log.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
         self.refresh_button.setVisible(not fixed_actions)
         self.snapshot_status.setVisible(not fixed_actions)
         self.tabs.blockSignals(True)
@@ -641,12 +697,25 @@ class ControlForm(QWidget):
                 scroll.setWidget(body)
                 layouts.append(group_layout)
                 self.tabs.addTab(scroll, title)
+            buttons = QGridLayout() if fixed_actions else None
+            if buttons is not None:
+                layouts[0].addLayout(buttons)
             for cap in operations:
                 group = 2 if not cap.writable else 0 if cap.name in COMMON else 1
                 editor = OperationEditor(
-                    self.controller, device_id, cap, channel, status_only=not cap.writable
+                    self.controller,
+                    device_id,
+                    cap,
+                    channel,
+                    status_only=not cap.writable,
+                    log_result=self.append_action_result if buttons is not None and cap.writable else None,
                 )
-                layouts[group].addWidget(editor)
+                if buttons is not None and cap.writable:
+                    group = 0
+                    index = buttons.count()
+                    buttons.addWidget(editor, index // 2, index % 2)
+                else:
+                    layouts[group].addWidget(editor)
                 self.editors[cap.name] = editor
                 self.groups[group].append(cap.name)
             for index, group_layout in enumerate(layouts):

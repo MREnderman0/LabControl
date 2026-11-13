@@ -56,12 +56,16 @@ def test_manual_board_gui_only_offers_matching_bridge_and_never_sends_automatica
             assert page.form.refresh_button.isHidden() and page.form.snapshot_status.isHidden()
             assert "output_switch" not in window._submenu_categories("实时监测")
             assert not page.go_monitor.isVisible() and not manager.handles
+            log = page.form.action_log
+            assert log.isVisible() and not log.toPlainText()
             editor = page.form.editors["ch4_on"]
+            assert editor.apply_button.text() == "选择 RF4"
             assert editor.apply_button.isEnabled() and not editor.read_button.isVisible()
             monkeypatch.setattr(QMessageBox, "question", lambda *args: pytest.fail("unexpected confirmation"))
             manager.next_ack = b"rst:0x1 (POWERON_RESET)\r\nload:0x40078000\r\n"
             editor.apply_button.click()
-            qtbot.waitUntil(lambda: editor.status.text() == "已发送")
+            qtbot.waitUntil(lambda: log.toPlainText().endswith("选择 RF4   ·   已发送"))
+            assert editor.status.isHidden()
             assert editor.readback.isHidden() and not editor.readback.text()
             page.form.tabs.setCurrentIndex(2)
             diag = page.form.editors["switch_board_serial_status"]
@@ -72,7 +76,14 @@ def test_manual_board_gui_only_offers_matching_bridge_and_never_sends_automatica
             qtbot.waitUntil(editor.apply_button.isEnabled)
             manager.handles[0].reply = "RF3已打开\r\n".encode()
             editor.apply_button.click()
-            qtbot.waitUntil(lambda: editor.status.text() == "RF3已打开")
+            qtbot.waitUntil(lambda: log.toPlainText().endswith("选择 RF3   ·   RF3已打开"))
+            lines = log.toPlainText().splitlines()
+            assert len(lines) == 2 and lines[0].endswith("选择 RF4   ·   已发送")
+            assert editor.status.isHidden()
+            assert "POWERON_RESET" not in log.toPlainText()
+            page.form.set_device("")
+            page.form.set_device(device_id)
+            assert log.toPlainText().splitlines() == lines
             assert editor.readback.isHidden() and not editor.readback.text()
             assert manager.handles[0].writes == [
                 b"ch4_on\n",
