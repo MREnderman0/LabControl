@@ -411,7 +411,7 @@ class OutputControl(QWidget):
         self.state = QLabel()
         self.state.setObjectName("outputState")
         self.state.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        self.button = QPushButton("输出控制")
+        self.button = QPushButton("输出控制", self)
         self.button.setObjectName("sourceOutputButton" if embedded else "")
         self.button.setProperty("buttonSize", "dialog")
         self.button.clicked.connect(self.toggle)
