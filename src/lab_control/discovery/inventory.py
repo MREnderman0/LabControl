@@ -3,10 +3,16 @@ from __future__ import annotations
 import threading
 from copy import deepcopy
 from dataclasses import asdict, replace
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
-from lab_control.discovery.addresses import follow_verified_address, network_host, remember_identity
+from lab_control.discovery.addresses import (
+    can_recheck_network_conflict,
+    follow_verified_address,
+    identity_conflict_message,
+    network_host,
+    remember_identity,
+)
 from lab_control.discovery.presence import local_enumeration, update_record_presence
 from lab_control.discovery.types import DiscoveryCandidate
 from lab_control.domain.connections import ConnectionConfig, canonical_resource
@@ -412,7 +418,7 @@ class Inventory:
                 )
             if identity and not conflict:
                 record["identity"], record["identityKey"] = jsonable(identity), identity.key
-                if identity.key:
+                if identity.key and reason != "cached_active_session":
                     remember_identity(record, resource, identity, scan_id)
                 if reason == "identified":
                     follow_verified_address(record, resource, identity, candidate.config)
@@ -590,7 +596,7 @@ class Inventory:
                 if not network_host(resource):
                     raise DeviceError("Address following requires a LAN resource", "invalid_parameter")
                 if record.get("identityConflict") or record.get("discoveryState") == "conflict":
-                    raise DeviceError("Resolve the asset identity conflict first", "identity_conflict")
+                    raise DeviceError(identity_conflict_message(record), "identity_conflict")
                 if (
                     not serial
                     or not record.get("identityKey")
@@ -611,6 +617,80 @@ class Inventory:
             record["config"] = config
             record["primaryResourceExplicit"] = not follow_address
             self.repository.save(record)
+
+    def reconcile_network_conflicts(
+        self, scan_id: str, cancelled: Callable[[], bool], mismatches: dict[str, str]
+    ) -> None:
+        from lab_control.discovery.lan import conflict_peer_macs
+
+        for snapshot in self.all():
+            if not can_recheck_network_conflict(snapshot):
+                continue
+            key = snapshot["identityKey"]
+            peers = {
+                network_host(address)
+                for address, entry in snapshot["candidates"].items()
+                if entry.get("verifiedIdentityKey") == key
+                and not entry.get("retired")
+                and network_host(address)
+            }
+            live = [
+                address
+                for address, entry in snapshot["candidates"].items()
+                if network_host(address) in peers
+                and entry.get("verifiedIdentityKey") == key
+                and entry.get("verifiedScanRunId") == scan_id
+                and entry.get("probeReason") == "identified"
+                and not entry.get("retired")
+            ]
+            hosts = {network_host(address) for address in live}
+            macs = {}
+            if len(hosts) > 1:
+                detail = "本轮在多个地址读到相同身份：" + "、".join(sorted(hosts))
+            elif not hosts:
+                detail = "本轮未从候选地址读到匹配的型号和序列号"
+            else:
+                host = next(iter(hosts))
+                macs = conflict_peer_macs(peers)
+                other = sorted(peer for peer in peers - {host} if macs.get(peer))
+                if any(macs.get(peer) is None for peer in peers) or not macs.get(host):
+                    detail = "同一物理网段的网卡地址证据不足，未确认先前地址已离线"
+                elif macs[host] != snapshot["dhcpBinding"]["mac"]:
+                    detail = f"{host} 返回的网卡地址 {macs[host]} 与资产绑定 {snapshot['dhcpBinding']['mac']} 不一致"
+                elif other:
+                    detail = f"{host} 返回了匹配身份，历史地址 {'、'.join(other)} 仍在线"
+                else:
+                    detail = ""
+            if key in mismatches:
+                detail = mismatches[key]
+            with self.lock:
+                record = self.records[snapshot["id"]]
+                # The probes above did not hold the inventory lock over network I/O.
+                if record != snapshot or cancelled():
+                    continue
+                if detail:
+                    record["identityConflict"]["recheckDetail"] = detail
+                    record["identityConflict"]["recheckScanRunId"] = scan_id
+                    self.repository.save(record)
+                    continue
+                previous = record["config"]["resource"]
+                address = previous if previous in live else sorted(live)[0]
+                config = ConnectionConfig(**record["candidates"][address]["config"])
+                del record["identityConflict"]
+                follow_verified_address(record, address, DeviceIdentity(**record["identity"]), config)
+                record.update(
+                    discoveryState="identified", probeReason="identified", lastError="", probeErrorCode=""
+                )
+                update_record_presence(record)
+                self.repository.save(record)
+                self.repository.audit(
+                    "network_identity_reconciled",
+                    scan_id=scan_id,
+                    device_id=record["id"],
+                    resource=address,
+                    previous_resource=previous,
+                    peer_macs=macs,
+                )
 
     def stale(self, scan_id: str, successful_sources: set[str], *, cancelled: bool = False) -> None:
         with self.lock:

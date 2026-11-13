@@ -21,8 +21,9 @@ from PySide6.QtWidgets import (
 from lab_control.application.bulk_connection import device_label
 from lab_control.application.catalog import instrument_category, surface_applicable
 from lab_control.application.controls import CATEGORY_LABELS
+from lab_control.discovery.addresses import identity_conflict_message
 from lab_control.discovery.presence import is_current, presence_label
-from lab_control.instruments.registry import requires_manual_connection
+from lab_control.instruments.registry import DEVICE_DEFINITIONS, requires_manual_connection
 from lab_control.ui.controller import (
     background_read_only,
     display_connection_state,
@@ -83,10 +84,14 @@ class WorkspaceOverview:
         window.address_list_button = QPushButton("地址列表")
         window.address_list_button.clicked.connect(window.show_static_addresses)
         toolbar.addWidget(window.address_list_button)
-        if window.runtime.hardware and requires_manual_connection("custom.optical_comb_pump"):
-            manual_pump = QPushButton("手动连接泵浦")
-            manual_pump.clicked.connect(lambda: window.show_manual_serial("custom.optical_comb_pump"))
-            toolbar.addWidget(manual_pump)
+        if window.runtime.hardware:
+            for definition in DEVICE_DEFINITIONS.values():
+                if definition.manual_connection_only:
+                    button = QPushButton(definition.manual_connection_label)
+                    button.clicked.connect(
+                        lambda _, key=definition.adapter_id: window.show_manual_serial(key)
+                    )
+                    toolbar.addWidget(button)
         window.device_list_button = QPushButton("设备列表")
         window.device_list_button.clicked.connect(lambda: window.open_category(""))
         toolbar.addWidget(window.device_list_button)
@@ -703,7 +708,9 @@ class WorkspaceOverview:
                     "enumeration_unconfirmed": "枚举尚未确认",
                     "address_reassigned": "地址已分配给其他设备",
                 }.get(probe, probe or "尚未确认"),
-                "error": str(state.get("lastError") or record.get("lastError") or "无"),
+                "error": identity_conflict_message(record)
+                if record.get("identityConflict") or record["discoveryState"] == "conflict"
+                else str(state.get("lastError") or record.get("lastError") or "无"),
                 "notice": str(state.get("acquisitionPreparation", {}).get("message", "")),
                 "readback": json.dumps(state["lastStatus"], ensure_ascii=False, indent=2)
                 if state.get("lastStatus")

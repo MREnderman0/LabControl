@@ -677,3 +677,54 @@ def test_png_can_be_cancelled_between_raster_batches(qapp, tmp_path):
     with pytest.raises(ProcessingCancelled):
         export_figure(path, [("CH 1", x, y)], "X", "Y", check_cancel=cancel)
     assert not path.exists()
+
+
+@pytest.mark.parametrize(
+    ("adapter", "model", "unit", "metadata", "expected"),
+    [
+        ("rs.fph", "FPH", "Hz", {}, "频率"),
+        ("keysight.n9030a", "N9030A", "Hz", {}, "频率"),
+        ("ceyear.4959e", "4959E", "index", {}, "样本序号"),
+        (
+            "ceyear.4959e",
+            "4959E",
+            "index",
+            {"axis_kind": "transfer_sample_index"},
+            "传输样本序号（频率未核实）",
+        ),
+    ],
+)
+def test_radio_spectrum_history_uses_saved_axis(
+    qtbot, service, tmp_path, adapter, model, unit, metadata, expected
+):
+    context = SaveContext(
+        tmp_path / "data",
+        "general",
+        "continuous",
+        identity=DeviceIdentity("fixture", model, "UI-FIXTURE"),
+        adapter_id=adapter,
+    )
+    context.prepare()
+    axis, values = np.arange(4), np.array([-30.0, -25.0, -21.0, -17.0])
+    writer = SegmentWriter(context.raw_folder)
+    try:
+        writer.append(
+            1,
+            MeasurementBatch(
+                context.identity,
+                (Measurement("spectrum", "dBm", values, 1, axis, unit, metadata=metadata),),
+                {},
+            ),
+        )
+    finally:
+        writer.close()
+    atomic_json(
+        context.raw_folder / "summary.json",
+        {"committed": 1, "binary_done": True, "analysis_state": "complete"},
+    )
+    viewer = open_view(qtbot, service, context)
+    qtbot.waitUntil(lambda: settled(viewer))
+    assert viewer.group.currentText() == "频谱 · dBm"
+    assert viewer.plot.getAxis("bottom").labelText == expected
+    np.testing.assert_array_equal(viewer.plot_data[0][1], axis)
+    np.testing.assert_array_equal(viewer.plot_data[0][2], values)

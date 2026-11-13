@@ -90,6 +90,8 @@ def test_qualified_model_processing_profiles_are_registered():
         "ceyear.6362d": "frames",
         "ceyear.4959e": "frames",
         "rs.fspn26": "frames",
+        "keysight.n9030a": "frames",
+        "rs.fph": "frames",
         "rigol.dho924": "frames",
         "rs.rtm3004": "frames",
     }

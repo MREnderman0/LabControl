@@ -1,0 +1,5 @@
+{
+  "operation": "ch3_on",
+  "requests": {"dc_on": "44 43 2d 6f 6e", "dc_off": "44 43 2d 6f 66 66", "ch3_on": "43 48 33 2d 6f 6e", "ch4_on": "43 48 34 2d 6f 6e"},
+  "sample_rx_hex": "4f 4b 0d 0a ff"
+}

@@ -156,7 +156,11 @@ class LivePlot(QWidget):
             else:
                 x, y = np.asarray(measurement.axis), values
                 axis_unit = measurement.axis_unit
-                axis_label = {"s": "时间", "Hz": "频率", "nm": "波长"}.get(axis_unit, "坐标")
+                axis_label = {"s": "时间", "Hz": "频率", "nm": "波长", "index": "样本序号"}.get(
+                    axis_unit, "坐标"
+                )
+                if measurement.metadata.get("axis_kind") == "transfer_sample_index":
+                    axis_label = "传输样本序号（频率未核实）"
             if key not in self.curves:
                 color = ("#e3a252", "#69c9d4", "#b5d979", "#cda8e8")[(measurement.channel - 1) % 4]
                 curve = self.plot.plot(pen=pg.mkPen(color, width=1), name=f"CH {measurement.channel}")

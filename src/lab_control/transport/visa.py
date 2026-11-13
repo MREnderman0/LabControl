@@ -384,3 +384,20 @@ class VisaTransport:
                 self.handle.read_termination = old
         except Exception as exc:
             raise self._error(exc) from exc
+
+
+class RawSerialVisaTransport(VisaTransport):
+    """VISA serial connection for 8N1 frames with no flow control or terminators."""
+
+    def open(self) -> None:
+        from pyvisa.constants import ControlFlow, Parity, SerialTermination, StopBits
+
+        super().open()
+        self.handle.data_bits = 8
+        self.handle.parity = Parity.none
+        self.handle.stop_bits = StopBits.one
+        self.handle.flow_control = ControlFlow.none
+        self.handle.end_input = SerialTermination.none
+        self.handle.end_output = SerialTermination.none
+        self.handle.read_termination = None
+        self.handle.write_termination = None

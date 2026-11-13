@@ -23,7 +23,7 @@ CATEGORY_DESCRIPTIONS = {
     "temperature_controller": "温度读回与稳定状态",
     "optical_power_meter": "光功率、光谱与传感器",
     "measurement_analyzers": "万用表、频率计、网络分析与相位噪声",
-    "load_drivers": "电子负载与泵浦驱动",
+    "load_drivers": "电子负载、泵浦驱动与开关板",
     "unknown": "待确认身份与设备协议",
 }
 
@@ -32,7 +32,7 @@ def category_for(record: dict[str, Any]) -> str:
     category = instrument_category(record)
     if category in {"multimeter", "network_analyzer", "phase_noise_analyzer", "frequency_counter"}:
         return "measurement_analyzers"
-    if category in {"electronic_load", "pump_driver"}:
+    if category in {"electronic_load", "pump_driver", "output_switch"}:
         return "load_drivers"
     if category == "optical_spectrometer":
         return "optical_power_meter"

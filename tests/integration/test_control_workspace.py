@@ -7,7 +7,7 @@ from lab_control.application.config import ConnectionConfig
 from lab_control.application.controls import CATEGORY_LABELS, MEASUREMENT_CATEGORIES, OPERATION_LABELS
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.demo.instrument import SimulatedInstrument
-from lab_control.demo.workspace import create_demo_runtime
+from lab_control.demo.workspace import DEMO_MODELS, create_demo_runtime
 from lab_control.domain.instruments import (
     AcquisitionRequest,
     ApplyResult,
@@ -139,7 +139,7 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
     try:
         assert len(runtime.inventory.all()) == 26
         assert not runtime.monitoring.snapshots()
-        for category in CATEGORY_LABELS:
+        for category in DEMO_MODELS:
             window.navigate("设备管理", category)
             page = window.stack.currentWidget()
             assert page.selector.combo.count() >= 2

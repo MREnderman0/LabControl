@@ -21,7 +21,10 @@ from lab_control.domain.instruments import (
 from lab_control.instruments.base import ScpiAdapter
 from lab_control.transport.diagnostics import parsing
 
-from .protocol import POINTS, RBW, UNITS, VBW, boolean, trace, trace_values
+from .protocol import POINTS, RBW, UNITS, VBW, boolean, trace, trace_format, trace_values
+
+TRACE_QUERY = "TRAC:DATA? TRACE1"
+PREAMP_UNAVAILABLE = "仪器未报告 B22 前置放大器选件，前放状态未读取"
 
 FRAME_SETTINGS = (
     "start_frequency",
@@ -83,6 +86,15 @@ class FphAdapter(ScpiAdapter):
         self._context_key: tuple[str, str] = ("", "")
 
     @property
+    def _preamp_unavailable(self) -> bool:
+        # FPH02 preamplifier option, User Manual 1321.1011.02 rev. 21, §3.3.1.2 and *OPT? p.334.
+        return (
+            self.identity is not None
+            and self.identity.firmware == "V2.40"
+            and "B22" not in self.detected_options
+        )
+
+    @property
     def maximum_frequency(self) -> float:
         # FPH02 specifications p.4: queried B3 extends 2 to 3 GHz; B3+B4 to 4 GHz.
         return (
@@ -122,7 +134,9 @@ class FphAdapter(ScpiAdapter):
         self._context(channel, {})
         readings = []
         for operation in operations:
-            if operation in {"marker_frequency", "marker_value"} and not self.read("marker_enabled"):
+            if operation == "preamplifier" and self._preamp_unavailable:
+                readings.append(ParameterReading(operation, channel, error=PREAMP_UNAVAILABLE))
+            elif operation in {"marker_frequency", "marker_value"} and not self.read("marker_enabled"):
                 readings.append(ParameterReading(operation, channel, error="标记关闭，查询坐标会开启标记"))
             else:
                 readings.extend(super().read_settings((operation,), channel))
@@ -181,6 +195,15 @@ class FphAdapter(ScpiAdapter):
                     for cap in caps.operations
                 ),
             )
+        if self._preamp_unavailable:
+            operations = []
+            for cap in caps.operations:
+                if cap.name == "preamplifier":
+                    cap = replace(cap, available=False, readable=False, reason=PREAMP_UNAVAILABLE)
+                elif cap.name in {"reference_level", "attenuation", "attenuation_auto"}:
+                    cap = replace(cap, writable=False, reason=PREAMP_UNAVAILABLE)
+                operations.append(cap)
+            caps = replace(caps, operations=tuple(operations))
         return caps
 
     def prepare_acquisition(self) -> None:
@@ -194,7 +217,9 @@ class FphAdapter(ScpiAdapter):
             "format_write_attempted": False,
         }
         try:
-            if before["transfer_format"] != "REAL":
+            # V2.40 uses the current format on ordinary connection and recovery.
+            # Its ASCII and REAL32 trace parsers both consume the instrument readback.
+            if self.identity.firmware != "V2.40" and before["transfer_format"] != "REAL":
                 self.acquisition_preparation["format_write_attempted"] = True
                 self.transport.write("FORM REAL,32")
                 after = {op: self.read(op) for op in before}
@@ -356,10 +381,15 @@ class FphAdapter(ScpiAdapter):
             and not request.initiate
             and self._acquisition_context is not None
         )
+        frame_settings: tuple[str, ...] = FRAME_SETTINGS
+        if self._preamp_unavailable:
+            frame_settings = tuple(op for op in frame_settings if op != "preamplifier")
         if cached:
             before = dict(self._acquisition_context or {})
         else:
-            before = {op: self.read(op) for op in FRAME_SETTINGS}
+            before = {op: self.read(op) for op in frame_settings}
+            if self._preamp_unavailable:
+                before.update(preamplifier=None, preamplifier_status=PREAMP_UNAVAILABLE)
             before.update(sweep_points=POINTS, maximum_frequency=self.maximum_frequency)
             before["binary_encoding"] = "SWAP" if self.identity.firmware == "V1.40" else before["byte_order"]
             before["binary_encoding_source"] = (
@@ -369,17 +399,18 @@ class FphAdapter(ScpiAdapter):
             )
             if before["measurement_mode"] != "SAN" or before["frequency_offset"] != 0:
                 raise Unsupported("Only ordinary, unshifted spectrum traces are qualified")
-        raw = self.transport.query("TRAC:DATA? TRACE1")
+        raw = self.transport.query(TRACE_QUERY)
+        frame_config = trace_format(raw, before, self.identity)
         if not cached:
-            after = {op: self.read(op) for op in FRAME_SETTINGS}
-            changes = {op: (before[op], after[op]) for op in FRAME_SETTINGS if before[op] != after[op]}
+            after = {op: self.read(op) for op in frame_settings}
+            changes = {op: (before[op], after[op]) for op in frame_settings if before[op] != after[op]}
             if changes:
-                trace_values(raw, before)  # Truncated/malformed replies remain real faults.
+                trace_values(raw, frame_config)  # Truncated/malformed replies remain real faults.
                 raise DeviceError(
                     f"FPH configuration changed during trace read: {changes}", "configuration_changed"
                 )
         with parsing():
-            measurement = trace(raw, before)
+            measurement = trace(raw, frame_config)
         if not cached:
             self._acquisition_context = dict(before)
             self._context_timestamp = utc_now()
@@ -387,11 +418,11 @@ class FphAdapter(ScpiAdapter):
         return MeasurementBatch(
             self.identity,
             (measurement,),
-            before,
+            frame_config,
             validation="cached" if cached else "full",
-            settings_timestamps={op: self._context_timestamp for op in before},
+            settings_timestamps={op: self._context_timestamp for op in frame_config},
             performance={
-                "logical_queries": 1 if cached else len(FRAME_SETTINGS) * 2 + 1,
+                "logical_queries": 1 if cached else len(frame_settings) * 2 + 1,
                 "configuration_query_mode": "cached" if cached else "separate",
                 "configuration_source": "run_snapshot" if cached else "instrument",
                 "acquisition_context_id": request.context_id,

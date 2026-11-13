@@ -47,6 +47,7 @@ def test_removed_package_keeps_old_inventory_cli_scan_and_ui_usable(
             "phase_noise_analyzer": "measurement_analyzers",
             "electronic_load": "load_drivers",
             "pump_driver": "load_drivers",
+            "output_switch": "load_drivers",
         }.get(category, category)
         assert category_for(records[other]) == card_category
         window = RealWindow(runtime)

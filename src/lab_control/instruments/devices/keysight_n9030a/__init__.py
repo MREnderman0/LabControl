@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.domain.spectrum_metrics import SPECTRUM_PEAK_AND_SNR_PROFILE
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
@@ -29,6 +30,7 @@ DEFINITION = DeviceDefinition(
     supported_transports=("visa",),
     acquisition_kinds=("spectrum",),
     acquisition_initiate_editable=False,
+    offline_processing=ProcessingProfile("frames"),
     metric_profiles=(SPECTRUM_PEAK_AND_SNR_PROFILE,),
     readonly_check=_readonly_check,
 )

@@ -1,8 +1,20 @@
-# FPH02 V1.40 LAN 验收
+# FPH02 LAN 实机验收
+
+## 读取并保存当前频谱
+
+使用单台实机的当前 VISA 地址和完整序列号执行只读验收。
+
+```powershell
+python -m lab_control.instruments.devices.rs_fph.hardware.trace_readonly --config <单设备配置.toml>
+```
+
+该入口核对身份、参数和重连，按当前格式读取 Trace 1，并逐点比对保存后回读的数组与坐标。通信记录、原始帧、单位、点数和范围保存在该资产的验收批次。V2.40 的正式窗口也沿用当前格式。
+
+## V1.40 控制矩阵
 
 默认只读；仅访问配置中的一台 FPH02。控制矩阵要求 RF INPUT 无信号或接 50 Ω。固件保持 V1.40，不复位、不校准、不更改网络、不保存/调用仪器文件。不开展选件专项或物理精度测量。
 
-## 入口
+### 控制与恢复入口
 
 ```powershell
 python -m lab_control.instruments.devices.rs_fph.hardware.validate_control --config <单设备配置.toml>

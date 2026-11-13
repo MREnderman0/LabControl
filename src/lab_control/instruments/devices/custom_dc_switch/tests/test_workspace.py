@@ -1,0 +1,94 @@
+import json
+
+import pytest
+from PySide6.QtWidgets import QMessageBox, QPushButton
+
+from lab_control.application.runtime import ApplicationRuntime
+from lab_control.discovery.providers import ConfiguredDiscoveryProvider, SerialDiscoveryProvider
+from lab_control.discovery.types import DiscoveryCandidate
+from lab_control.domain.connections import ConnectionConfig
+from lab_control.domain.instruments import DeviceError
+from lab_control.instruments.devices.custom_dc_switch.adapter import ADAPTER_ID
+from lab_control.instruments.devices.custom_dc_switch.hardware.readonly import verify
+from lab_control.transport.visa import VisaRuntime
+from lab_control.ui.real_window import RealWindow
+
+from .test_protocol import CONFIG, Manager
+
+PORT = DiscoveryCandidate(
+    ConnectionConfig("COM99", transport="serial"), "serial", {"vid": 0x10C4, "pid": 0xEA60}
+)
+OTHER = DiscoveryCandidate(
+    ConnectionConfig("COM2", transport="serial"), "serial", {"vid": 0x067B, "pid": 0x2303}
+)
+
+
+def test_manual_board_gui_only_offers_matching_bridge_and_never_sends_automatically(
+    qtbot, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("lab_control.storage.runtime.hardware_lock_home", lambda: tmp_path / "locks")
+    monkeypatch.setattr("lab_control.storage.repository.application_home", lambda: tmp_path / "home")
+    monkeypatch.setattr(SerialDiscoveryProvider, "enumerate", lambda _: (OTHER, PORT))
+    choices = []
+
+    def select(_parent, _title, _hint, items):
+        choices.extend(items)
+        return items[0], True
+
+    monkeypatch.setattr("lab_control.ui.workspace.dialogs.choose_item", select)
+    manager = Manager()
+    with ApplicationRuntime(root=tmp_path, visa=VisaRuntime(manager=manager)) as runtime:
+        device_id = runtime.add(CONFIG)
+        providers = (ConfiguredDiscoveryProvider((CONFIG,)), SerialDiscoveryProvider())
+        runtime.discovery.scan(providers).result(8)
+        assert runtime.connect_all_discovered().result(8)["total"] == 0 and manager.handles == []
+        with pytest.raises(DeviceError, match="USB"):
+            runtime.connect_manual_serial(ADAPTER_ID, OTHER.config.resource)
+        window = RealWindow(runtime)
+        qtbot.addWidget(window)
+        window.show()
+        try:
+            next(b for b in window.findChildren(QPushButton) if b.text() == "手动绑定开关板").click()
+            qtbot.waitUntil(lambda: ("设备管理", "output_switch") in window.page_map)
+            page = window.page_map[("设备管理", "output_switch")]
+            assert choices == ["COM99"] and page.selector.device_id == device_id
+            assert "板端状态未知" in page.note.text() and "板端状态未知" in window.message.text()
+            assert "output_switch" not in window._submenu_categories("实时监测")
+            assert not page.go_monitor.isVisible() and not manager.handles
+            editor = page.form.editors["ch4_on"]
+            assert editor.apply_button.isEnabled() and not editor.read_button.isVisible()
+            monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
+            editor.apply_button.click()
+            assert manager.handles == []
+            manager.next_ack = b"OK\x00"
+            monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+            editor.apply_button.click()
+            qtbot.waitUntil(lambda: "4F 4B 00" in editor.readback.text())
+            assert "未知" in editor.readback.text() and manager.handles[0].writes == [b"CH4-on"]
+        finally:
+            window.timer.stop()
+            window.controller.close()
+            window.closing = True
+            window.bridge.worker.shutdown()
+        runtime.sessions.disconnect(device_id)
+        reopened, result = runtime.connect_manual_serial(ADAPTER_ID, PORT.config.resource)
+        assert reopened == device_id and result.result(5).key is None
+        assert len(manager.handles) == 1 and manager.handles[0].closed
+
+
+@pytest.mark.parametrize("available", [False, True])
+def test_readonly_batch_confirms_only_port_not_outputs(tmp_path, monkeypatch, available):
+    monkeypatch.setattr("lab_control.storage.runtime.hardware_lock_home", lambda: tmp_path / "locks")
+    monkeypatch.setattr("lab_control.storage.repository.application_home", lambda: tmp_path / "home")
+    monkeypatch.setattr(SerialDiscoveryProvider, "enumerate", lambda _: (PORT,) if available else ())
+    folder = tmp_path / "hardware-tests" / "test-board" / "batch"
+    report = verify(CONFIG, folder, duration=1, root=tmp_path, input_condition="offline")
+    summary = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
+    assert report["checks_passed"] is available
+    assert not summary["identity_verified"] and summary["adapter_id"] == ADAPTER_ID
+    assert report["stages"]["physical_output"]["state"] == "not_tested"
+    assert report["stages"]["enumeration"]["state"] == ("passed" if available else "blocked")
+    assert (folder / "communication.jsonl").read_bytes() == b""
+    assert report["physical_open_attempts"] == 0
+    assert report["stages"]["compatibility_connection"]["state"] == "not_tested"
+    assert report["stages"]["manual_rebinding"]["state"] == ("passed" if available else "not_tested")

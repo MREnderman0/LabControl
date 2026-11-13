@@ -197,6 +197,28 @@ def test_pool_is_bounded_by_overview_and_closes_on_every_navigation(workspace, q
     assert window.device_pool.isHidden()
 
 
+def test_network_identity_conflict_details_and_connection_show_the_persisted_reason(workspace):
+    window, runtime, key = workspace
+    record = runtime.inventory.records[key]
+    record["discoveryState"] = "conflict"
+    detail = "192.0.2.42 返回了匹配身份，历史地址 192.0.2.10 仍在线"
+    record["identityConflict"] = {
+        "reason": "same_identity_at_multiple_network_hosts",
+        "recheckDetail": detail,
+    }
+    runtime.inventory.repository.save(record)
+    window.refresh()
+    window.open_category("signal_generator")
+    window.tree.setCurrentItem(window.rows[key])
+    window.refresh()
+    assert detail in window.details.values["error"].text()
+    from lab_control.domain.instruments import DeviceError
+
+    with pytest.raises(DeviceError, match=detail) as error:
+        runtime.connect(key)
+    assert error.value.code == "identity_conflict"
+
+
 def test_blank_escape_popup_and_background_refresh(workspace, qtbot):
     window, _runtime, key = workspace
     window.open_category("signal_generator")

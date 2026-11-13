@@ -33,5 +33,7 @@ DEFINITION = DeviceDefinition(
     acquisition_kinds=("scalar",),
     acquisition_initiate_editable=False,
     manual_connection_only=True,
+    manual_connection_label="手动连接泵浦",
+    manual_connection_note="人工选择串口，CH 1 协议读回通过。可读取状态和关闭输出。参数写入与开启输出待核定。",
     readonly_check=verify_readonly,
 )

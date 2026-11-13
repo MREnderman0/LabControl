@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from lab_control.application.leases import connection_claims
+from lab_control.discovery.addresses import can_recheck_network_conflict
 from lab_control.discovery.inventory import Inventory
 from lab_control.discovery.types import DiscoveryCandidate
 from lab_control.domain.connections import canonical_resource, network_host
@@ -34,6 +35,16 @@ def probe_claims(candidate: DiscoveryCandidate, inventory: Inventory) -> ProbeCl
         if serial and record.get("adapterId"):
             resources += (f"asset:{record['adapterId']}:{serial}",)
     if record and (record.get("identityConflict") or record.get("discoveryState") == "conflict"):
+        if (
+            can_recheck_network_conflict(record)
+            and candidate.safe_scpi
+            and config.transport == "visa"
+            and network_host(config.resource)
+            and not config.aliases
+        ):
+            # Permit only an identity read under the normal probe/session leases.
+            # Connection remains barred until a complete scan reconciles the endpoints.
+            return ProbeClaims(resources, "network_identity_recheck")
         return ProbeClaims(resources, "identity_conflict", conflict=True)
     if config.adapter and candidate.source in {"configured", "static_addresses"}:
         return ProbeClaims(resources, "explicit_model_resource", trusted=True)

@@ -98,6 +98,49 @@ def ethernet_networks() -> tuple[str, ...]:
     )
 
 
+def conflict_peer_macs(hosts: set[str]) -> dict[str, str]:
+    """Resolve only known conflict peers on the same physical Ethernet link."""
+    import ctypes
+
+    if sys.platform != "win32":
+        return {}
+    try:
+        peers = {host: ipaddress.IPv4Address(host) for host in hosts}
+        sources = [
+            address
+            for address, prefix in _physical_ipv4_rows()
+            if all(
+                peer in ipaddress.IPv4Network(f"{address}/{prefix}", strict=False) for peer in peers.values()
+            )
+        ]
+        if len(sources) != 1:
+            return {}
+        send_arp = ctypes.windll.iphlpapi.SendARP
+        send_arp.argtypes = [
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_ulong),
+        ]
+        source = int.from_bytes(socket.inet_aton(sources[0]), sys.byteorder)
+        found = {}
+        for host, peer in peers.items():
+            buffer = (ctypes.c_ubyte * 8)()
+            size = ctypes.c_ulong(len(buffer))
+            status = send_arp(int.from_bytes(peer.packed, sys.byteorder), source, buffer, ctypes.byref(size))
+            # ERROR_NOT_FOUND (1168) denotes an invalid/unavailable local source,
+            # not an offline peer. Only 67 is evidence of no ARP reply on this link.
+            if status == 67:
+                found[host] = ""
+            elif status == 0 and size.value == 6:
+                found[host] = bytes(buffer[:6]).hex(":").upper()
+            else:
+                return {}
+        return found
+    except (OSError, ValueError, subprocess.SubprocessError, DeviceError):
+        return {}
+
+
 def interface_networks(interfaces: tuple[str, ...]) -> tuple[str, ...]:
     if not interfaces:
         return ()

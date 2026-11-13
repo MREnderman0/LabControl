@@ -17,6 +17,7 @@ CATEGORY_LABELS = {
     "temperature_controller": "温控仪",
     "electronic_load": "电子负载",
     "pump_driver": "泵浦驱动",
+    "output_switch": "开关板",
     "optical_spectrometer": "光谱仪",
 }
 

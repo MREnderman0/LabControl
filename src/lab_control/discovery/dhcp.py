@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from lab_control.discovery.inventory import Inventory
 
+from lab_control.discovery.addresses import can_recheck_network_conflict
 from lab_control.discovery.lan import LanDiscoverySettings, discovery_networks
 from lab_control.discovery.types import DiscoveryCandidate
 from lab_control.domain.connections import ConnectionConfig, network_host
@@ -157,8 +158,10 @@ class DhcpLeaseDiscoveryProvider:
                 not identity_key
                 or not record.get("identity", {}).get("serial")
                 or record.get("primaryResourceExplicit")
-                or record.get("identityConflict")
-                or record.get("discoveryState") == "conflict"
+                or (
+                    (record.get("identityConflict") or record.get("discoveryState") == "conflict")
+                    and not can_recheck_network_conflict(record)
+                )
                 or not config.get("adapter")
                 or not host
                 or not (visa_resource or model_config)

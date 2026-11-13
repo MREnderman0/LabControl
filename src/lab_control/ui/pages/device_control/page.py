@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
+from lab_control.application.catalog import surface_applicable
 from lab_control.application.controls import CATEGORY_LABELS, MEASUREMENT_CATEGORIES
-from lab_control.instruments.registry import requires_manual_connection
+from lab_control.instruments.registry import DEVICE_DEFINITIONS, requires_manual_connection
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.pages.device_control.form import ControlForm
 from lab_control.ui.widgets.device_selector import DeviceSelector
@@ -35,8 +36,9 @@ class DeviceControlPage(QWidget):
     def select_device(self, device_id: str) -> None:
         measurement = self.category in MEASUREMENT_CATEGORIES
         self.form.setVisible(not measurement and bool(device_id))
-        self.go_monitor.setVisible(bool(device_id))
-        self.go_monitor.setEnabled(bool(device_id))
+        can_monitor = bool(device_id) and surface_applicable(self.controller.records[device_id], "monitoring")
+        self.go_monitor.setVisible(can_monitor)
+        self.go_monitor.setEnabled(can_monitor)
         if not measurement:
             self.form.set_device(device_id, self.selector.channel.currentData() or 1)
         if device_id:
@@ -46,7 +48,7 @@ class DeviceControlPage(QWidget):
                 text += "影响曲线和测量结果的参数统一放在实时监测页。"
             adapter = self.controller.records[device_id]["adapterId"]
             if self.controller.runtime.hardware and requires_manual_connection(adapter):
-                text = "人工选择串口 · CH 1 协议读回 · 可读取状态和关闭输出。参数写入与开启输出待核定。"
+                text = DEVICE_DEFINITIONS[adapter].manual_connection_note
             elif adapter.startswith("sim."):
                 text += " 此类别仅为演示，真实型号和协议待补。"
             self.note.setText(text)

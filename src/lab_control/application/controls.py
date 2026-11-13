@@ -297,6 +297,11 @@ output_format=读数格式
 function_status=当前测量功能
 integration_status=当前积分时间
 temperature=温度
+dc_on=发送 DC-on（开启 DC）
+dc_off=发送 DC-off（关闭 DC）
+ch3_on=发送 CH3-on（选择 CH3，关闭 CH4）
+ch4_on=发送 CH4-on（选择 CH4，关闭 CH3）
+switch_board_serial_status=最近命令与串口接收
 pump_output_off=关闭 CH 1 泵浦输出
 pump_lowpass=LD 低通滤波器
 pump_current_limit=电流上限读回
@@ -354,6 +359,10 @@ COMMON = {
     "power",
     "output",
     "pump_output_off",
+    "dc_on",
+    "dc_off",
+    "ch3_on",
+    "ch4_on",
     "all_outputs",
     "voltage",
     "current",
@@ -474,6 +483,8 @@ class DataSource:
 def data_sources(config: ConnectionConfig) -> tuple[DataSource, ...]:
     schema = describe(config)
     category = schema.category
+    if category == "output_switch":
+        return ()
     if category == "signal_generator":
         return tuple(
             DataSource(name, OPERATION_LABELS[name] + "读回", "status", name, name, "number")

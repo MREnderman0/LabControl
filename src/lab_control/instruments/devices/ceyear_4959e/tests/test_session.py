@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pytest
 
@@ -45,7 +47,20 @@ def test_passive_session_returns_instrument_axis_and_saves_no_failed_frame(tmp_p
         np.testing.assert_allclose(trace.axis, np.linspace(99e6, 101e6, 101))
         replies.update({":SWE:MODE?": b"Error!", ":DET:FUNC?": b"NORM"})
         replies[TRACE_QUERY] = b",".join([b"-90.25"] * 202)
-        with pytest.raises(Unsupported, match="202.*101"):
+        batch = runtime.sessions.submit(device, "acquire", request).result(timeout=5)
+        raw = batch.measurements[0]
+        assert raw.axis_unit == "index" and raw.metadata["points"] == 202
+        np.testing.assert_array_equal(raw.axis, np.arange(202))
+        runtime.repository.export(batch)
+        with np.load(next(tmp_path.rglob("samples.npz")), allow_pickle=False) as saved:
+            np.testing.assert_array_equal(saved["values_0"], raw.values)
+            np.testing.assert_array_equal(saved["axis_0"], raw.axis)
+            item = json.loads(str(saved["metadata_json"]))["measurements"][0]
+            assert (item["unit"], item["axis_unit"]) == ("dBm", "index")
+            assert item["metadata"]["settings"]["sweep_points"] == 101
+        replies[":TRAC1:TYPE?"] = b"BLAN"
+        with pytest.raises(Unsupported, match="trace 1 must be visible"):
             runtime.sessions.submit(device, "acquire", request).result(timeout=5)
+    assert all(cmd.endswith("?") for cmd in transport.history)
     assert transport.history.count(TRACE_QUERY) == 2
-    assert not list(tmp_path.rglob("*.csv"))
+    assert len(list(tmp_path.rglob("samples.npz"))) == 1

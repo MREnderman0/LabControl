@@ -27,6 +27,7 @@ from lab_control.domain.instruments import DeviceIdentity, ValidationError
 from lab_control.domain.workspace import CATEGORY_LABELS, GENERAL, WORKSPACE_MODES
 from lab_control.instruments.base import identity_from_scpi
 from lab_control.instruments.registry import (
+    DEVICE_DEFINITIONS,
     create_adapter,
     match,
     normalize_discovery_config,
@@ -290,6 +291,22 @@ class ApplicationRuntime:
             self._check_connection_admission()
             if self.discovery.future and not self.discovery.future.done():
                 raise DeviceError("正在扫描，请等待扫描完成后连接", "scan_busy")
+            definition = DEVICE_DEFINITIONS[adapter]
+            if definition.manual_usb_id is not None:
+                from dataclasses import replace
+
+                selected = next(
+                    (
+                        p
+                        for p in SerialDiscoveryProvider().enumerate()
+                        if p.config.resource.upper() == selected_port[0].upper()
+                        and definition.matches_manual_port(p.descriptor)
+                    ),
+                    None,
+                )
+                if selected is None:
+                    raise DeviceError("当前串口未枚举为所选设备要求的 USB 转接器", "driver_missing")
+                config = replace(config, usb_instance_id=selected.config.usb_instance_id)
             if self.leases.owner(config.resource):
                 raise DeviceError("该串口已有会话，请先断开", "resource_busy")
             record = self.inventory.by_resource(config.resource)
@@ -357,10 +374,6 @@ class ApplicationRuntime:
         record = next(item for item in self.inventory.all() if item["id"] == device_id)
         if self.hardware and requires_manual_connection(record["adapterId"]) and not manual:
             raise ValidationError("请从设备总览手动选择此设备的串口")
-        if record["discoveryState"] == "conflict":
-            from lab_control.domain.instruments import DeviceError
-
-            raise DeviceError("Resolve identity conflict before connection", "identity_conflict")
         from lab_control.discovery.addresses import verified_connection
 
         config = verified_connection(record)

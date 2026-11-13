@@ -381,3 +381,61 @@ def test_restore_target_validates_destination_not_current_zero_span():
     validate_target(target, adapter)
     assert not transport.history
     assert adapter.capability_details["span"] == 0
+
+
+def test_v240_block_with_ascii_readback_uses_same_frame_marker_qualified_encoding():
+    from dataclasses import replace
+
+    from lab_control.instruments.devices.rs_fph.protocol import trace_format
+
+    state = context(transfer_format="ASC", byte_order="NORM")
+    raw = raw_trace(context(byte_order="SWAP"))
+    data = settings_exchanges(state) + [("TRAC:DATA? TRACE1", raw)] + settings_exchanges(state)
+    data.append(("TRAC:DATA? TRACE1", raw_trace(state)))
+    adapter, _ = device(data)
+    adapter.identity = replace(adapter.identity, firmware="V2.40")
+    adapter.detected_options = ("B22",)
+    request = AcquisitionRequest("spectrum", consistency="live", context_id="fph-v240")
+    frame = adapter.acquire(request)
+    cfg = frame.configuration
+    assert (cfg["transfer_format"], cfg["byte_order"]) == ("ASC", "NORM")
+    assert (cfg["wire_format"], cfg["binary_encoding"]) == ("REAL", "SWAP")
+    assert "marker" in cfg["binary_encoding_source"]
+    assert frame.measurements[0].metadata["settings"] == cfg
+    np.testing.assert_allclose(frame.measurements[0].values, np.linspace(-100, -20, 711), atol=1e-5)
+
+    next_frame = adapter.acquire(request)
+    assert next_frame.validation == "cached"
+    assert next_frame.configuration["wire_format"] == "ASC"
+    np.testing.assert_allclose(next_frame.measurements[0].values, frame.measurements[0].values, atol=1e-5)
+
+    for damaged in (raw[:-6], raw.replace(b"#42844", b"#528440", 1), raw + b"extra"):
+        with pytest.raises(DeviceError):
+            trace(damaged, trace_format(damaged, state, adapter.identity))
+
+
+@pytest.mark.parametrize(
+    ("identity_changes", "settings_changes"),
+    [
+        ({"firmware": "V1.40"}, {}),
+        ({"firmware": "V2.41"}, {}),
+        ({"model": "Other"}, {}),
+        ({"serial": "1321.1111K06/TEST"}, {}),
+        ({}, {"byte_order": "SWAP"}),
+        ({}, {"measurement_mode": "PMET"}),
+        ({}, {"frequency_offset": 1}),
+        ({}, {"amplitude_unit": "V"}),
+        ({}, {"span": 0}),
+    ],
+)
+def test_v240_ascii_block_quirk_rejects_unqualified_settings(identity_changes, settings_changes):
+    from dataclasses import replace
+
+    from lab_control.instruments.devices.rs_fph.protocol import trace_format
+
+    original = DeviceIdentity("Rohde&Schwarz", "FPH", "1321.1111K02/TEST", "V2.40")
+    identity = replace(original, **identity_changes)
+    state = context(transfer_format="ASC", **settings_changes)
+    raw = raw_trace(context(byte_order="SWAP"))
+    with pytest.raises(DeviceError, match="selected transfer format"):
+        trace(raw, trace_format(raw, state, identity))

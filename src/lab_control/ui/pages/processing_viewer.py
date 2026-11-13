@@ -36,6 +36,7 @@ class ProcessingViewer(QWidget):
         self.service = service
         self.reader: ResultReader | None = None
         self.info: dict[str, Any] = {}
+        self.transfer_index = False
         self.future: Future | None = None
         self.pending: tuple | None = None
         self.token = 0
@@ -236,12 +237,15 @@ class ProcessingViewer(QWidget):
                 "frequency": "频率",
                 "temperature": "温度",
                 "waveform": "波形",
-                "spectrum": "光谱",
+                "spectrum": "频谱",
                 "voltage": "电压",
                 "resistance": "电阻",
             }
             for group in groups:
-                self.group.addItem(f"{labels.get(group[0], group[0])} · {group[1]}", group)
+                label = (
+                    "光谱" if group[0] == "spectrum" and group[2] == "nm" else labels.get(group[0], group[0])
+                )
+                self.group.addItem(f"{label} · {group[1]}", group)
             self.group.blockSignals(False)
             self.slider.blockSignals(True)
             self.slider.setRange(1, max(1, data["frames"]))
@@ -255,6 +259,7 @@ class ProcessingViewer(QWidget):
                 self._group_changed()
             return
         points = []
+        self.transfer_index = False
         self.scope_specs = {}
         selected = self.selected()
         for series in selected:
@@ -276,7 +281,9 @@ class ProcessingViewer(QWidget):
                     continue
                 y = sample["values"].reshape(-1)
                 x = np.arange(y.size) if sample["axis"] is None else sample["axis"].reshape(-1)
-                display = sample.get("metadata", {}).get("scope_display")
+                metadata = sample.get("metadata", {})
+                self.transfer_index |= metadata.get("axis_kind") == "transfer_sample_index"
+                display = metadata.get("scope_display")
                 if display and series.get("axis_unit") == "s":
                     spec = ScopeDisplay.parse(display)
                     if spec.unit != series["unit"]:
@@ -379,11 +386,9 @@ class ProcessingViewer(QWidget):
                 "bottom",
                 "距记录开始"
                 if self.info.get("kind") == "scalar"
-                else "波长"
-                if axis == "nm"
-                else "帧内时间"
-                if axis == "s"
-                else "横轴",
+                else "传输样本序号（频率未核实）"
+                if self.transfer_index and axis == "index"
+                else {"Hz": "频率", "nm": "波长", "s": "帧内时间", "index": "样本序号"}.get(axis, "横轴"),
                 units=axis,
                 siPrefixEnableRanges=None if axis == "s" else (),
             )

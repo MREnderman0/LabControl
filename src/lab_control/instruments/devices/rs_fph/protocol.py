@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from lab_control.domain.instruments import DeviceError, Measurement
+from lab_control.domain.instruments import DeviceError, DeviceIdentity, Measurement
 from lab_control.instruments.base import number
 from lab_control.transport.base import block_payload
 
@@ -54,12 +54,36 @@ def integer(raw: bytes) -> int:
     return int(value)
 
 
+def trace_format(raw: bytes, config: dict[str, Any], identity: DeviceIdentity) -> dict[str, Any]:
+    """Resolve encoding per frame without overwriting FORM and FORM:BORD readbacks."""
+    if (
+        raw.startswith(b"#42844")
+        and identity.model.upper() == "FPH"
+        and identity.serial.partition("/")[0].upper() == "1321.1111K02"
+        and identity.firmware == "V2.40"
+        and config["measurement_mode"] == "SAN"
+        and config["frequency_offset"] == 0
+        and config["span"] > 0
+        and config["amplitude_unit"] == "DBM"
+        and config["transfer_format"] == "ASC"
+        and config["byte_order"] == "NORM"
+    ):
+        return {
+            **config,
+            "wire_format": "REAL",
+            "binary_encoding": "SWAP",
+            "binary_encoding_source": "FPH02 V2.40: same-frame absolute and delta marker readbacks",
+        }
+    return {**config, "wire_format": config["transfer_format"]}
+
+
 def trace_values(raw: bytes, config: dict[str, Any]) -> np.ndarray:
     payload = block_payload(raw) if raw.startswith(b"#") else raw
+    wire_format = config.get("wire_format", config["transfer_format"])
     try:
-        if config["transfer_format"] == "ASC" and not raw.startswith(b"#"):
+        if wire_format == "ASC" and not raw.startswith(b"#"):
             values = np.array([float(v) for v in payload.decode("ascii").strip().split(",")])
-        elif config["transfer_format"] == "REAL" and raw.startswith(b"#"):
+        elif wire_format == "REAL" and raw.startswith(b"#"):
             if config["byte_order"] not in {"NORM", "SWAP"} or len(payload) != POINTS * 4:
                 raise ValueError("invalid REAL32 byte order or length")
             # V1.40 returns little endian even when FORM:BORD? reports NORM.

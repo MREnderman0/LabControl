@@ -55,11 +55,12 @@ class ConnectionDialogs:
                     candidate.config.resource
                     for candidate in SerialDiscoveryProvider().enumerate()
                     if re.fullmatch(r"COM[1-9][0-9]*", candidate.config.resource, re.I)
+                    and definition.matches_manual_port(candidate.descriptor)
                 },
                 key=lambda port: int(port[3:]),
             )
             if not ports:
-                window._failed("未发现 COM 口，请检查串口接线与驱动。")
+                window._failed(f"{title} 未发现匹配的 COM 口，请检查串口接线与驱动。")
                 return
             port, accepted = choose_item(window, title, "请核对接线并选择设备所接的 COM 口。", ports)
             if not accepted:
@@ -70,7 +71,7 @@ class ConnectionDialogs:
             def connected(_identity) -> None:
                 window.refresh()
                 window.navigate("设备管理", definition.category, device_id)
-                window.message.setText(f"{title} · {port} 已连接，CH 1 协议读回通过。")
+                window.message.setText(f"{title} · {port} · {definition.manual_connection_note}")
 
             window.controller.watch(future, connected)
         except (DeviceError, OSError, ValueError) as exc:

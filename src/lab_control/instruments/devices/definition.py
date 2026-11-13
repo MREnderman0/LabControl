@@ -87,6 +87,15 @@ class DeviceDefinition:
     pending_display_name: str = ""
     manual_connection_only: bool = False
     transport_adapter: Callable[[ConnectionConfig, Any], InstrumentAdapter] | None = None
+    manual_connection_label: str = ""
+    manual_connection_note: str = ""
+    manual_usb_id: tuple[int, int] | None = None
+
+    def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
+        return self.manual_usb_id is None or self.manual_usb_id == (
+            descriptor.get("vid"),
+            descriptor.get("pid"),
+        )
 
     def __post_init__(self) -> None:
         if len({p.id for p in self.metric_profiles}) != len(self.metric_profiles):

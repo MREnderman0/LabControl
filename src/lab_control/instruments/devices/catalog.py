@@ -46,6 +46,7 @@ DEVICE_MODULES = (
     "lab_control.instruments.devices.kplusk_fxe",
     "lab_control.instruments.devices.keysight_53220a",
     "lab_control.instruments.devices.custom_optical_comb_pump",
+    "lab_control.instruments.devices.custom_dc_switch",
 )
 
 

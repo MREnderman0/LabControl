@@ -83,5 +83,6 @@ def test_lan_probe_and_explicit_connection_keep_one_asset_without_setting_writes
 
         other = replace(identity, serial="DIFFERENT", raw="LECROY,WAVERUNNER9404M,DIFFERENT,9.2.0")
         conflict = app.inventory.merge(DiscoveryCandidate(config, "configured"), "connected", other, adapter)
-        with pytest.raises(DeviceError, match="identity conflict"):
+        with pytest.raises(DeviceError) as caught:
             verified_connection(conflict)
+        assert caught.value.code == "identity_conflict"

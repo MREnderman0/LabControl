@@ -45,6 +45,7 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 | K+K FXE / FXE2 | `kplusk.fxe` | 3 | scalar:frequency | [型号卡片](../devices/measurement-analyzers/kplusk-fxe.md) |
 | Keysight / Agilent 53220A | `keysight.53220a` | 15 | scalar:frequency | [型号卡片](../devices/measurement-analyzers/keysight-53220a.md) |
 | 光梳地检泵浦驱动 | `custom.optical_comb_pump` | 7 | scalar | [型号卡片](../devices/temperature-load-drivers/pump-driver.md) |
+| DC / CH3 / CH4 开关板 | `custom.dc_switch` | 5 | 外部仪器测量输出 | [型号卡片](../devices/temperature-load-drivers/dc-switch-board.md) |
 
 ## MCP 指标处理
 

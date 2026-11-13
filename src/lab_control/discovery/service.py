@@ -9,7 +9,11 @@ from uuid import uuid4
 
 from lab_control.application.leases import ResourceLeases
 from lab_control.application.sessions import SessionManager
-from lab_control.discovery.addresses import network_host
+from lab_control.discovery.addresses import (
+    can_recheck_network_conflict,
+    identity_conflict_message,
+    network_host,
+)
 from lab_control.discovery.admission import probe_claims
 from lab_control.discovery.inventory import Inventory as Inventory
 from lab_control.discovery.presence import LIVE_CONNECTIONS
@@ -273,9 +277,8 @@ class DiscoveryService:
                     active = self.leases.owner(candidate.config.resource)
                     session = self.sessions.sessions.get(active or "")
                     if claims.conflict:
-                        raise DeviceError(
-                            "Resolve the asset identity conflict before probing", "identity_conflict"
-                        )
+                        record = self.inventory.by_resource(candidate.config.resource) or {}
+                        raise DeviceError(identity_conflict_message(record), "identity_conflict")
                     if session is not None and blocking_owners <= {active}:
                         adapter = session.config.adapter
                         if session.state in LIVE_CONNECTIONS and not session.closing:
@@ -314,9 +317,11 @@ class DiscoveryService:
                     reason = "identified"
                 expected = candidate.descriptor.get("expectedIdentityKey")
                 if expected and identity is not None and identity.key != expected:
+                    actual = identity.key or identity.raw or identity.model
                     identity, adapter = None, ""
                     raise DeviceError(
-                        "DHCP address returned a different instrument identity", "identity_conflict"
+                        f"DHCP 地址 {network_host(candidate.config.resource)} 回报 {actual}，与预期身份 {expected} 不一致",
+                        "identity_conflict",
                     )
             except Exception as exc:
                 error, reason = str(exc), "probe_failed"
@@ -346,6 +351,8 @@ class DiscoveryService:
                 "admissionBasis": admission_basis,
                 "blockingOwners": sorted(blocking_owners),
             }
+            if error_code == "identity_conflict" and candidate.descriptor.get("expectedIdentityKey"):
+                item["expectedIdentityKey"] = candidate.descriptor["expectedIdentityKey"]
             self.inventory.repository.audit("discovery_result", scan_id=scan_id, **item)
             return item
 
@@ -362,7 +369,13 @@ class DiscoveryService:
             # The host lease is shared by VXI-11 and HiSLIP. Schedule them in sequence
             # so this scan never defers one protocol behind its own probe of the other.
             host = network_host(candidate.config.resource).rstrip(".")
-            groups.setdefault(host or index, []).append((index, candidate))
+            group_key = host
+            record = self.inventory.by_resource(candidate.config.resource)
+            if record and can_recheck_network_conflict(record):
+                # Related addresses share the same asset claim; probing in parallel
+                # would defer one of them behind the other.
+                group_key = "conflict:" + record["id"]
+            groups.setdefault(group_key or index, []).append((index, candidate))
 
         def process_group(group: list[tuple[int, DiscoveryCandidate]]) -> list[tuple[int, dict[str, Any]]]:
             return [(index, process(candidate)) for index, candidate in group]
@@ -376,6 +389,13 @@ class DiscoveryService:
         report["items"] = [results[index] for index in range(len(candidates))]
         if not preserve_presence:
             self.inventory.stale(scan_id, successful - {"configured"}, cancelled=self.cancelled.is_set())
+        if not preserve_presence and not scope and not self.cancelled.is_set() and "lan" in successful:
+            mismatches = {
+                item["expectedIdentityKey"]: item["error"]
+                for item in report["items"]
+                if item.get("expectedIdentityKey")
+            }
+            self.inventory.reconcile_network_conflicts(scan_id, self.cancelled.is_set, mismatches)
         report.update(
             {
                 "state": "cancelled" if self.cancelled.is_set() else "complete",

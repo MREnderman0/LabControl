@@ -5,6 +5,7 @@ import pytest
 
 from lab_control.application.leases import ResourceLeases
 from lab_control.application.sessions import SessionManager
+from lab_control.discovery.addresses import verified_connection
 from lab_control.discovery.dhcp import DhcpLease, DhcpLeaseDiscoveryProvider, read_tftpd_leases
 from lab_control.discovery.inventory import Inventory
 from lab_control.discovery.lan import LanDiscoverySettings, RememberedLanDiscoveryProvider
@@ -13,7 +14,7 @@ from lab_control.discovery.providers import ConfiguredDiscoveryProvider
 from lab_control.discovery.service import DiscoveryService
 from lab_control.discovery.types import DiscoveryCandidate
 from lab_control.domain.connections import ConnectionConfig
-from lab_control.domain.instruments import DeviceIdentity
+from lab_control.domain.instruments import DeviceError, DeviceIdentity
 from lab_control.storage.repository import Repository
 
 MAC = "02:00:00:00:00:11"
@@ -84,6 +85,110 @@ def test_current_lease_binds_only_after_real_identity_then_follows_new_ip_after_
     assert (
         RememberedLanDiscoveryProvider(inventory, SETTINGS).enumerate()[0].config.resource
         == current["config"]["resource"]
+    )
+
+
+@pytest.mark.parametrize(
+    "old_mac,expected", [("", True), (MAC, False), (None, False), ("02:11:22:33:44:55", False)]
+)
+def test_duplicate_host_recheck_needs_one_fresh_identity_and_one_matching_mac(
+    store, monkeypatch, old_mac, expected
+):
+    inventory, _, _, record, identity = store
+    record["dhcpBinding"] = {"mac": MAC, "identityKey": identity.key}
+
+    def endpoint(host):
+        return DiscoveryCandidate(
+            ConnectionConfig(f"TCPIP0::192.0.2.{host}::5555::SOCKET"), "lan", safe_scpi=True
+        )
+
+    for host in (10, 11):
+        inventory.merge(endpoint(host), "historical", identity, "rigol.dho924", reason="identified")
+    assert record["identityConflict"]["reason"] == "same_identity_at_multiple_network_hosts"
+    restarted = Inventory(inventory.repository)
+    peers = {"192.0.2.10": "", "192.0.2.11": old_mac, "192.0.2.42": MAC}
+    monkeypatch.setattr(
+        "lab_control.discovery.lan.conflict_peer_macs", lambda hosts: {h: peers[h] for h in hosts}
+    )
+    set_leases(monkeypatch, "192.0.2.42")
+    lan = SimpleNamespace(name="lan", enumerate=lambda: (endpoint(42),))
+    dhcp = DhcpLeaseDiscoveryProvider(restarted, SETTINGS)
+    result = scan((restarted, *store[1:]), [lan, dhcp], lambda _: (identity, "rigol.dho924"))
+    assert result["items"][0]["reason"] == "identified"
+    fresh = restarted.by_resource(endpoint(42).config.resource)
+    assert fresh and fresh["id"] == record["id"] and len(restarted.all()) == 1
+    if expected:
+        final = verified_connection(fresh)
+        assert final.resource == endpoint(42).config.resource and final.expected_serial == "TEST-A"
+        assert final.limits == {"fixture_limit": 0.5}
+    else:
+        detail = "同一物理网段的网卡地址证据不足" if old_mac is None else "历史地址 192.0.2.11 仍在线"
+        after_restart = Inventory(inventory.repository).by_resource(endpoint(42).config.resource)
+        with pytest.raises(DeviceError, match=detail) as error:
+            verified_connection(after_restart)
+        assert error.value.code == "identity_conflict"
+
+
+def test_recheck_cancelled_during_network_io_cannot_release_conflict(store, monkeypatch):
+    inventory, _, _, record, identity = store
+    record["dhcpBinding"] = {"mac": MAC, "identityKey": identity.key}
+    old = DiscoveryCandidate(ConnectionConfig(**record["config"]), "lan", safe_scpi=True)
+    new = DiscoveryCandidate(ConnectionConfig("TCPIP0::192.0.2.42::5555::SOCKET"), "lan", safe_scpi=True)
+    inventory.merge(old, "duplicate", identity, "rigol.dho924", reason="identified")
+    inventory.merge(new, "duplicate", identity, "rigol.dho924", reason="identified")
+    inventory.merge(new, "recheck", identity, "rigol.dho924", reason="identified")
+    monkeypatch.setattr(
+        "lab_control.discovery.lan.conflict_peer_macs", lambda hosts: {"192.0.2.10": "", "192.0.2.42": MAC}
+    )
+    inventory.reconcile_network_conflicts("recheck", lambda: True, {})
+    with pytest.raises(DeviceError, match="身份冲突"):
+        verified_connection(record)
+
+
+def test_unseen_mismatching_lease_reports_both_identities_on_original_asset(store, monkeypatch):
+    inventory, _, _, record, identity = store
+    record["dhcpBinding"] = {"mac": MAC, "identityKey": identity.key}
+    for host in (10, 11):
+        candidate = DiscoveryCandidate(
+            ConnectionConfig(f"TCPIP0::192.0.2.{host}::5555::SOCKET"), "lan", safe_scpi=True
+        )
+        inventory.merge(candidate, "duplicate", identity, "rigol.dho924", reason="identified")
+    set_leases(monkeypatch, "192.0.2.42")
+    dhcp = DhcpLeaseDiscoveryProvider(inventory, SETTINGS)
+    lan = SimpleNamespace(name="lan", enumerate=lambda: ())
+    different = DeviceIdentity("RIGOL TECHNOLOGIES", "DHO924", "OTHER-42")
+    scan(store, [dhcp, lan], lambda _: (different, "rigol.dho924"))
+    stored = Inventory(inventory.repository).by_resource(record["config"]["resource"])
+    with pytest.raises(DeviceError, match=r"192\.0\.2\.42.*OTHER-42.*TEST-A") as error:
+        verified_connection(stored)
+    assert error.value.code == "identity_conflict"
+
+
+@pytest.mark.parametrize("status, expected", [(67, {"192.0.2.42": ""}), (1168, {}), (31, {})])
+def test_arp_local_source_failure_is_not_evidence_of_an_offline_peer(monkeypatch, status, expected):
+    import ctypes
+
+    from lab_control.discovery import lan
+
+    def send_arp(*args):
+        return status
+
+    monkeypatch.setattr(lan.sys, "platform", "win32")
+    monkeypatch.setattr(lan, "_physical_ipv4_rows", lambda: (("192.0.2.1", 24),))
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(iphlpapi=SimpleNamespace(SendARP=send_arp)), raising=False
+    )
+    assert lan.conflict_peer_macs({"192.0.2.42"}) == expected
+
+
+def test_cached_connection_cannot_create_two_fresh_lan_identities(store):
+    inventory, _, _, record, identity = store
+    old = DiscoveryCandidate(ConnectionConfig(**record["config"]), "lan", safe_scpi=True)
+    new = DiscoveryCandidate(ConnectionConfig("TCPIP0::192.0.2.42::5555::SOCKET"), "lan", safe_scpi=True)
+    inventory.merge(old, "fresh", identity, "rigol.dho924", reason="cached_active_session")
+    current = inventory.merge(new, "fresh", identity, "rigol.dho924", reason="identified")
+    assert (
+        not current.get("identityConflict") and verified_connection(current).resource == new.config.resource
     )
 
 

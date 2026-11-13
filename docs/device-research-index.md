@@ -73,6 +73,7 @@
 | K+K FXE / FXE2 | `kplusk.fxe` | Ethernet（FXE2 使用 DHCP，已登记身份随租约更新地址） | [卡片](devices/measurement-analyzers/kplusk-fxe.md) |
 | Keysight / Agilent 53220A | `keysight.53220a` | LAN VXI-11 / VISA SOCKET；优先 PyVISA | [卡片](devices/measurement-analyzers/keysight-53220a.md) |
 | 光梳地检泵浦驱动 | `custom.optical_comb_pump` | RS232，手动选择 COM 口，115200 8N1 | [卡片](devices/temperature-load-drivers/pump-driver.md) |
+| DC / CH3 / CH4 开关板 | `custom.dc_switch` | CP210x 串口，115200 8N1 | [卡片](devices/temperature-load-drivers/dc-switch-board.md) |
 <!-- device-modules:end -->
 
 ## 现场盘点与状态提升

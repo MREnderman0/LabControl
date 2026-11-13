@@ -8,6 +8,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from lab_control.application.config import config_from_record
+from lab_control.discovery.addresses import identity_conflict_message
 from lab_control.discovery.presence import LIVE_CONNECTIONS, is_current
 from lab_control.domain.instruments import DeviceError, utc_now
 from lab_control.instruments.registry import describe, requires_manual_connection
@@ -105,7 +106,7 @@ class BulkConnectionService:
         if current is None or not is_current(current):
             return None, "skipped", "设备已不在当前发现范围"
         if current.get("identityConflict") or current["discoveryState"] == "conflict":
-            return None, "skipped", "设备身份冲突，请先核对"
+            return None, "skipped", identity_conflict_message(current)
         if not current.get("adapterId"):
             return None, "skipped", "未知型号，尚未选择准确适配器"
         try:
@@ -123,7 +124,7 @@ class BulkConnectionService:
                 current = next(r for r in runtime.inventory.all() if r["id"] == record["id"])
                 item["label"] = device_label(current)
                 if current.get("identityConflict"):
-                    raise DeviceError("连接后发现身份冲突，请在设备池中核对", "identity_conflict")
+                    raise DeviceError(identity_conflict_message(current), "identity_conflict")
                 state = next(s for s in runtime.sessions.snapshots() if s["stableDeviceId"] == record["id"])
                 if state["connectionState"] == "degraded":
                     raise DeviceError(state["lastError"] or "连接异常，请核对设备状态", "connection_degraded")

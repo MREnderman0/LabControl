@@ -98,12 +98,45 @@ def test_malformed_trace_does_not_produce_a_frame(payload):
     assert error.value.code == "parse_error" and transport.history.count(TRACE_QUERY) == 1
 
 
-def test_normal_detector_double_length_kept_unqualified_even_for_equal_halves():
+@pytest.mark.parametrize("second", [TRACE, b",".join([b"-73.14"] * POINTS)])
+def test_normal_detector_preserves_double_length_in_wire_order(second):
     settings = snapshot(scan="Error!", detector="NORM")
-    adapter, _ = device([*settings, (TRACE_QUERY, TRACE.strip() + b"," + TRACE)])
-    with pytest.raises(DeviceError, match="202.*101") as error:
+    payload = TRACE.strip() + b"," + second
+    adapter, transport = device([*settings, (TRACE_QUERY, payload), *settings])
+    result = adapter.acquire(capture_request(adapter)).measurements[0]
+    assert (result.unit, result.axis_unit, result.metadata["axis_kind"]) == (
+        "dBm",
+        "index",
+        "transfer_sample_index",
+    )
+    assert result.metadata["points"] == 2 * POINTS and result.metadata["settings"]["sweep_points"] == POINTS
+    np.testing.assert_array_equal(result.axis, np.arange(POINTS * 2))
+    np.testing.assert_array_equal(result.values, [float(item) for item in payload.split(b",")])
+    assert all(cmd.endswith("?") for cmd in transport.history)
+
+
+def test_front_panel_26_6_ghz_raw_trace_is_readable_without_extending_write_range():
+    settings = [
+        (q, b"1001" if q == ":SWE:POIN?" else value)
+        for q, value in snapshot(scan="Error!", start=0, stop=26.6e9, detector="NORM", rbw=3e6)
+    ]
+    payload = b",".join([b"-89.96", b"-51.12"] * 1001)
+    adapter, transport = device([*settings, (TRACE_QUERY, payload), *settings])
+    result = adapter.acquire(capture_request(adapter)).measurements[0]
+    assert result.axis_unit == "index" and result.metadata["settings"]["stop_frequency"] == 26.6e9
+    np.testing.assert_array_equal(result.axis, np.arange(2002))
+    np.testing.assert_array_equal(result.values, [-89.96, -51.12] * 1001)
+    assert PROFILE.commands["stop_frequency"].capability.parameters["value"].maximum == 26.5e9
+    assert all(cmd.endswith("?") for cmd in transport.history)
+
+
+@pytest.mark.parametrize("length", [POINTS * 2 - 1, POINTS * 2 + 1])
+def test_normal_detector_rejects_incomplete_or_extra_pairs(length):
+    settings = snapshot(scan="Error!", detector="NORM")
+    adapter, _ = device([*settings, (TRACE_QUERY, b",".join([b"-80"] * length))])
+    with pytest.raises(DeviceError) as error:
         adapter.acquire(capture_request(adapter))
-    assert error.value.code == "unsupported"
+    assert error.value.code == "parse_error"
 
 
 def test_unreported_sweep_mode_uses_only_indices_for_a_single_value_detector():

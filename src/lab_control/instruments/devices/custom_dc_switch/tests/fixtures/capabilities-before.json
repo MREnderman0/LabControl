@@ -1,0 +1,81 @@
+{
+  "profile": null,
+  "capabilities": {
+    "category": "output_switch",
+    "channels": [
+      1
+    ],
+    "operations": [
+      {
+        "name": "dc_on",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "自制板串口协议（现场提供）",
+        "section": "DC-on",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "dc_off",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "自制板串口协议（现场提供）",
+        "section": "DC-off",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "ch3_on",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "自制板串口协议（现场提供）",
+        "section": "CH3-on",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "ch4_on",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "自制板串口协议（现场提供）",
+        "section": "CH4-on",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
+        "name": "switch_board_serial_status",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "自制板串口协议（现场提供）",
+        "section": "本机会话，仅被动读取串口接收缓冲区",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      }
+    ]
+  }
+}

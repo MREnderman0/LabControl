@@ -1,9 +1,14 @@
+import json
 import time
+
+import numpy as np
+import pytest
 
 from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.domain.instruments import AcquisitionRequest
 from lab_control.instruments.devices.rs_fph.adapter import FphAdapter
+from lab_control.instruments.devices.rs_fph.hardware.trace_readonly import capture_request
 from lab_control.instruments.devices.rs_fph.hardware.validate_control import frame_record
 from lab_control.instruments.devices.rs_fph.profile import fph
 
@@ -13,7 +18,9 @@ from .test_protocol import context, raw_trace
 class StateTransport:
     resource = "mock://fph-session"
 
-    def __init__(self):
+    def __init__(self, firmware="V1.40"):
+        self.firmware = firmware
+        self.options = b"0"
         self.state = context(byte_order="SWAP")
         self.history = []
 
@@ -32,8 +39,8 @@ class StateTransport:
     def query(self, payload):
         self.history.append(payload)
         extra = {
-            "*IDN?": b"Rohde&Schwarz,FPH,1321.1111K02/TEST,V1.40",
-            "*OPT?": b"0",
+            "*IDN?": f"Rohde&Schwarz,FPH,1321.1111K02/TEST,{self.firmware}".encode(),
+            "*OPT?": self.options,
             "SYST:ERR?": b'0,"No error"',
         }
         if payload in extra:
@@ -90,3 +97,63 @@ def test_real_adapter_stream_binary_and_csv_preserve_every_frame(tmp_path):
         assert len(transport.history) == 52
         assert list(tmp_path.rglob("*.csv"))
         assert not app.sessions.snapshots()[0]["controlsLocked"]
+
+
+@pytest.mark.parametrize(
+    ("transfer_format", "order", "zero_span"),
+    [("ASC", "NORM", False), ("REAL", "NORM", False), ("REAL", "SWAP", True)],
+)
+def test_v240_default_connect_capture_save_and_reconnect_are_query_only(
+    tmp_path, transfer_format, order, zero_span
+):
+    config = ConnectionConfig("mock://fph-session", "rs.fph", "mock")
+    transport = StateTransport("V2.40")
+    transport.state.update(transfer_format=transfer_format, byte_order=order)
+    if zero_span:
+        transport.state.update(start_frequency=100e6, stop_frequency=100e6, span=0, sweep_time=0.1)
+
+    with ApplicationRuntime((config,), root=tmp_path, hardware=False) as app:
+        app.sessions.factory = lambda _: FphAdapter(transport, fph(), config)
+        key = app.add(config)
+        assert app.connect(key).result(5).firmware == "V2.40"
+        adapter = app.sessions.sessions[key].adapter
+        (preamp,) = adapter.read_settings(("preamplifier",))
+        assert preamp.value is None and preamp.source == "unavailable" and "B22" in preamp.error
+        assert not adapter.capabilities().get("reference_level").writable
+        assert not adapter.capabilities().get("attenuation").writable
+        request = capture_request(adapter)
+        assert not request.initiate and not request.allow_setup
+        folder = app.monitoring.capture_and_export(key, request, "electronic").result(10)
+        app.sessions.disconnect(key)
+        assert app.connect(key).result(5).firmware == "V2.40"
+
+    snapshot = next(folder.rglob("snapshot.json"))
+    metadata = json.loads(snapshot.read_text(encoding="utf-8"))
+    (sample,) = metadata["measurements"]
+    assert metadata["identity"]["firmware"] == "V2.40"
+    assert metadata["configuration"]["preamplifier"] is None
+    assert "B22" in metadata["configuration"]["preamplifier_status"]
+    assert "INP:GAIN:STAT?" not in transport.history
+    assert sample["unit"] == "dBm"
+    assert sample["axis_unit"] == ("s" if zero_span else "Hz")
+    with np.load(snapshot.with_name("samples.npz"), allow_pickle=False) as arrays:
+        expected_axis = np.linspace(0, 0.1, 711) if zero_span else np.linspace(99e6, 101e6, 711)
+        np.testing.assert_array_equal(arrays[sample["axis_ref"]], expected_axis)
+        np.testing.assert_allclose(arrays[sample["values_ref"]], np.linspace(-100, -20, 711), atol=1e-5)
+    assert transport.history.count("TRAC:DATA? TRACE1") == 1
+    assert "SYST:ERR?" not in transport.history
+
+
+def test_v240_installed_b22_keeps_preamp_readback_in_trace(tmp_path):
+    config = ConnectionConfig("mock://fph-session", "rs.fph", "mock")
+    transport = StateTransport("V2.40")
+    transport.options = b"B3,B22"
+    transport.state.update(preamplifier=True)
+    with ApplicationRuntime((config,), root=tmp_path, hardware=False) as app:
+        app.sessions.factory = lambda _: FphAdapter(transport, fph(), config)
+        key = app.add(config)
+        app.connect(key).result(5)
+        batch = app.sessions.submit(key, "acquire", AcquisitionRequest("spectrum")).result(5)
+    assert batch.configuration["preamplifier"] is True
+    assert "preamplifier_status" not in batch.configuration
+    assert transport.history.count("INP:GAIN:STAT?") == 2

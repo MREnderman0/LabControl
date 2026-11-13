@@ -90,12 +90,7 @@ def ascii_trace(raw: bytes, points: int, detector: str) -> np.ndarray:
     if b"\r" in payload or b"\n" in payload:
         raise DeviceError("4959E returned multiple records for Trace 1", "parse_error")
     parts = payload.split(b",")
-    if len(parts) != points:
-        if detector == "NORM" and len(parts) == points * 2:
-            raise Unsupported(
-                f"4959E 标准检波返回 {len(parts)} 个幅值，对应 {points} 个扫描点。"
-                "最大值、最小值的传输排列尚未核实。"
-            )
+    if len(parts) != points and not (detector == "NORM" and len(parts) == points * 2):
         raise DeviceError(f"4959E returned {len(parts)} trace points, expected {points}", "parse_error")
     try:
         values = np.array([float(p) for p in parts], dtype=np.float64)
@@ -184,15 +179,22 @@ class MicrowaveAnalyzer(ScpiAdapter):
             raise Unsupported("4959E trace 1 must be visible with a supported trace type")
         points = settings["sweep_points"]
         start, stop = settings["start_frequency"], settings["stop_frequency"]
-        if not 0 <= start <= stop <= MAX_HZ or settings.get("sweep_time", 1) <= 0 or settings["rbw"] <= 0:
+        if not 0 <= start <= stop or settings.get("sweep_time", 1) <= 0 or settings["rbw"] <= 0:
             raise DeviceError("Invalid 4959E axis", "parse_error")
         values = ascii_trace(self.transport.query(TRACE_QUERY), points, settings["detector"])
         if settings != self.frame_settings():
             raise DeviceError("4959E configuration changed during trace read", "configuration_changed")
-        if index_only:
+        raw_order = values.size == 2 * points
+        if raw_order:
+            # The manufacturer specifies both extrema per sweep point, but does not
+            # document their order on the wire. Preserve all returned amplitudes.
+            axis, unit = np.arange(values.size), "index"
+        elif index_only:
             if settings["detector"] not in {"POS", "NEG", "SAMP", "AVER", "RMS"}:
                 raise Unsupported("4959E 未确认当前检波模式的单值轨迹")
             axis, unit = np.arange(points), "index"
+        elif stop > MAX_HZ:
+            raise DeviceError("4959E physical sweep axis exceeds the verified frequency range", "parse_error")
         elif start == stop:
             axis, unit = np.linspace(0, settings["sweep_time"], points), "s"
         else:
@@ -205,6 +207,11 @@ class MicrowaveAnalyzer(ScpiAdapter):
                 1,
                 axis,
                 unit,
-                metadata={"points": points, "trace": 1, "settings": settings},
+                metadata={
+                    "points": int(values.size),
+                    "trace": 1,
+                    "settings": settings,
+                    "axis_kind": "transfer_sample_index" if raw_order else unit,
+                },
             ),
         )
