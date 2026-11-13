@@ -16,14 +16,13 @@ POINTS = 101
 TRACE = b",".join(str(-100 + i / 10).encode() for i in range(POINTS)) + b"\n"
 
 
-def snapshot(
-    *, mode="SA", scan="LINE", fmt="ASC", start=1e6, stop=2e6, trace="CLRW", detector="SAMP", rbw=100
-):
+def snapshot(*, mode="SA", span=None, fmt="ASC", start=1e6, stop=2e6, trace="CLRW", detector="SAMP", rbw=100):
     exchanges = [(":INST?", mode.encode())]
     if mode != "SA":
         return exchanges
     fields = [
-        (":SWE:MODE?", scan),
+        (":FREQ:CENT?", (start + stop) / 2),
+        (":FREQ:SPAN?", stop - start if span is None else span),
         (":FORM?", fmt),
         (":FREQ:STAR?", start),
         (":FREQ:STOP?", stop),
@@ -37,10 +36,14 @@ def snapshot(
     return exchanges + [(cmd, str(value).encode()) for cmd, value in fields]
 
 
-def device(exchanges, idn=IDN):
+def device(exchanges, idn=IDN, options=("no_list_sweep",)):
     transport = MockTransport([("*IDN?", idn), *exchanges])
     transport.open()
-    adapter = MicrowaveAnalyzer(transport, PROFILE, ConnectionConfig("mock://4959e", PROFILE.adapter_id))
+    adapter = MicrowaveAnalyzer(
+        transport,
+        PROFILE,
+        ConnectionConfig("mock://4959e", PROFILE.adapter_id, expected_serial="TEST", options=options),
+    )
     adapter.identify()
     return adapter, transport
 
@@ -66,7 +69,6 @@ def test_trace_coordinates_and_guarded_commands(stop, last, unit):
     "change",
     [
         {"mode": "VNA"},
-        {"scan": "LIST"},
         {"fmt": "HEX"},
         {"trace": "BLAN"},
         {"trace": "UNKNOWN"},
@@ -98,27 +100,23 @@ def test_malformed_trace_does_not_produce_a_frame(payload):
     assert error.value.code == "parse_error" and transport.history.count(TRACE_QUERY) == 1
 
 
-@pytest.mark.parametrize("second", [TRACE, b",".join([b"-73.14"] * POINTS)])
-def test_normal_detector_preserves_double_length_in_wire_order(second):
-    settings = snapshot(scan="Error!", detector="NORM")
-    payload = TRACE.strip() + b"," + second
+def test_normal_detector_preserves_both_extrema_at_each_frequency():
+    settings = snapshot(detector="NORM")
+    lower = np.arange(POINTS) / 10 - 115
+    payload = TRACE.strip() + b"," + b",".join(str(v).encode() for v in lower)
     adapter, transport = device([*settings, (TRACE_QUERY, payload), *settings])
     result = adapter.acquire(capture_request(adapter)).measurements[0]
-    assert (result.unit, result.axis_unit, result.metadata["axis_kind"]) == (
-        "dBm",
-        "index",
-        "transfer_sample_index",
-    )
-    assert result.metadata["points"] == 2 * POINTS and result.metadata["settings"]["sweep_points"] == POINTS
-    np.testing.assert_array_equal(result.axis, np.arange(POINTS * 2))
-    np.testing.assert_array_equal(result.values, [float(item) for item in payload.split(b",")])
-    assert all(cmd.endswith("?") for cmd in transport.history)
+    assert (result.unit, result.axis_unit, result.metadata["axis_kind"]) == ("dBm", "Hz", "per_bin_max_min")
+    np.testing.assert_array_equal(result.axis, np.repeat(np.linspace(1e6, 2e6, POINTS), 2))
+    np.testing.assert_array_equal(result.values[1::2], lower)
+    np.testing.assert_allclose(result.values[::2], lower + 15)
+    assert all(cmd.endswith("?") and cmd != ":SWE:MODE?" for cmd in transport.history)
 
 
 def test_front_panel_26_6_ghz_raw_trace_is_readable_without_extending_write_range():
     settings = [
         (q, b"1001" if q == ":SWE:POIN?" else value)
-        for q, value in snapshot(scan="Error!", start=0, stop=26.6e9, detector="NORM", rbw=3e6)
+        for q, value in snapshot(start=0, stop=26.6e9, detector="NORM", rbw=3e6)
     ]
     payload = b",".join([b"-89.96", b"-51.12"] * 1001)
     adapter, transport = device([*settings, (TRACE_QUERY, payload), *settings])
@@ -132,16 +130,17 @@ def test_front_panel_26_6_ghz_raw_trace_is_readable_without_extending_write_rang
 
 @pytest.mark.parametrize("length", [POINTS * 2 - 1, POINTS * 2 + 1])
 def test_normal_detector_rejects_incomplete_or_extra_pairs(length):
-    settings = snapshot(scan="Error!", detector="NORM")
+    settings = snapshot(detector="NORM")
     adapter, _ = device([*settings, (TRACE_QUERY, b",".join([b"-80"] * length))])
     with pytest.raises(DeviceError) as error:
         adapter.acquire(capture_request(adapter))
     assert error.value.code == "parse_error"
 
 
-def test_unreported_sweep_mode_uses_only_indices_for_a_single_value_detector():
-    settings = snapshot(scan="Error!", detector="SAMP")
-    adapter, _ = device([*settings, (TRACE_QUERY, TRACE), *settings])
+@pytest.mark.parametrize("opts,span", [((), 1e6), (("no_list_sweep",), 3e6)])
+def test_unverified_axis_retains_original_wire_order(opts, span):
+    settings = snapshot(detector="SAMP", span=span)
+    adapter, _ = device([*settings, (TRACE_QUERY, TRACE), *settings], options=opts)
     trace = adapter.acquire(capture_request(adapter)).measurements[0]
     assert trace.axis_unit == "index"
     np.testing.assert_array_equal(trace.axis, np.arange(POINTS))
@@ -183,3 +182,69 @@ def test_control_fixture_through_package_adapter():
     result = adapter.apply(DeviceCommand(fixture["operation"], fixture["parameters"]))
     assert result.outcome == "success" and result.readback == 5
     assert DEFINITION.adapter_type is type(adapter)
+
+
+@pytest.mark.parametrize(
+    "operation,path,value",
+    [
+        ("rbw", ":BAND", 30000),
+        ("vbw", ":BAND:VID", 10000),
+        ("reference_level", ":DISP:WIND:TRAC:Y:RLEV", -20),
+        ("attenuation", ":POW:ATT", 10),
+    ],
+)
+def test_spectrum_inputs_write_once_and_verify(operation, path, value):
+    exchanges = [(":INST?", b"SA")]
+    exchanges.append((":AMPL:UNIT?", b"DBM") if operation == "reference_level" else (path + ":AUTO?", b"0"))
+    write = f"{path} {value}"
+    exchanges.extend([(write, b""), (path + "?", str(value).encode()), ("SYST:ERR?", b"0,No error")])
+    adapter, transport = device(exchanges)
+    result = adapter.apply(DeviceCommand(operation, {"value": value}))
+    assert result.outcome == "success" and result.readback == value
+    assert [cmd for cmd in transport.history if not cmd.endswith("?")] == [write]
+
+
+@pytest.mark.parametrize("mode,unit", [("LINE", "Hz"), ("LIST", "index")])
+def test_verified_list_option_reads_actual_mode(mode, unit):
+    frame = snapshot() + [(":SWE:MODE?", mode.encode())]
+    adapter, _ = device([*frame, (TRACE_QUERY, TRACE), *frame], options=("4959-S13",))
+    assert adapter.acquire(capture_request(adapter)).measurements[0].axis_unit == unit
+
+
+@pytest.mark.parametrize(
+    "mode,span,unit", [(None, 10e6, "Hz"), (None, 9e6, "index"), ("LIST", 10e6, "index")]
+)
+def test_front_panel_linear_confirmation_is_scoped_and_checks_each_frame(mode, span, unit):
+    settings = snapshot(start=95e6, stop=105e6, span=span)
+    options = ("4959-S13",) if mode else ()
+    if mode:
+        settings.append((":SWE:MODE?", mode.encode()))
+    adapter, transport = device([*settings, (TRACE_QUERY, TRACE), *settings] * 2, options=options)
+    trace = adapter.acquire(AcquisitionRequest("spectrum", panel_linear_sweep=True)).measurements[0]
+    assert trace.axis_unit == unit
+    if unit == "Hz":
+        assert (trace.axis[0], trace.axis[-1]) == (95e6, 105e6)
+        assert trace.metadata["settings"]["sweep_mode_source"] == "operator_confirmed_linear"
+    assert adapter.acquire(AcquisitionRequest("spectrum")).measurements[0].axis_unit == "index"
+    assert all(cmd.endswith("?") for cmd in transport.history)
+    if not mode:
+        assert ":SWE:MODE?" not in transport.history
+
+
+def test_optional_query_rejection_falls_back_without_repeated_panel_errors():
+    frame = snapshot()
+    adapter, transport = device(
+        [
+            *frame,
+            (":SWE:MODE?", b"Error!"),
+            (TRACE_QUERY, TRACE),
+            *frame,
+            *frame,
+            (TRACE_QUERY, TRACE),
+            *frame,
+        ],
+        options=("4959-S13",),
+    )
+    for _ in range(2):
+        assert adapter.acquire(capture_request(adapter)).measurements[0].axis_unit == "index"
+    assert transport.history.count(":SWE:MODE?") == 1

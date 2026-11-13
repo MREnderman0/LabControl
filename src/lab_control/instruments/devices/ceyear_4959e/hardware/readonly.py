@@ -12,7 +12,7 @@ from .. import DEFINITION
 from ..adapter import TRACE_QUERY
 from .records import publish_report
 
-EXTRA_QUERIES = (TRACE_QUERY,)
+EXTRA_QUERIES = (TRACE_QUERY, ":SWE:MODE?")
 
 
 def capture_request(adapter: ScpiAdapter) -> AcquisitionRequest:

@@ -13,11 +13,18 @@ from lab_control.transport.base import MockTransport
 
 
 def test_passive_session_returns_instrument_axis_and_saves_no_failed_frame(tmp_path, monkeypatch):
-    asset = ConnectionConfig("mock://ceyear-session", DEFINITION.adapter_id, "mock", expected_serial="TEST")
+    asset = ConnectionConfig(
+        "mock://ceyear-session",
+        DEFINITION.adapter_id,
+        "mock",
+        expected_serial="TEST",
+        options=("no_list_sweep",),
+    )
     replies = {
         "*IDN?": b"Ceyear Technologies,4959E,TEST,2.6.14",
         ":INST?": b"SA",
-        ":SWE:MODE?": b"LINE",
+        ":FREQ:CENT?": b"100000000",
+        ":FREQ:SPAN?": b"2000000",
         ":FORM?": b"ASC",
         ":FREQ:STAR?": b"99000000",
         ":FREQ:STOP?": b"101000000",
@@ -45,22 +52,23 @@ def test_passive_session_returns_instrument_axis_and_saves_no_failed_frame(tmp_p
         trace = good.measurements[0]
         assert trace.quality == Quality.GOOD and trace.axis_unit == "Hz"
         np.testing.assert_allclose(trace.axis, np.linspace(99e6, 101e6, 101))
-        replies.update({":SWE:MODE?": b"Error!", ":DET:FUNC?": b"NORM"})
+        replies[":DET:FUNC?"] = b"NORM"
         replies[TRACE_QUERY] = b",".join([b"-90.25"] * 202)
         batch = runtime.sessions.submit(device, "acquire", request).result(timeout=5)
         raw = batch.measurements[0]
-        assert raw.axis_unit == "index" and raw.metadata["points"] == 202
-        np.testing.assert_array_equal(raw.axis, np.arange(202))
+        assert raw.axis_unit == "Hz" and raw.metadata["points"] == 202
+        np.testing.assert_array_equal(raw.axis, np.repeat(np.linspace(99e6, 101e6, 101), 2))
         runtime.repository.export(batch)
         with np.load(next(tmp_path.rglob("samples.npz")), allow_pickle=False) as saved:
             np.testing.assert_array_equal(saved["values_0"], raw.values)
             np.testing.assert_array_equal(saved["axis_0"], raw.axis)
             item = json.loads(str(saved["metadata_json"]))["measurements"][0]
-            assert (item["unit"], item["axis_unit"]) == ("dBm", "index")
+            assert (item["unit"], item["axis_unit"]) == ("dBm", "Hz")
             assert item["metadata"]["settings"]["sweep_points"] == 101
         replies[":TRAC1:TYPE?"] = b"BLAN"
         with pytest.raises(Unsupported, match="trace 1 must be visible"):
             runtime.sessions.submit(device, "acquire", request).result(timeout=5)
     assert all(cmd.endswith("?") for cmd in transport.history)
+    assert ":SWE:MODE?" not in transport.history
     assert transport.history.count(TRACE_QUERY) == 2
     assert len(list(tmp_path.rglob("samples.npz"))) == 1

@@ -14,6 +14,7 @@ class TraceView:
 
     def reset(self) -> None:
         self.active = False
+        self.fit_sweep = False
         self.configuration_key: tuple | None = None
         self.axis_key: tuple | None = None
         self.points: list[tuple[np.ndarray, np.ndarray]] = []
@@ -49,10 +50,16 @@ class TraceView:
             low, high = low - span / 2, high + span / 2
         return low - span * fraction, high + span * fraction
 
+    def x_range(self, low: float, high: float) -> tuple[float, float]:
+        if self.fit_sweep and high > low:
+            return low, high
+        return self.padded(low, high, 0.02)
+
     def update(self, frame, source_key, channels, points, *, waveform: bool = False) -> None:
         if not points:
             return
         self.active = True
+        self.fit_sweep = frame.request.kind == "spectrum"
         self.points = points
         configuration = {
             k: v for k, v in frame.batch.configuration.items() if not k.startswith(("_", "monitor_"))
@@ -82,7 +89,7 @@ class TraceView:
         if bounds is None:
             return
         if fit_x:
-            self.plot.setXRange(*self.padded(bounds[0], bounds[1], 0.02), padding=0)
+            self.plot.setXRange(*self.x_range(bounds[0], bounds[1]), padding=0)
             self.axis_key = axis_key
         if changed:
             self.plot.setYRange(*self.padded(bounds[2], bounds[3], 0.1), padding=0)
@@ -92,5 +99,5 @@ class TraceView:
         bounds = self.bounds(self.points)
         if bounds is not None:
             self.plot.disableAutoRange()
-            self.plot.setXRange(*self.padded(bounds[0], bounds[1], 0.02), padding=0)
+            self.plot.setXRange(*self.x_range(bounds[0], bounds[1]), padding=0)
             self.plot.setYRange(*self.padded(bounds[2], bounds[3], 0.1), padding=0)

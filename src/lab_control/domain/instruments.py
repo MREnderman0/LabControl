@@ -251,8 +251,14 @@ class AcquisitionRequest:
     # Internal policy: a passive request must not promote a setup-required read
     # into format-changing initialization. Existing local callers retain behavior.
     allow_setup: bool = True
+    # Operator verified the analyzer is in linear sweep for this monitoring run.
+    panel_linear_sweep: bool = False
 
     def validate(self) -> None:
+        if not isinstance(self.panel_linear_sweep, bool) or (
+            self.panel_linear_sweep and self.kind != "spectrum"
+        ):
+            raise ValidationError("Panel sweep confirmation requires a spectrum request")
         for name in ("duration", "sample_rate"):
             value = getattr(self, name)
             if value is not None and (

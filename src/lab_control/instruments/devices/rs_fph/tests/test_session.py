@@ -120,8 +120,8 @@ def test_v240_default_connect_capture_save_and_reconnect_are_query_only(
         adapter = app.sessions.sessions[key].adapter
         (preamp,) = adapter.read_settings(("preamplifier",))
         assert preamp.value is None and preamp.source == "unavailable" and "B22" in preamp.error
-        assert not adapter.capabilities().get("reference_level").writable
-        assert not adapter.capabilities().get("attenuation").writable
+        assert adapter.capabilities().get("reference_level").writable
+        assert adapter.capabilities().get("attenuation").writable
         request = capture_request(adapter)
         assert not request.initiate and not request.allow_setup
         folder = app.monitoring.capture_and_export(key, request, "electronic").result(10)
@@ -182,7 +182,15 @@ def test_k13_passive_connection_and_readonly_controls(tmp_path):
         for _ in range(2):
             assert app.connect(key).result(5).firmware == "V2.33"
             adapter = app.sessions.sessions[key].adapter
-            assert not any(cap.writable for cap in adapter.capabilities().operations)
+            assert {c.name for c in adapter.capabilities().operations if c.writable} == {
+                "rbw",
+                "vbw",
+                "reference_level",
+                "attenuation",
+                "rbw_auto",
+                "vbw_auto",
+                "attenuation_auto",
+            }
             for name in ("single", "span"):
                 with pytest.raises(Unsupported):
                     adapter.apply(DeviceCommand(name, confirmed=True))
@@ -198,4 +206,21 @@ def test_k13_passive_connection_and_readonly_controls(tmp_path):
             transport.state["transfer_format"] = "ASC"
             app.sessions.disconnect(key)
     assert all("?" in command for command in transport.history)
+    assert "INP:GAIN:STAT?" not in transport.history
+
+
+@pytest.mark.parametrize("firmware,product", [("V2.33", "1321.1111K13"), ("V2.40", "1321.1111K02")])
+@pytest.mark.parametrize(
+    "name,value", [("rbw", 1e4), ("vbw", 1e4), ("reference_level", -20), ("attenuation", 20)]
+)
+def test_front_panel_inputs_without_optional_preamp(firmware, product, name, value):
+    transport = StateTransport(firmware, product)
+    writes = []
+    transport.write = writes.append
+    adapter = FphAdapter(transport, fph(), ConnectionConfig("mock://fph-session", "rs.fph"))
+    adapter.identify()
+    adapter.refresh_capabilities()
+    result = adapter.apply(DeviceCommand(name, {"value": value}))
+    assert result.outcome == "success" and result.readback == value
+    assert writes == [fph().commands[name].writes[0].format(value=f"{value:g}")]
     assert "INP:GAIN:STAT?" not in transport.history

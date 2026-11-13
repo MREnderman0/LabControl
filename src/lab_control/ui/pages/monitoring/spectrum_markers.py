@@ -167,6 +167,19 @@ class SpectrumPlot(LivePlot):
             ),
             None,
         )
+        if self.trace and self.trace.metadata.get("axis_kind") == "transfer_sample_index":
+            settings = self.trace.metadata.get("settings", {})
+            start, stop = settings.get("start_frequency"), settings.get("stop_frequency")
+            if isinstance(start, (float, int)) and isinstance(stop, (float, int)):
+                self.meta.setText(
+                    f"仪器扫频范围 {frequency_text(start)} – {frequency_text(stop)} · 横轴为回包样本序号"
+                )
+        if self.trace and self.trace.axis_unit in {"Hz", "s"}:
+            if (
+                self.trace.metadata.get("settings", {}).get("sweep_mode_source")
+                == "operator_confirmed_linear"
+            ):
+                self.meta.setText(self.meta.text() + " · 面板确认线性扫描")
         self.amplitude_unit = self.trace.unit if self.trace else ""
         self.update_markers()
 

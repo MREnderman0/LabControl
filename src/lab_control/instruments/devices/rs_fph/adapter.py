@@ -25,6 +25,7 @@ from .protocol import POINTS, RBW, UNITS, VBW, boolean, trace, trace_format, tra
 
 TRACE_QUERY = "TRAC:DATA? TRACE1"
 K13_PRODUCT = "1321.1111K13"
+PANEL_SETTINGS = {"rbw", "vbw", "reference_level", "attenuation", "rbw_auto", "vbw_auto", "attenuation_auto"}
 
 FRAME_SETTINGS = (
     "start_frequency",
@@ -83,6 +84,7 @@ class FphAdapter(ScpiAdapter):
         super().__init__(*args, **kwargs)
         self._acquisition_context: dict[str, Any] | None = None
         self._context_timestamp = ""
+        self._options_checked = False
         self._context_key: tuple[str, str] = ("", "")
 
     @property
@@ -154,7 +156,12 @@ class FphAdapter(ScpiAdapter):
 
     def refresh_capabilities(self) -> None:
         self.invalidate_acquisition_context("refresh")
-        self.detected_options = tuple(v.strip() for v in self.read("options").split(",") if v.strip())
+        self._options_checked = False
+        options = self.read("options").split(",")
+        self.detected_options = tuple(v.strip().removeprefix("FPH-") for v in options)
+        self._options_checked = all(
+            re.fullmatch(r"(?:0|[A-Z]+[0-9]+[A-Z0-9-]*)", option) for option in self.detected_options
+        )
         for op in FREQUENCY:
             self.dynamic_parameters[op] = replace(
                 self.profile.commands[op].capability.parameters["value"],
@@ -210,7 +217,11 @@ class FphAdapter(ScpiAdapter):
             for cap in caps.operations:
                 if cap.name == "preamplifier":
                     cap = replace(cap, available=False, readable=False, reason=self._preamp_unavailable)
-                elif cap.name in {"reference_level", "attenuation", "attenuation_auto"}:
+                elif not self._options_checked and cap.name in {
+                    "reference_level",
+                    "attenuation",
+                    "attenuation_auto",
+                }:
                     cap = replace(cap, writable=False, reason=self._preamp_unavailable)
                 operations.append(cap)
             caps = replace(caps, operations=tuple(operations))
@@ -226,6 +237,8 @@ class FphAdapter(ScpiAdapter):
                         reason="只读连接保留仪器错误队列",
                     )
                     if cap.name == "errors"
+                    else cap
+                    if cap.name in PANEL_SETTINGS
                     else replace(cap, writable=False, available=cap.available and cap.readable)
                     for cap in caps.operations
                 ),
@@ -259,7 +272,8 @@ class FphAdapter(ScpiAdapter):
             raise  # No ASCII fallback and no replay after a failed write/read.
 
     def _check_error(self) -> None:
-        error = self.read("errors")
+        # Only the explicit apply path consumes an error after its setting.
+        error = self.transport.query("SYST:ERR?").decode("ascii").strip()
         if not re.match(r"^[+]?0(?:\s|,|$)", error):
             raise DeviceError(error, "instrument_error")
 
@@ -299,7 +313,10 @@ class FphAdapter(ScpiAdapter):
         if op in {"reference_level", "attenuation"}:
             if self.read("amplitude_unit") != "DBM" or self.read("reference_offset") != 0:
                 raise Unsupported("Level writes require dBm and zero reference offset")
-            if self.read("preamplifier"):
+            if self._preamp_unavailable:
+                if not self._options_checked:
+                    raise Unsupported("请先刷新 FPH 的实机选件")
+            elif self.read("preamplifier"):
                 raise Unsupported("Level writes with the preamplifier enabled are not qualified")
             if not self.read("attenuation_auto"):
                 level = value if op == "reference_level" else self.read("reference_level")

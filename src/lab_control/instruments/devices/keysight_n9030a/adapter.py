@@ -1,7 +1,10 @@
 """Read the PXA's existing trace without reconfiguring or triggering the analyzer."""
 
+from typing import Any
+
 from lab_control.domain.instruments import (
     AcquisitionRequest,
+    DeviceCommand,
     DeviceError,
     MeasurementBatch,
     ParameterReading,
@@ -9,6 +12,7 @@ from lab_control.domain.instruments import (
     ValidationError,
     utc_now,
 )
+from lab_control.domain.readback import boolean_value
 from lab_control.instruments.base import ScpiAdapter
 from lab_control.transport.diagnostics import parsing
 
@@ -30,6 +34,24 @@ FRAME_SETTINGS = (
 
 class N9030aAdapter(ScpiAdapter):
     acquisition_revision = "n9030a-swept-sa-xy-v1"
+
+    def check_control_context(self, operation: str) -> None:
+        if super().read("measurement_mode") not in {"SAN", "SANALYZER"}:
+            raise Unsupported("N9030A 频谱参数需要 Swept SA 模式")
+        if operation == "reference_level" and super().read("amplitude_unit") != "DBM":
+            raise Unsupported("N9030A 参考电平输入需要面板使用 dBm")
+
+    def read(self, operation: str, channel: int = 1) -> Any:
+        spec = self.profile.commands.get(operation)
+        if spec and spec.capability.writable:
+            self.check_control_context(operation)
+        return super().read(operation, channel)
+
+    def preflight(self, command: DeviceCommand, parameters: dict[str, Any]) -> None:
+        op = command.operation
+        self.check_control_context(op)
+        if op in {"rbw", "vbw", "attenuation"} and boolean_value(super().read(op + "_auto")) is not False:
+            raise ValidationError("请先关闭对应参数的自动模式")
 
     def acquire(self, request: AcquisitionRequest) -> MeasurementBatch:
         request.validate()

@@ -18,6 +18,7 @@ from lab_control.domain.instruments import (
     ValidationError,
     utc_now,
 )
+from lab_control.domain.readback import boolean_value
 from lab_control.instruments.base import Profile, ScpiAdapter, command, number, parameter, read_command
 
 SOURCE = "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf"
@@ -51,22 +52,31 @@ def profile() -> Profile:
     }
     scale = command("display_scale", ":DISP:WIND:TRAC:Y:PDIV", parameter("dB/div", 0.2, 40), scoped=False)
     commands["display_scale"] = replace(scale, decode=number)
+    for key, path, param in (
+        ("rbw", ":BAND", parameter("Hz", 1, 20e6)),
+        ("vbw", ":BAND:VID", parameter("Hz", 1, 20e6)),
+        ("reference_level", ":DISP:WIND:TRAC:Y:RLEV", parameter("dBm", -150, 30)),
+        (
+            "attenuation",
+            ":POW:ATT",
+            Parameter("integer", "dB", 0, 30, choices=tuple(str(n) for n in range(0, 31, 2))),
+        ),
+    ):
+        commands[key] = replace(command(key, path, param, scoped=False), decode=number)
+        if key != "reference_level":
+            name = key + "_auto"
+            commands[name] = command(name, path + ":AUTO", Parameter("boolean"), scoped=False)
     for key, path, decode in (
         ("measurement_mode", ":INST?", token),
         ("available_modes", ":INST:CAT?", token),
         ("transfer_format", ":FORM?", token),
         ("sweep_points", ":SWE:POIN?", count),
-        ("sweep_mode", ":SWE:MODE?", token),
+        ("amplitude_unit", ":AMPL:UNIT?", token),
         ("trace_mode", ":TRAC1:TYPE?", token),
         ("detector", ":DET:FUNC?", token),
         ("sweep_time", ":SWE:TIME?", number),
-        ("rbw", ":BAND?", number),
     ):
         spec = read_command(key, path, scoped=False)
-        if key == "rbw":
-            spec = replace(
-                spec, capability=replace(spec.capability, parameters={"value": Parameter(unit="Hz")})
-            )
         commands[key] = replace(spec, decode=decode)
     return Profile(
         "ceyear.4959e",
@@ -102,6 +112,9 @@ def ascii_trace(raw: bytes, points: int, detector: str) -> np.ndarray:
 
 
 class MicrowaveAnalyzer(ScpiAdapter):
+    # A firmware conflict on the optional query remains suppressed for this connection.
+    _sweep_query_rejected = False
+
     def require_spectrum(self) -> None:
         if super().read("measurement_mode") != "SA":
             raise Unsupported("请在 4959E 面板选择频谱分析（SA）模式")
@@ -110,10 +123,17 @@ class MicrowaveAnalyzer(ScpiAdapter):
         self._context(channel, {})
         if operation not in ("measurement_mode", "available_modes"):
             self.require_spectrum()
+        if operation == "reference_level" and super().read("amplitude_unit") != "DBM":
+            raise Unsupported("4959E 参考电平输入需要面板使用 dBm")
         return super().read(operation, channel)
 
     def preflight(self, cmd: DeviceCommand, parameters: dict[str, Any]) -> None:
         self.require_spectrum()
+        if cmd.operation == "reference_level" and super().read("amplitude_unit") != "DBM":
+            raise Unsupported("4959E 参考电平输入需要面板使用 dBm")
+        if cmd.operation in {"rbw", "vbw", "attenuation"}:
+            if boolean_value(super().read(cmd.operation + "_auto")) is not False:
+                raise ValidationError("请先关闭对应参数的自动模式")
         value = parameters["value"]
         if cmd.operation in {"center_frequency", "span"}:
             center = value if cmd.operation == "center_frequency" else super().read("center_frequency")
@@ -135,7 +155,8 @@ class MicrowaveAnalyzer(ScpiAdapter):
         settings = {
             key: read(key)
             for key in (
-                "sweep_mode",
+                "center_frequency",
+                "span",
                 "transfer_format",
                 "start_frequency",
                 "stop_frequency",
@@ -145,6 +166,19 @@ class MicrowaveAnalyzer(ScpiAdapter):
                 "rbw",
             )
         }
+        # Only issue the optional list-sweep query for an asset with a
+        # confirmed S13 license. It raises a modal error on other 4959Es.
+        if (
+            self.identity
+            and self.identity.serial == self.config.expected_serial
+            and "4959-S13" in self.config.options
+            and not self._sweep_query_rejected
+        ):
+            sweep_mode = token(self.transport.query(":SWE:MODE?"))
+            if sweep_mode in {"LINE", "0", "LIST", "1"}:
+                settings["sweep_mode"] = "LINE" if sweep_mode in {"LINE", "0"} else "LIST"
+            else:
+                self._sweep_query_rejected = True
         if settings["start_frequency"] == settings["stop_frequency"]:
             settings["sweep_time"] = read("sweep_time")
         settings["measurement_mode"] = mode
@@ -166,13 +200,6 @@ class MicrowaveAnalyzer(ScpiAdapter):
         settings = self.frame_settings()
         if settings["measurement_mode"] != "SA":
             raise Unsupported("请在 4959E 面板选择频谱分析（SA）模式")
-        index_only = (
-            self.identity is not None
-            and self.identity.firmware == "2.6.14"
-            and settings["sweep_mode"] == "ERROR!"
-        )
-        if settings["sweep_mode"] != "LINE" and not index_only:
-            raise Unsupported("4959E trace acquisition requires a linear sweep")
         if settings["transfer_format"] != "ASC":
             raise Unsupported("4959E trace read requires the qualified ASC transfer format")
         if settings["trace_mode"] not in VISIBLE_TRACES:
@@ -184,21 +211,44 @@ class MicrowaveAnalyzer(ScpiAdapter):
         values = ascii_trace(self.transport.query(TRACE_QUERY), points, settings["detector"])
         if settings != self.frame_settings():
             raise DeviceError("4959E configuration changed during trace read", "configuration_changed")
-        raw_order = values.size == 2 * points
-        if raw_order:
-            # The manufacturer specifies both extrema per sweep point, but does not
-            # document their order on the wire. Preserve all returned amplitudes.
-            axis, unit = np.arange(values.size), "index"
-        elif index_only:
-            if settings["detector"] not in {"POS", "NEG", "SAMP", "AVER", "RMS"}:
-                raise Unsupported("4959E 未确认当前检波模式的单值轨迹")
-            axis, unit = np.arange(points), "index"
-        elif stop > MAX_HZ:
-            raise DeviceError("4959E physical sweep axis exceeds the verified frequency range", "parse_error")
-        elif start == stop:
-            axis, unit = np.linspace(0, settings["sweep_time"], points), "s"
+        # List sweep is optional (4959-S13). Querying its mode can raise a
+        # front-panel conflict on an unequipped instrument. Only a verified
+        # option inventory bound to this serial permits a linear physical axis.
+        confirmed_linear = settings.get("sweep_mode") == "LINE" or (
+            self.identity is not None
+            and self.identity.serial == self.config.expected_serial
+            and bool(self.config.expected_serial)
+            and "no_list_sweep" in self.config.options
+            and "4959-S13" not in self.config.options
+        )
+        consistent = np.isclose(settings["span"], stop - start, rtol=1e-8, atol=1e-3) and np.isclose(
+            settings["center_frequency"], (start + stop) / 2, rtol=1e-9, atol=1e-3
+        )
+        if request.panel_linear_sweep and "sweep_mode" not in settings:
+            confirmed_linear = True
+            settings["sweep_mode_source"] = "operator_confirmed_linear"
+        double = values.size == 2 * points
+        layout_verified = not double or (
+            self.identity is not None
+            and self.identity.firmware == "2.6.14"
+            and bool(np.all(values[:points] >= values[points:]))
+        )
+        if not confirmed_linear or not consistent or not layout_verified:
+            axis, unit, axis_kind = np.arange(values.size), "index", "transfer_sample_index"
         else:
-            axis, unit = np.linspace(start, stop, points), "Hz"
+            axis, unit = (
+                (np.linspace(0, settings["sweep_time"], points), "s")
+                if start == stop
+                else (np.linspace(start, stop, points), "Hz")
+            )
+            axis_kind = unit
+            if double:
+                # Firmware 2.6.14 sends the upper and lower envelopes as two
+                # contiguous blocks. Interleave on the same bin for plotting.
+                values = np.column_stack((values[:points], values[points:])).ravel()
+                axis = np.repeat(axis, 2)
+                axis_kind = "per_bin_max_min"
+                settings["trace_wire_layout"] = "max_block_then_min_block"
         return (
             Measurement(
                 "spectrum",
@@ -211,7 +261,7 @@ class MicrowaveAnalyzer(ScpiAdapter):
                     "points": int(values.size),
                     "trace": 1,
                     "settings": settings,
-                    "axis_kind": "transfer_sample_index" if raw_order else unit,
+                    "axis_kind": axis_kind,
                 },
             ),
         )

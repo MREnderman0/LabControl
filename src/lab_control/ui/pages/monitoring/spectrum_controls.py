@@ -185,6 +185,7 @@ class SpectrumControls(QFrame):
                 else op.editors["value"].value()
             )
             for name, op in self.editors.items()
+            if name in current
         }
 
     def _automatic(self, name: str) -> bool:
@@ -324,6 +325,13 @@ class SpectrumControls(QFrame):
     def dirty(self) -> bool:
         return any(op.dirty and not self._automatic(name) for name, op in self.editors.items())
 
+    def draft_has_readback(self) -> bool:
+        required = {name for name, op in self.editors.items() if op.dirty and not self._automatic(name)}
+        if required.intersection(FREQUENCY):
+            required.update(self.editors.keys() & set(FREQUENCY))
+        required.update(auto for name, auto in AUTOMATIC.items() if name in required and auto in self.editors)
+        return required <= self.current().keys()
+
     def refresh_buttons(self) -> None:
         state = self.controller.states.get(self.device_id, {})
         locked = bool(state.get("controlsLocked"))
@@ -341,7 +349,7 @@ class SpectrumControls(QFrame):
         self.apply_button.setVisible(bool(self.editors))
         self.refresh_button.setVisible(bool(self.editors))
         self.health.setVisible(bool(self.editors))
-        self.apply_button.setEnabled(available and self.dirty() and len(self.current()) == len(self.editors))
+        self.apply_button.setEnabled(available and self.dirty() and self.draft_has_readback())
         self.refresh_button.setEnabled(
             state.get("connectionState") in {"connected", "busy"}
             and not locked
@@ -359,12 +367,13 @@ class SpectrumControls(QFrame):
     def apply(self) -> None:
         try:
             for op in self.editors.values():
-                op.editors["value"].finish_editing(force=True)
+                if op.dirty:
+                    op.editors["value"].finish_editing(force=True)
             if self.last_frequency:
                 self.link(self.last_frequency)
             target = self.target()
             current = self.current()
-            if len(current) != len(self.editors):
+            if not self.draft_has_readback():
                 raise DeviceError("等待有效读回后再应用")
             self.pending = prepare_changes(current, target, self.controller.capabilities(self.device_id))
             if self.pending:
@@ -431,7 +440,13 @@ class SpectrumControls(QFrame):
             self.finish("会话已改变，停止后续操作；草稿已保留")
             return
         if not self.pending:
-            self.read_pending = list(self.editors)
+            # Verify every setting that was readable, including all writes, without
+            # requiring an unrelated unsupported readback to finish this transaction.
+            self.read_pending = (
+                list(self.editors)
+                if self.auto_running
+                else list(dict.fromkeys([*self.current(), *self.completed]))
+            )
             self.read_next()
             return
         command = self.pending[0]

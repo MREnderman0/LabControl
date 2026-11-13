@@ -39,6 +39,7 @@ def test_spectrum_holds_axis_then_refits_once_on_settings_or_manual_fit(qtbot, p
     source = DataSource("spectrum", "频谱", "spectrum")
     first = frame()
     plot.show_frame(first, source, (1,))
+    assert plot.plot.viewRange()[0] == pytest.approx([100, 200])
     assert plot.plot.viewRange()[1] == pytest.approx([-98, -2])
     plot.show_frame(frame((-160, 40)), source, (1,))
     qtbot.wait(30)
@@ -76,7 +77,7 @@ def test_invalid_frame_does_not_consume_fit_and_units_zero_span_reconnect_reset(
     assert plot.plot.viewRange()[1] == pytest.approx([-98, -2])
     plot.show_frame(frame((0, 0), version=1, unit="V", axis_unit="s", x=[0, 0.2]), source, (1,))
     assert plot.plot.viewRange()[1][0] < 0 < plot.plot.viewRange()[1][1]
-    assert plot.plot.viewRange()[0] == pytest.approx([-0.004, 0.204])
+    assert plot.plot.viewRange()[0] == pytest.approx([0, 0.2])
     plot.show_frame(
         frame((1, 2), version=1, unit="V", axis_unit="s", x=[0, 0.2], session="two"), source, (1,)
     )

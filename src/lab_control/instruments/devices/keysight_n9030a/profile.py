@@ -3,7 +3,7 @@
 from dataclasses import replace
 
 from lab_control.domain.instruments import Parameter
-from lab_control.instruments.base import Profile, read_command
+from lab_control.instruments.base import Profile, command, parameter, read_command
 
 from .protocol import point_count, scalar, token
 
@@ -30,6 +30,16 @@ def n9030a() -> Profile:
         kind = "number" if decode is scalar else "integer" if decode is point_count else "text"
         cap = replace(spec.capability, parameters={"value": Parameter(kind, unit)})
         commands[name] = replace(spec, capability=cap, decode=decode)
+    for name, path, param in (
+        ("rbw", "BAND:RES", parameter("Hz", 1, 8e6)),
+        ("vbw", "BAND:VID", parameter("Hz", 1, 50e6)),
+        ("reference_level", "DISP:WIND:TRAC:Y:RLEV", parameter("dBm", -170, 30)),
+        ("attenuation", "POW:ATT", Parameter("integer", "dB", 0, 70)),
+    ):
+        commands[name] = replace(command(name, path, param, scoped=False), decode=scalar)
+        if name != "reference_level":
+            auto = name + "_auto"
+            commands[auto] = command(auto, path + ":AUTO", Parameter("boolean"), scoped=False)
     return Profile(
         ADAPTER_ID,
         ("Agilent Technologies", "Keysight Technologies"),

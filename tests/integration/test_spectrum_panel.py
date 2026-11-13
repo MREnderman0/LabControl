@@ -515,3 +515,19 @@ def test_live_spectrum_writable_controls_follow_capabilities_and_preserve_drafts
     assert controls.editors["rbw"].isVisible()
     assert controls.editors["rbw_auto"].editors["value"].input.isVisible()
     assert not calls
+
+
+def test_unavailable_reference_readback_does_not_block_bandwidth(spectrum, qtbot, monkeypatch):
+    _, page, _, _, _ = spectrum
+    panel = page.controls
+    readings = panel.current()
+    del readings["reference_level"]
+    monkeypatch.setattr(panel, "current", lambda: readings)
+    # The draft applies only a different, successfully read setting.
+    panel.editors["rbw_auto"].dirty = True
+    panel.refresh_buttons()
+    assert panel.apply_button.isEnabled()
+    assert "reference_level" not in panel.target()
+    del readings["rbw_auto"]
+    panel.refresh_buttons()
+    assert not panel.apply_button.isEnabled()

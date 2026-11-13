@@ -127,3 +127,25 @@ def test_other_measurement_channel_trigger_and_write_do_not_touch_analyzer():
         device.acquire(capture_request(device))
     assert exc.value.code == "acquisition_setup_blocked"
     assert device.transport.history == ["*IDN?", "CONF?"]
+
+
+@pytest.mark.parametrize(
+    "operation,path,value",
+    [
+        ("rbw", "BAND:RES", 30000),
+        ("vbw", "BAND:VID", 10000),
+        ("reference_level", "DISP:WIND:TRAC:Y:RLEV", -20),
+        ("attenuation", "POW:ATT", 10),
+    ],
+)
+def test_spectrum_inputs_write_once_and_verify(operation, path, value):
+    exchanges = [("CONF?", b"SAN")]
+    exchanges.append(("UNIT:POW?", b"DBM") if operation == "reference_level" else (path + ":AUTO?", b"0"))
+    write = f"{path} {value}"
+    exchanges.extend([(write, b""), (path + "?", str(value).encode()), ("SYST:ERR?", b"0,No error")])
+    adapter = instrument([ID, *exchanges])
+    adapter.identify()
+    transport = adapter.transport
+    result = adapter.apply(DeviceCommand(operation, {"value": value}))
+    assert result.outcome == "success" and result.readback == value
+    assert [cmd for cmd in transport.history if not cmd.endswith("?")] == [write]

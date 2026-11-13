@@ -141,7 +141,7 @@ class MarkerReading:
 
 def locate_marker(marker: SpectrumMarker, x, y, axis_unit: str = "Hz") -> MarkerReading:
     if axis_unit != "Hz":
-        return MarkerReading("时间轴 · 已暂停")
+        return MarkerReading("样本序号 · 频率未核实" if axis_unit == "index" else "时间轴 · 已暂停")
     x, y = np.asarray(x), np.asarray(y)
     if x.ndim != 1 or y.ndim != 1 or x.size != y.size or not x.size:
         return MarkerReading("无有效数据")
