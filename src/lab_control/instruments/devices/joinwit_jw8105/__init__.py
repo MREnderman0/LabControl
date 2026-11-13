@@ -28,6 +28,7 @@ DEFINITION = DeviceDefinition(
     capability_schema=capability_schema,
     identity_requires_adapter=True,
     offline_processing=ProcessingProfile("scalar", power_units=True),
+    multi_channel_sources=("reading",),
     metric_profiles=(OPTICAL_POWER_FLUCTUATION_PROFILE, OPTICAL_POWER_REFERENCE_DEVIATION_PROFILE),
 )
 

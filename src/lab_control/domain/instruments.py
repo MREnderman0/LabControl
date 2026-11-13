@@ -131,6 +131,16 @@ class Capability:
     option: str = ""
     available: bool = True
     reason: str = ""
+    partial_update: str = "none"
+
+    def __post_init__(self) -> None:
+        if self.partial_update not in {"none", "native", "read_merge"}:
+            raise ValueError("Invalid partial update mode")
+        if self.partial_update == "read_merge" and not (self.readable and self.writable):
+            raise ValueError("Read-merge operations require readback and write support")
+
+    def merge_update(self, baseline: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
+        return self.validate({**baseline, **changes})
 
     def validate(self, parameters: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(parameters, dict):
@@ -141,7 +151,7 @@ class Capability:
         result = {}
         for name, spec in self.parameters.items():
             if name not in parameters:
-                if spec.required:
+                if spec.required and self.partial_update != "native":
                     raise ValidationError(f"{self.name}: missing {name}")
             else:
                 result[name] = spec.validate(name, parameters[name])

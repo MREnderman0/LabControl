@@ -57,6 +57,7 @@ class Read(Device):
 
 
 class Preview(Device):
+    partial: bool = False
     operation: str = Field(min_length=1, max_length=128)
     parameters: dict[str, Any]
     channel: int = Field(default=1, ge=1)

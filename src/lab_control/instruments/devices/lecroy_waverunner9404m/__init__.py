@@ -19,5 +19,6 @@ DEFINITION = DeviceDefinition(
     ),
     Path(__file__).parent,
     deployment_components=("rs-visa",),
+    multi_channel_sources=("waveform",),
     metric_profiles=(VOLTAGE_WAVEFORM_STATISTICS_PROFILE,),
 )

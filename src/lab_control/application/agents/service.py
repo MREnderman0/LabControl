@@ -279,7 +279,7 @@ class AgentService:
         from lab_control.application.controls import data_sources
         from lab_control.instruments.registry import DEVICE_DEFINITIONS
 
-        self._check(client, grant_id, device_id, "view")
+        grant = self._check(client, grant_id, device_id, "view")
         snapshot = self.runtime.sessions.capability_snapshot(device_id)
         if snapshot is None:
             fail("请先连接设备以获取通道与实际范围", "disconnected")
@@ -293,6 +293,11 @@ class AgentService:
         ]
         for source in sources:
             source["request_defaults"].pop("confirmed", None)
+            channels = sorted(ch for ch in snapshot.channels if grant.get("full_device_access") or ch in grant["channels"])
+            source["sample_form"] = "scalar" if source["kind"] == "scalar" else "curve" if source["kind"] in {"waveform", "spectrum", "trace", "timed_phase"} else "other"
+            multiple = (definition.acquisition_channel_selection == "multiple"
+                        and source["key"] in definition.multi_channel_sources)
+            source["channel_selection"] = {"channels": channels, "max_count": len(channels) if multiple else 1}
         return {
             "snapshot": jsonable(snapshot),
             "data_sources": sources,
@@ -484,11 +489,23 @@ class AgentService:
         )
         return future
 
-    def preview_change(self, client, grant_id, device_id, operation, parameters, channel=1):
+    def preview_change(self, client, grant_id, device_id, operation, parameters, channel=1, partial=False):
         self._check(client, grant_id, device_id, "apply", channels=(channel,), operation=operation)
         cap = self._capability(device_id, operation, channel)
         if not cap.writable:
             fail("参数只读", "unsupported")
+        missing = [key for key, spec in cap.parameters.items() if spec.required and key not in parameters]
+        baseline = None
+        if partial and cap.partial_update == "none" and set(parameters) != set(cap.parameters):
+            raise ValidationError("无法保留未填字段：" + ", ".join(sorted(set(cap.parameters) - set(parameters))))
+        if partial and not parameters:
+            raise ValidationError("局部修改至少需要一个字段")
+        if partial and cap.partial_update == "read_merge" and set(parameters) != set(cap.parameters):
+            readings = self.read_parameters(client, grant_id, device_id, [operation], channel).result()
+            baseline = self._merge_baseline(readings, operation, channel, cap)
+            parameters = cap.merge_update(baseline, parameters)
+        elif missing and not (partial and cap.partial_update == "native"):
+            raise ValidationError("缺少必填字段：" + ", ".join(missing))
         values = cap.validate(parameters)
         self._check(
             client, grant_id, device_id, "apply", channels=(channel,), operation=operation, parameters=values
@@ -508,6 +525,7 @@ class AgentService:
             "configuration_version": state["configurationVersion"],
             "requires_output_authority": cap.requires_confirmation,
             "expires_at": time.time() + 300,
+            **({"baseline": baseline} if baseline is not None else {}),
         }
         with self.lock:
             self.previews = {k: p for k, p in self.previews.items() if p["expires_at"] > time.time()}
@@ -515,6 +533,15 @@ class AgentService:
                 fail("未执行预览过多，请等待预览过期", "task_busy")
             self.previews[preview["id"]] = preview
         return deepcopy(preview)
+
+    def _merge_baseline(self, readings, operation, channel, cap):
+        matches = [r for r in readings if r.operation == operation and r.channel == channel and (r.quality == "good" or (not self.runtime.hardware and r.quality == "simulated"))]
+        if len(matches) != 1 or not isinstance(matches[0].value, dict) or set(matches[0].value) != set(cap.parameters):
+            raise ValidationError("无法可靠读回组合参数：" + operation)
+        try:
+            return cap.validate(matches[0].value)
+        except ValidationError as exc:
+            raise ValidationError(f"{operation} 无法保留当前模式下的字段：{exc}") from exc
 
     def apply_change(self, client, grant_id, device_id, preview_id, request_id):
         def start(ctx):
@@ -546,6 +573,11 @@ class AgentService:
                 cap = self._capability(device_id, preview["operation"], preview["channel"])
                 if cap.requires_confirmation:
                     self._check(client, grant_id, device_id, "output_trigger")
+                if "baseline" in preview:
+                    self._check(client, grant_id, device_id, "read_parameters", channels=(preview["channel"],))
+                    readings = session.adapter.read_settings((preview["operation"],), preview["channel"])
+                    if self._merge_baseline(readings, preview["operation"], preview["channel"], cap) != preview["baseline"]:
+                        fail(f"{cap.name} 读回基准已变化，请重新预览", "preview_expired")
                 self.repository.audit(
                     "agent_write_started",
                     task_id=ctx["task"]["id"],
@@ -591,6 +623,19 @@ class AgentService:
             }
         )
         request.validate()
+        if len(request.channels) > 1:
+            from lab_control.application.controls import data_sources
+
+            if definition.acquisition_channel_selection == "single":
+                raise ValidationError("该型号每轮只支持一个通道")
+            config = self.runtime.sessions.sessions[device].config
+            supported = any(
+                source.kind == request.kind and (not request.quantity or source.quantity == request.quantity)
+                and source.key in definition.multi_channel_sources
+                for source in data_sources(config)
+            )
+            if not supported:
+                raise ValidationError(f"数据源 {request.kind}/{request.quantity} 每轮只支持一个通道")
         scope = self._check(client, grant, device, action, channels=request.channels)
         if (
             request.initiate

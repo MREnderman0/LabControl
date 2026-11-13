@@ -1,7 +1,7 @@
 """53100A / TimeLab TSERVE metadata; importing this module never opens hardware."""
 
 from lab_control.domain.connections import ConnectionConfig
-from lab_control.domain.instruments import Capability, CapabilitySet, Parameter
+from lab_control.domain.instruments import Capability, CapabilitySet, Parameter, ValidationError
 from lab_control.instruments.base import CommandSpec, Profile
 
 SOURCE = "https://ww1.microchip.com/downloads/aemDocuments/documents/FTD/ProductDocuments/UserGuides/53100A-Phase-Noise-Analyzer-Users-Guide-DS50002991.pdf"
@@ -12,6 +12,14 @@ FREQUENCIES = {"input_frequency": "inputfreq", "reference_frequency": "reference
 PHASE_NOISE_POINTS = 1000
 PHASE_NOISE_SAMPLE_RATE = 1000
 PHASE_NOISE_DURATION = 60
+
+
+class FrequencyCapability(Capability):
+    def merge_update(self, baseline, changes):
+        merged = super().merge_update(baseline, changes)
+        if merged.get("automatic") and "value" in merged:
+            raise ValidationError("自动频率模式无法保留手动 value，请使用完整模式切换")
+        return merged
 
 
 def profile() -> Profile:
@@ -35,7 +43,7 @@ def profile() -> Profile:
         )
     for name, wire in FREQUENCIES.items():
         commands[name] = CommandSpec(
-            Capability(
+            FrequencyCapability(
                 name,
                 {
                     "value": Parameter(unit="Hz", minimum=1e6, maximum=200e6, required=False),
@@ -44,6 +52,7 @@ def profile() -> Profile:
                 readable=True,
                 writable=True,
                 section="8.3 set/show " + wire,
+                partial_update="read_merge",
             ),
             query="show " + wire,
         )

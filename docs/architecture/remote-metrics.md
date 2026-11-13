@@ -24,6 +24,12 @@
 
 可选 `capture_parameters` 与 `capture` 必须同时声明。纯方案函数返回 `CapturePlan`，支持单帧 `single`、固定帧数 `count`，以及由型号现有 `run_acquisition` 管理结束的 `finite`；后者必须给定 duration。无限连续采集仍使用 `start_recording`、`stop_task` 后单独处理。开始自动流程前验证全部参数、采集/处理/结果权限及输出与初始化权限；不自动连接、设置额外参数或扩大授权。
 
+## 一次采集多通道与直接判读
+
+`get_capabilities.data_sources[]` 包含 `sample_form` 和 `channel_selection`。后者的 `channels` 是当前授权能访问的通道，`max_count` 是一次请求的上限。多通道采集按型号的 `DeviceDefinition.multi_channel_sources` 登记数据源键，同一轮必须由一条授权覆盖全部所选通道。旧服务没有这些字段时，客户端按单通道使用。
+
+单点数值数据源可用 `acquire_once` 提交 `points=1` 和 `channels`。客户端等任务完成并确认记录 ID，再从本轮任务的 `result.measurements` 按通道和物理量匹配唯一读数，检查单位、质量及点数。此方式无需指标处理权限。曲线走记录和指标流程，逐通道指标保持 `chN.<指标>` 命名。
+
 ## 接口与生命周期
 
 | 工具 | 主要参数及行为 |

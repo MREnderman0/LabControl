@@ -79,6 +79,7 @@
       },
       {
         "name": "input_frequency",
+        "partial_update": "read_merge",
         "parameters": {
           "value": {
             "kind": "number",
@@ -114,6 +115,7 @@
       },
       {
         "name": "reference_frequency",
+        "partial_update": "read_merge",
         "parameters": {
           "value": {
             "kind": "number",

@@ -51,5 +51,6 @@ DEFINITION = DeviceDefinition(
     acquisition_kinds=("waveform", "streaming"),
     acquisition_initiate_default=True,
     acquisition_initiate_editable=False,
+    multi_channel_sources=("waveform",),
     metric_profiles=(VOLTAGE_WAVEFORM_STATISTICS_PROFILE,),
 )
