@@ -1,5 +1,6 @@
 """Line-oriented commands and UTF-8 acknowledgements from the switch-board firmware."""
 
+import time
 from typing import Protocol
 
 from lab_control.domain.connections import ConnectionConfig
@@ -23,12 +24,13 @@ MODEL = "DC / CH3 / CH4 开关板"
 SOURCE = "自制板串口协议（现场提供）"
 ACKS = {"dc_on": "DC已打开", "dc_off": "DC已关闭", "ch3_on": "RF3已打开", "ch4_on": "RF4已打开"}
 MAX_RX = 4096
+REPLY_TIMEOUT_SECONDS = 2.0
 SERIAL_STATUS = "switch_board_serial_status"
 
 
 class SwitchWire(Protocol):
     def send(self, payload: bytes) -> None: ...
-    def receive(self, *, wait: bool = False) -> bytes: ...
+    def receive(self, *, timeout: float = 0.0) -> bytes: ...
     def close(self) -> None: ...
 
 
@@ -78,7 +80,9 @@ class SwitchBoardAdapter:
         for chunk in chunks[:-1]:
             line = self.partial_line + chunk
             if not self.drop_line and len(line) <= MAX_RX:
-                reply = line.removesuffix(b"\r").decode("utf-8", errors="replace")
+                # The CP210x link can prepend 0xFF bytes to a valid UTF-8 line.
+                # Normalize only this prefix; a damaged or embedded message is not an ACK.
+                reply = line.lstrip(b"\xff").removesuffix(b"\r").decode("utf-8", errors="replace")
                 if reply.startswith("请输入命令"):
                     self.confirmed = False
                 remaining = self.pending.get(reply, 0)
@@ -86,6 +90,8 @@ class SwitchBoardAdapter:
                     self.pending[reply] = remaining - 1
                     if remaining == 1 and reply == ACKS.get(self.last_command):
                         self.confirmed = True
+                        # The firmware processes requests and prints their replies in order.
+                        self.pending.clear()
             self.partial_line = b""
             self.drop_line = False
         if not self.drop_line:
@@ -135,9 +141,9 @@ class SwitchBoardAdapter:
             self._receive(buffered)
             if len(buffered) == MAX_RX:
                 raise DeviceError("串口仍有积压数据，请先读取状态", "receive_backlog")
-            if self.partial_line:
+            if self.partial_line and self.partial_line.strip(b"\xff"):
                 self.drop_line = True
-                self.partial_line = b""
+            self.partial_line = b""
             self.confirmed = False
             self.transport.send(command.operation.encode("ascii") + b"\n")
         except DeviceError as exc:
@@ -158,7 +164,12 @@ class SwitchBoardAdapter:
         self.pending[reply] = self.pending.get(reply, 0) + 1
         error = ""
         try:
-            self._receive(self.transport.receive(wait=True))
+            deadline = time.monotonic() + REPLY_TIMEOUT_SECONDS
+            while not self.confirmed and (remaining := deadline - time.monotonic()) > 0:
+                received = self.transport.receive(timeout=remaining)
+                if not received:
+                    break
+                self._receive(received)
         except DeviceError as exc:
             error = str(exc)
         return ApplyResult(

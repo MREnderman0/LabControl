@@ -74,7 +74,7 @@ def test_manual_board_gui_only_offers_matching_bridge_and_never_sends_automatica
             assert manager.handles[0].writes == [b"ch4_on\n"]
             editor = page.form.editors["ch3_on"]
             qtbot.waitUntil(editor.apply_button.isEnabled)
-            manager.handles[0].reply = "RF3已打开\r\n".encode()
+            manager.handles[0].reply = b"\xff" * 64 + "RF3已打开\r\n".encode()
             editor.apply_button.click()
             qtbot.waitUntil(lambda: log.toPlainText().endswith("选择 RF3   ·   RF3已打开"))
             lines = log.toPlainText().splitlines()

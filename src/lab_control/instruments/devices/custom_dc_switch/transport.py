@@ -69,11 +69,11 @@ class SwitchTransport(RawSerialVisaTransport):
 
     @synchronized
     @measured("read")
-    def receive(self, *, wait: bool = False) -> bytes:
+    def receive(self, *, timeout: float = 0.0) -> bytes:
         # Serial.println terminates each reply with LF. Read across USB packet boundaries.
         if self.handle is None:
             return b""
-        end = time.monotonic() + (0.25 if wait else 0)
+        end = time.monotonic() + timeout
         data = bytearray()
         try:
             while True:

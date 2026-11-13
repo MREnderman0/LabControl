@@ -161,8 +161,8 @@ def test_short_write_is_uncertain_without_retry():
             self.writes += 1
             raise DeviceError("short write", "disconnected")
 
-        def receive(self, *, wait=False):
-            assert not wait
+        def receive(self, *, timeout=0.0):
+            assert not timeout
             return b""
 
     wire = Wire()
@@ -176,7 +176,7 @@ def test_only_complete_current_reply_confirms_even_when_split_across_status_read
         incoming = b""
         reply = b""
 
-        def receive(self, *, wait=False):
+        def receive(self, *, timeout=0.0):
             value, self.incoming = self.incoming, b""
             return value
 
@@ -236,3 +236,73 @@ def test_first_click_waits_for_firmware_then_writes_once(monkeypatch):
     finally:
         board.close()
         visa.close()
+
+
+@pytest.mark.parametrize("operation", FIXTURE["requests"])
+def test_confirmation_after_serial_padding_and_unrelated_line(operation):
+    ack = FIXTURE["replies"][operation].encode()
+    chunks = deque([b"boot log\r\n", b"\xff" * 64 + ack[:3], ack[3:] + b"\r", b"\n"])
+    writes = []
+
+    class Wire:
+        def receive(self, *, timeout=0.0):
+            if not timeout:
+                return b"\xff" * 64
+            return chunks.popleft() if chunks else b""
+
+        def send(self, payload):
+            writes.append(payload)
+
+    result = SwitchBoardAdapter(CONFIG, Wire()).apply(DeviceCommand(operation, confirmed=True))
+    assert result.acknowledged and result.user_message == FIXTURE["replies"][operation]
+    assert result.readback["最近串口接收 HEX"].startswith("62 6F 6F 74 20 6C 6F 67 0D 0A FF FF")
+    assert writes == [(operation + "\n").encode()] and not chunks
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"",
+        b"\xff" * 64,
+        b"DC" + b"\xff" + "已打开\r\n".encode(),
+        "错误 DC已打开\r\n".encode(),
+        "DC已打开".encode(),
+        "DC已关闭\r\n".encode(),
+    ],
+)
+def test_non_matching_bytes_never_confirm_dc_on(raw):
+    class Wire:
+        data = raw
+
+        def receive(self, *, timeout=0.0):
+            if not timeout:
+                return b""
+            chunk, self.data = self.data, b""
+            return chunk
+
+        def send(self, payload):
+            assert payload == b"dc_on\n"
+
+    result = SwitchBoardAdapter(CONFIG, Wire()).apply(DeviceCommand("dc_on", confirmed=True))
+    assert result.acknowledged is False and result.user_message == "已发送"
+
+
+def test_ack_for_later_command_resolves_earlier_missing_reply():
+    class Wire:
+        response = b""
+
+        def receive(self, *, timeout=0.0):
+            data, self.response = self.response, b""
+            return data
+
+        def send(self, payload):
+            assert payload == (operation + "\n").encode()
+            self.response = response
+
+    board = SwitchBoardAdapter(CONFIG, Wire())
+    for operation, response, expected in [
+        ("dc_off", b"", "已发送"),
+        ("dc_on", b"\xff" * 64 + "DC已打开\r\n".encode(), "DC已打开"),
+        ("dc_off", "DC已关闭\r\n".encode(), "DC已关闭"),
+    ]:
+        assert board.apply(DeviceCommand(operation, confirmed=True)).user_message == expected
