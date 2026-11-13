@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 
 import pytest
 
@@ -67,6 +68,16 @@ def test_identity_uses_connection_reply_without_fabricating_serial() -> None:
     assert identity.serial == ""
     assert identity.confidence == "model_only"
     assert transport.history == [bytes.fromhex("7B 01 05 01 40 3E 7D")]
+
+
+def test_read_only_asset_rejects_confirmed_commands_before_serial_io() -> None:
+    transport = MockFrameTransport([])
+    adapter = Jw8105Adapter(transport, DEFINITION.profile, replace(config(), options=("read_only",)))
+    assert not any(cap.writable for cap in adapter.capabilities().operations)
+    for operation in ("wavelength", "sampling_rate", "display_wavelengths"):
+        with pytest.raises(DeviceError, match="read-only"):
+            adapter.apply(DeviceCommand(operation, {"value": 1}, confirmed=True))
+    assert transport.history == []
 
 
 def test_power_read_decodes_eight_signed_values() -> None:

@@ -61,7 +61,7 @@
 | RIGOL DSA815 | `rigol.dsa815` | LAN / USB；优先 PyVISA | [卡片](devices/spectrum-analyzers/rigol-dsa815.md) |
 | Teledyne LeCroy WaveRunner 9404M | `lecroy.9404m` | LAN PyVISA/VXI-11（仪器选择 LXI） | [卡片](devices/oscilloscopes/waverunner-9404m.md) |
 | RIGOL DHO924 | `rigol.dho924` | LAN PyVISA / VISA SOCKET | [卡片](devices/oscilloscopes/rigol-dho924.md) |
-| R&S FPH02 | `rs.fph` | LAN；优先 PyVISA | [卡片](devices/spectrum-analyzers/rs-fph.md) |
+| R&S FPH02 / FPH13 | `rs.fph` | LAN；优先 PyVISA | [卡片](devices/spectrum-analyzers/rs-fph.md) |
 | 思仪 4959E 微波综合测试仪 | `ceyear.4959e` | LAN / VXI-11 | [卡片](devices/spectrum-analyzers/ceyear-4959e.md) |
 | R&S FSPN-26 | `rs.fspn26` | LAN VISA | [卡片](devices/measurement-analyzers/phase-noise-fspn26.md) |
 | Keysight / Agilent N9030A PXA | `keysight.n9030a` | LAN / VXI-11 | [卡片](devices/spectrum-analyzers/keysight-n9030a.md) |

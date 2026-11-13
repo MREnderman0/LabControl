@@ -1,4 +1,4 @@
-"""Independent R&S Spectrum Rider FPH02 package."""
+"""Independent R&S Spectrum Rider FPH package."""
 
 from pathlib import Path
 
@@ -19,7 +19,9 @@ def _verify_trace(*args, **kwargs):
 DEFINITION = DeviceDefinition(
     fph(),
     FphAdapter,
-    DeviceDocumentation("R&S FPH02", "spectrum-analyzers/rs-fph", "LAN；优先 PyVISA", "64 位 VISA Runtime"),
+    DeviceDocumentation(
+        "R&S FPH02 / FPH13", "spectrum-analyzers/rs-fph", "LAN；优先 PyVISA", "64 位 VISA Runtime"
+    ),
     Path(__file__).parent,
     deployment_components=("rs-visa",),
     readonly_check=_verify_trace,
