@@ -204,6 +204,7 @@ class ApplyResult:
     adaptation: dict[str, Any] = field(default_factory=dict)
     control_update: ControlUpdate | None = None
     acknowledged: bool | None = None
+    user_message: str = ""
 
 
 @dataclass(frozen=True)

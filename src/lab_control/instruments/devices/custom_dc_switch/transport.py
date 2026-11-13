@@ -9,6 +9,10 @@ from lab_control.domain.instruments import DeviceError, ValidationError
 from lab_control.transport.diagnostics import measured, synchronized
 from lab_control.transport.visa import RawSerialVisaTransport, VisaRuntime
 
+# The installed ESP32 can reset when VISA opens the COM handle.
+# Its firmware has no ready banner; give setup() time to initialize Serial.
+STARTUP_SETTLE_SECONDS = 1.5
+
 
 class SwitchTransport(RawSerialVisaTransport):
     """Bind the application session without asking Windows to open the COM handle."""
@@ -44,6 +48,10 @@ class SwitchTransport(RawSerialVisaTransport):
         # confirmed output operation may cross this boundary.
         try:
             super().open()
+            time.sleep(STARTUP_SETTLE_SECONDS)
+            # Boot text and stale lines predate the first output request.
+            # Clear only the bytes already buffered, before writing the request.
+            self.receive()
         except Exception:
             self.close()
             raise

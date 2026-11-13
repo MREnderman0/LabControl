@@ -62,6 +62,7 @@ class SwitchBoardAdapter:
         self.drop_line = False
         self.pending: dict[str, int] = {}
         self.confirmed = False
+        self.send_uncertain = False
 
     def identify(self) -> DeviceIdentity:
         return self.identity
@@ -93,6 +94,13 @@ class SwitchBoardAdapter:
                 self.drop_line = True
                 self.partial_line = b""
 
+    def feedback(self) -> str:
+        if self.send_uncertain:
+            return "发送结果未知，请检查连接"
+        if self.confirmed:
+            return ACKS[self.last_command]
+        return "已发送" if self.last_command else "尚未发送"
+
     def _status(self) -> dict[str, str]:
         return {
             "最近完整发送": self.last_command or "无",
@@ -103,14 +111,14 @@ class SwitchBoardAdapter:
 
     def read_status(self) -> DeviceStatus:
         self._receive(self.transport.receive())
-        return DeviceStatus(self._status())
+        return DeviceStatus({"操作结果": self.feedback()})
 
     def read_settings(self, operations: tuple[str, ...], channel: int = 1) -> tuple[ParameterReading, ...]:
         if channel != 1 or any(operation != SERIAL_STATUS for operation in operations):
             raise Unsupported("该板没有输出状态查询命令")
         if not operations:
             return ()
-        return (ParameterReading(SERIAL_STATUS, 1, self.read_status().values, "session_cache"),)
+        return (ParameterReading(SERIAL_STATUS, 1, self.read_status().values["操作结果"], "session_cache"),)
 
     def apply(self, command: DeviceCommand) -> ApplyResult:
         if command.operation not in ACKS:
@@ -133,8 +141,17 @@ class SwitchBoardAdapter:
             self.confirmed = False
             self.transport.send(command.operation.encode("ascii") + b"\n")
         except DeviceError as exc:
+            self.send_uncertain = True
             self.confirmed = False
-            return ApplyResult("uncertain", command.operation, {}, self._status(), error=str(exc))
+            return ApplyResult(
+                "uncertain",
+                command.operation,
+                {},
+                self._status(),
+                error=str(exc),
+                user_message=self.feedback(),
+            )
+        self.send_uncertain = False
         self.last_command = command.operation
         self.last_rx = b""
         reply = ACKS[command.operation]
@@ -152,6 +169,7 @@ class SwitchBoardAdapter:
             completed_steps=1,
             error=error,
             acknowledged=self.confirmed,
+            user_message=self.feedback(),
         )
 
     def acquire(self, _request: AcquisitionRequest) -> MeasurementBatch:

@@ -52,22 +52,29 @@ def test_manual_board_gui_only_offers_matching_bridge_and_never_sends_automatica
             qtbot.waitUntil(lambda: ("设备管理", "output_switch") in window.page_map)
             page = window.page_map[("设备管理", "output_switch")]
             assert choices == ["COM99"] and page.selector.device_id == device_id
-            assert "板端状态未知" in page.note.text() and "板端状态未知" in window.message.text()
+            assert "RF3 和 RF4 互斥" in page.note.text()
+            assert page.form.refresh_button.isHidden() and page.form.snapshot_status.isHidden()
             assert "output_switch" not in window._submenu_categories("实时监测")
             assert not page.go_monitor.isVisible() and not manager.handles
             editor = page.form.editors["ch4_on"]
             assert editor.apply_button.isEnabled() and not editor.read_button.isVisible()
             monkeypatch.setattr(QMessageBox, "question", lambda *args: pytest.fail("unexpected confirmation"))
-            manager.next_ack = "请输入命令".encode() + b"\r\n"
+            manager.next_ack = b"rst:0x1 (POWERON_RESET)\r\nload:0x40078000\r\n"
             editor.apply_button.click()
             qtbot.waitUntil(lambda: editor.status.text() == "已发送")
-            assert "请输入命令" in editor.readback.text() and "未知" in editor.readback.text()
+            assert editor.readback.isHidden() and not editor.readback.text()
+            page.form.tabs.setCurrentIndex(2)
+            diag = page.form.editors["switch_board_serial_status"]
+            qtbot.waitUntil(lambda: diag.readback.text() == "已发送")
+            page.form.tabs.setCurrentIndex(0)
             assert manager.handles[0].writes == [b"ch4_on\n"]
             editor = page.form.editors["ch3_on"]
+            qtbot.waitUntil(editor.apply_button.isEnabled)
             manager.handles[0].reply = "RF3已打开\r\n".encode()
             editor.apply_button.click()
-            qtbot.waitUntil(lambda: editor.status.text() == "板端已确认")
-            assert "RF3已打开" in editor.readback.text() and manager.handles[0].writes == [
+            qtbot.waitUntil(lambda: editor.status.text() == "RF3已打开")
+            assert editor.readback.isHidden() and not editor.readback.text()
+            assert manager.handles[0].writes == [
                 b"ch4_on\n",
                 b"ch3_on\n",
             ]

@@ -70,7 +70,7 @@ def test_zero_tx_identity_status_unknown_and_no_acquisition():
     board = SwitchBoardAdapter(CONFIG, wire)
     try:
         assert board.identify().key is None and board.identify().confidence == "operator_selected"
-        assert board.read_status().values["板端输出状态"] == "未知"
+        assert board.read_status().values == {"操作结果": "尚未发送"}
         assert board.read_settings(()) == () and not data_sources(CONFIG)
         with pytest.raises(Unsupported):
             board.acquire(AcquisitionRequest())
@@ -125,7 +125,7 @@ def test_exact_commands_passive_receipts_and_mutual_exclusion_without_companion_
         assert last.readback["最近完整发送"] == "ch3_on" and last.readback["最近串口接收 HEX"] == "无"
         assert last.acknowledged is False
         h.rx.extend(b"later\x00")
-        assert board.read_settings((SERIAL_STATUS,))[0].value["最近串口接收 HEX"] == "6C 61 74 65 72 00"
+        assert board.read_settings((SERIAL_STATUS,))[0].value == "已发送"
         assert h.writes == [b"dc_on\n", b"dc_off\n", b"ch3_on\n", b"ch4_on\n", b"ch3_on\n"]
         with pytest.raises(Unsupported):
             board.apply(DeviceCommand("ch4_off", confirmed=True))
@@ -192,12 +192,47 @@ def test_only_complete_current_reply_confirms_even_when_split_across_status_read
     result = board.apply(command)
     assert not result.acknowledged and "请输入命令" in result.readback["最近串口接收 UTF-8"]
     wire.incoming = ack[3:] + b"\r"
-    assert board.read_status().values["板端输出状态"] == "未知"
+    assert board.read_status().values["操作结果"] == "已发送"
     wire.incoming = b"\n"
-    assert board.read_status().values["板端输出状态"] == "DC已打开"
+    assert board.read_status().values["操作结果"] == "DC已打开"
     wire.reply = b""
     assert not board.apply(command).acknowledged
     wire.reply = ack + b"\r\n"
     assert not board.apply(command).acknowledged  # The preceding identical request is still outstanding.
     wire.incoming = ack + b"\r\n"
-    assert board.read_status().values["板端输出状态"] == "DC已打开"
+    assert board.read_status().values["操作结果"] == "DC已打开"
+
+
+def test_first_click_waits_for_firmware_then_writes_once(monkeypatch):
+    from lab_control.instruments.devices.custom_dc_switch import transport as serial
+
+    port = DiscoveryCandidate(
+        ConnectionConfig("COM99", transport="serial"), "serial", {"vid": 0x10C4, "pid": 0xEA60}
+    )
+    monkeypatch.setattr(SerialDiscoveryProvider, "enumerate", lambda _: (port,))
+    manager = Manager()
+    events = []
+
+    def startup(seconds):
+        assert seconds == serial.STARTUP_SETTLE_SECONDS
+        (handle,) = manager.handles
+        assert handle.writes == []
+        handle.rx.extend(b"rst:0x1 (POWERON_RESET)\r\n")
+        handle.reply = "DC已关闭\r\n".encode()
+        events.append("boot")
+
+    monkeypatch.setattr(serial.time, "sleep", startup)
+    visa = VisaRuntime(manager=manager)
+    wire = create_transport(CONFIG, visa)
+    wire.open()
+    board = SwitchBoardAdapter(CONFIG, wire)
+    try:
+        assert not manager.handles and not events
+        for _ in range(2):
+            result = board.apply(DeviceCommand("dc_off", confirmed=True))
+            assert result.user_message == "DC已关闭"
+            assert result.readback["最近串口接收 UTF-8"] == "DC已关闭"
+        assert manager.handles[0].writes == [b"dc_off\n", b"dc_off\n"] and events == ["boot"]
+    finally:
+        board.close()
+        visa.close()

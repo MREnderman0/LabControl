@@ -77,6 +77,8 @@ class OperationEditor(QFrame):
         self.setObjectName("compactOperation" if compact else "operationCard")
         self.controller, self.device_id, self.cap = controller, device_id, cap
         self.channel = channel if cap.channel_scoped else 1
+        definition = DEVICE_DEFINITIONS.get(controller.records.get(device_id, {}).get("adapterId", ""))
+        self.direct_action = bool(definition and cap.name in definition.direct_click_operations)
         self.workspace_mode = workspace_mode
         self.mode = controller.mode if workspace_mode is None else workspace_mode
         self.dirty = False
@@ -105,7 +107,7 @@ class OperationEditor(QFrame):
         title.setObjectName("controlTitle")
         heading.addWidget(title)
         heading.addStretch()
-        if not compact:
+        if not compact and not self.direct_action:
             heading.addWidget(QLabel(f"CH {self.channel}" if cap.channel_scoped else "整机"))
         layout.addLayout(heading)
         form = QFormLayout()
@@ -158,7 +160,7 @@ class OperationEditor(QFrame):
             self.readback.setText("在上方选择对应数据项目，使用“单次读取”或“开始监测”获取数据。")
         self.readback.setWordWrap(True)
         self.readback.setObjectName("readback")
-        self.readback.setVisible(not compact or controller.runtime.hardware)
+        self.readback.setVisible(not self.direct_action and (not compact or controller.runtime.hardware))
         layout.addWidget(self.readback)
         self.range_note = QLabel(self)
         self.range_note.setObjectName("rangeHint")
@@ -420,10 +422,13 @@ class OperationEditor(QFrame):
                     (1, "Hz"),
                 )
             display = f"{raw / factor:.12g} {unit}"
-        self.readback.setText(
-            f"{SOURCE_LABELS.get(reading.source, reading.source)}：{display}"
-            + ("" if self.compact else "\n" + reading.timestamp)
-        )
+        if self.status_only and reading.source == "session_cache" and isinstance(reading.value, str):
+            self.readback.setText(display)
+        else:
+            self.readback.setText(
+                f"{SOURCE_LABELS.get(reading.source, reading.source)}：{display}"
+                + ("" if self.compact else "\n" + reading.timestamp)
+            )
         self.readback.setToolTip(reading.timestamp)
         self.readback.setVisible(not self.compact or reading.source != "simulated")
         if self.follow_readback and not self.dirty and reading.value is not None:
@@ -450,9 +455,7 @@ class OperationEditor(QFrame):
             return
         try:
             values = self.parameters()
-            record = self.controller.records.get(self.device_id, {})
-            definition = DEVICE_DEFINITIONS.get(record.get("adapterId", ""))
-            confirmed = bool(definition and self.cap.name in definition.direct_click_operations)
+            confirmed = self.direct_action
             if self.cap.requires_confirmation and not confirmed:
                 record = self.controller.records[self.device_id]
                 answer = QMessageBox.question(
@@ -470,7 +473,7 @@ class OperationEditor(QFrame):
                 confirmed = True
             self.busy = True
             self._submitted_revision = self._edit_revision
-            self.status.setText("等待当前读取完成 / 正在应用…")
+            self.status.setText("发送中…" if self.direct_action else "等待当前读取完成 / 正在应用…")
             self.refresh_enabled()
             command = DeviceCommand(self.cap.name, values, self.channel, confirmed)
             if self.workspace_mode is None:
@@ -495,10 +498,15 @@ class OperationEditor(QFrame):
             "rejected": "设备拒绝 / 读回不符",
             "uncertain": "结果不确定",
         }
+        short_message = getattr(result, "user_message", "")
         self.status.setText(
-            labels.get(result.outcome, result.outcome) + (" · " + result.error if result.error else "")
+            short_message
+            or (labels.get(result.outcome, result.outcome) + (" · " + result.error if result.error else ""))
         )
-        if result.readback is not None:
+        if short_message:
+            self.readback.clear()
+            self.readback.hide()
+        elif result.readback is not None:
             if result.outcome == "success":
                 self.current_value = result.readback
             self.readback.setText(
@@ -607,6 +615,13 @@ class ControlForm(QWidget):
         selected = self.tabs.currentIndex() if same_device else -1
         self._operation_access = access
         self.device_id, self.channel, self.mode = device_id, channel, self.controller.mode
+        definition = DEVICE_DEFINITIONS.get(self.controller.records.get(device_id, {}).get("adapterId", ""))
+        direct_operations = definition.direct_click_operations if definition else ()
+        fixed_actions = bool(direct_operations) and all(
+            not cap.parameters and (not cap.writable or cap.name in direct_operations) for cap in operations
+        )
+        self.refresh_button.setVisible(not fixed_actions)
+        self.snapshot_status.setVisible(not fixed_actions)
         self.tabs.blockSignals(True)
         while self.tabs.count():
             page = self.tabs.widget(0)
