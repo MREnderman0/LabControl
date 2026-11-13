@@ -227,7 +227,8 @@ def test_local_failure_cleans_up_and_reports_unconfirmed(tmp_path):
 
 
 def test_declared_readonly_voltage_has_only_measured_readout(power, qtbot, monkeypatch):
-    window, page, runtime, key, _adapter = power
+    window, page, _runtime, key, adapter = power
+    adapter.values["1.voltage"] = {"value": 3.3}
     declared = window.controller.declared_capabilities
 
     def query_only(device_id, channel=1):
