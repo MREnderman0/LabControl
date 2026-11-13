@@ -27,6 +27,7 @@ class Handle:
         self.writes = []
         self.rx = deque()
         self.reply = b""
+        self.idn = b"ESP32-S32 Board!\r\n"
         self.closed = False
 
     @property
@@ -35,7 +36,7 @@ class Handle:
 
     def write_raw(self, payload):
         self.writes.append(payload)
-        self.rx.extend(self.reply)
+        self.rx.extend(self.idn if payload == b"*IDN?\n" else self.reply)
         return len(payload)
 
     def read_bytes(self, count, *, break_on_termchar):
@@ -62,14 +63,13 @@ class Manager:
         assert all(handle.closed for handle in self.handles)
 
 
-def test_zero_tx_identity_status_unknown_and_no_acquisition():
+def test_status_and_capabilities_do_not_write_before_connection():
     manager = Manager()
     visa = VisaRuntime(manager=manager)
     wire = create_transport(CONFIG, visa)
     wire.open()
     board = SwitchBoardAdapter(CONFIG, wire)
     try:
-        assert board.identify().key is None and board.identify().confidence == "operator_selected"
         assert board.read_status().values == {"操作结果": "尚未发送"}
         assert board.read_settings(()) == () and not data_sources(CONFIG)
         with pytest.raises(Unsupported):
@@ -306,3 +306,35 @@ def test_ack_for_later_command_resolves_earlier_missing_reply():
         ("dc_off", "DC已关闭\r\n".encode(), "DC已关闭"),
     ]:
         assert board.apply(DeviceCommand(operation, confirmed=True)).user_message == expected
+
+
+@pytest.mark.parametrize(
+    "chunks,valid",
+    [
+        ([b"rst:0x1\r\n", b"\xff" * 64 + b"ESP32-S", b"32 Board!\r", b"\n"], True),
+        ([b"ESP32-S32 Board!"], False),
+        ([b"prefix ESP32-S32 Board!\r\n"], False),
+        ([b"ESP32-S32 Board! v2\r\n"], False),
+        ([b"wrong\r\n"], False),
+        ([], False),
+    ],
+)
+def test_identity_checks_complete_firmware_line(chunks, valid):
+    class Wire:
+        def receive(self, *, timeout=0.0):
+            if not timeout:
+                return b"ESP32-S32 Board!\r\n"
+            return chunks.pop(0) if chunks else b""
+
+        def send(self, payload):
+            writes.append(payload)
+
+    writes = []
+    board = SwitchBoardAdapter(CONFIG, Wire())
+    if valid:
+        result = board.identify()
+        assert result.key is None and result.raw == "ESP32-S32 Board!" and result.confidence == "model_only"
+    else:
+        with pytest.raises(DeviceError, match="身份校验"):
+            board.identify()
+    assert writes == [b"*IDN?\n"]

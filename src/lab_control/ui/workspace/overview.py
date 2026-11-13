@@ -86,7 +86,7 @@ class WorkspaceOverview:
         toolbar.addWidget(window.address_list_button)
         if window.runtime.hardware:
             for definition in DEVICE_DEFINITIONS.values():
-                if definition.manual_connection_only:
+                if definition.manual_connection_label:
                     button = QPushButton(definition.manual_connection_label)
                     button.clicked.connect(
                         lambda _, key=definition.adapter_id: window.show_manual_serial(key)
@@ -701,7 +701,7 @@ class WorkspaceOverview:
                     "cached_active_session": "复用活动会话",
                     "cached_session_unconfirmed": "会话尚未确认",
                     "deferred_possible_alias_of_active_device": "可能为活动设备别名，延后探测",
-                    "sdk_identity_requires_explicit_connection": "需手动连接后确认身份",
+                    "sdk_identity_requires_explicit_connection": "连接时核验身份",
                     "manual_connection_required": "需手动选择串口",
                     "not_seen": "本次未发现",
                     "scan_cancelled": "扫描已取消",

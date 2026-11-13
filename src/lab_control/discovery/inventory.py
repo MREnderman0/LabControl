@@ -240,6 +240,11 @@ class Inventory:
                     and (
                         not resource_existing.get("adapterId")
                         or requires_manual_connection(resource_existing["adapterId"])
+                        or (
+                            (definition := DEVICE_DEFINITIONS.get(resource_existing["adapterId"])) is not None
+                            and definition.manual_usb_id is not None
+                            and definition.matches_manual_port(candidate.descriptor)
+                        )
                     )
                     else None
                 )

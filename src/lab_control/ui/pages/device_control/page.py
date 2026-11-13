@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from lab_control.application.catalog import surface_applicable
 from lab_control.application.controls import CATEGORY_LABELS, MEASUREMENT_CATEGORIES
-from lab_control.instruments.registry import DEVICE_DEFINITIONS, requires_manual_connection
+from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.pages.device_control.form import ControlForm
 from lab_control.ui.widgets.device_selector import DeviceSelector
@@ -47,8 +47,9 @@ class DeviceControlPage(QWidget):
             if measurement:
                 text += "影响曲线和测量结果的参数统一放在实时监测页。"
             adapter = self.controller.records[device_id]["adapterId"]
-            if self.controller.runtime.hardware and requires_manual_connection(adapter):
-                text = DEVICE_DEFINITIONS[adapter].manual_connection_note
+            definition = DEVICE_DEFINITIONS.get(adapter)
+            if self.controller.runtime.hardware and definition and definition.manual_connection_note:
+                text = definition.manual_connection_note
             elif adapter.startswith("sim."):
                 text += " 此类别仅为演示，真实型号和协议待补。"
             self.note.setText(text)

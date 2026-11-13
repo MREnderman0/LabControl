@@ -284,14 +284,19 @@ class ApplicationRuntime:
         from lab_control.domain.instruments import DeviceError
 
         selected_port = re.fullmatch(r"COM([1-9][0-9]*)", port.strip(), re.I)
-        if not self.hardware or not requires_manual_connection(adapter) or selected_port is None:
+        definition = DEVICE_DEFINITIONS.get(adapter)
+        if (
+            not self.hardware
+            or not definition
+            or not definition.manual_connection_label
+            or selected_port is None
+        ):
             raise ValidationError("请选择受支持的手动串口设备和 Windows COM 口")
         config = ConnectionConfig(f"ASRL{selected_port[1]}::INSTR", adapter, "visa")
         with self.discovery.lock:
             self._check_connection_admission()
             if self.discovery.future and not self.discovery.future.done():
                 raise DeviceError("正在扫描，请等待扫描完成后连接", "scan_busy")
-            definition = DEVICE_DEFINITIONS[adapter]
             if definition.manual_usb_id is not None:
                 from dataclasses import replace
 

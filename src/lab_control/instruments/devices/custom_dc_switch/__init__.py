@@ -1,4 +1,4 @@
-"""Manually bound DC and channel switch board."""
+"""USB serial DC and RF switch board."""
 
 from pathlib import Path
 
@@ -29,12 +29,13 @@ DEFINITION = DeviceDefinition(
     transport_adapter=SwitchBoardAdapter,
     capability_schema=capability_schema,
     model=DeviceModel(ADAPTER_ID, ("自制",), (MODEL,), "output_switch", SOURCE, "现场确认"),
-    supported_transports=("visa",),
+    supported_transports=("visa", "serial"),
+    discovery_connection_only_transports=("visa", "serial"),
+    identity_requires_adapter=True,
     management_surface=True,
     monitoring_surface=False,
-    manual_connection_only=True,
     manual_connection_label="手动绑定开关板",
-    manual_connection_note="RF3 和 RF4 互斥。首次发送时需等待板卡启动。",
+    manual_connection_note="已通过固件身份查询。RF3 和 RF4 互斥。",
     direct_click_operations=tuple(ACKS),
     manual_usb_id=(0x10C4, 0xEA60),
     readonly_check=verify_readonly,

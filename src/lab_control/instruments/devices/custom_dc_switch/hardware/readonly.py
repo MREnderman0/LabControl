@@ -1,5 +1,6 @@
-"""Verify a selected bridge and the normal session lifetime without transmitting to the board."""
+"""Verify a selected bridge and the normal session lifetime using only the firmware identity query."""
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -14,18 +15,32 @@ from lab_control.storage.repository import application_home
 from lab_control.transport.visa import VisaRuntime
 
 from .. import DEFINITION
-from ..adapter import ADAPTER_ID, MODEL
+from ..adapter import ADAPTER_ID, MODEL, SwitchBoardAdapter, SwitchWire
 from .records import summarize
 
 
-class MetadataOnlyVisa(VisaRuntime):
-    def __init__(self) -> None:
-        super().__init__()
-        self.open_attempts = 0
+class IdentityTrace:
+    def __init__(self, wire: SwitchWire, transcript: Path):
+        self.wire, self.transcript = wire, transcript
 
-    def open(self, resource: str, **kwargs: Any) -> Any:
-        self.open_attempts += 1
-        raise DeviceError("只读验收禁止打开串口", "unsupported")
+    def log(self, direction: str, raw: bytes) -> None:
+        with self.transcript.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"at": utc_now(), "direction": direction, "hex": raw.hex(" ")}) + "\n")
+
+    def send(self, payload: bytes) -> None:
+        if payload != b"*IDN?\n":
+            raise DeviceError("只读验收只允许身份查询", "unsupported")
+        self.wire.send(payload)
+        self.log("tx", payload)
+
+    def receive(self, *, timeout: float = 0.0) -> bytes:
+        raw = self.wire.receive(timeout=timeout)
+        if raw:
+            self.log("rx", raw)
+        return raw
+
+    def close(self) -> None:
+        self.wire.close()
 
 
 def verify(
@@ -59,9 +74,6 @@ def verify(
             "disconnect",
         )
     }
-    stages["compatibility_connection"]["reason"] = "只读选口登记，未打开物理串口"
-    stages["reconnection"]["reason"] = "仅重新绑定软件会话，未打开物理串口"
-    stages["identity"]["reason"] = "人工绑定。协议无板卡身份查询"
     stages["parameter_read"]["reason"] = "协议无输出状态查询"
     report: dict[str, Any] = {
         "adapter_id": ADAPTER_ID,
@@ -69,13 +81,13 @@ def verify(
         "resource": config.resource,
         "started_at": utc_now(),
         "input_condition": input_condition,
-        "scope": "枚举 CP210x 及验证手动绑定/重新绑定，全程不打开串口、不发送字节",
+        "scope": "枚举 CP210x，连接与重连均只发送 *IDN?，核对固件型号",
         "source_sha256": {path.name: digest(path) for path in DEFINITION.root.glob("*.py")},
         "stages": stages,
         "checks_passed": False,
         "final_state": "板端输出状态未知",
     }
-    visa = MetadataOnlyVisa()
+    visa = VisaRuntime()
     stage = "enumeration"
     try:
         port = re.fullmatch(r"(?:COM([1-9][0-9]*)|ASRL([1-9][0-9]*)::INSTR)", config.resource, re.I)
@@ -89,13 +101,27 @@ def verify(
         stages[stage] = {"state": "passed"}
         stage = "manual_binding"
         with ApplicationRuntime(root=root, visa=visa) as runtime:
+            factory = runtime.sessions.factory
+
+            def traced(connection: ConnectionConfig):
+                adapter = factory(connection)
+                assert isinstance(adapter, SwitchBoardAdapter)
+                adapter.transport = IdentityTrace(adapter.transport, transcript)
+                return adapter
+
+            runtime.sessions.factory = traced
             for stage in ("manual_binding", "manual_rebinding"):
                 device_id, opened = runtime.connect_manual_serial(ADAPTER_ID, selected)
-                opened.result(timeout=duration + 10)
+                identity = opened.result(timeout=duration + 10)
+                report["identity"] = jsonable(identity)
+                stages["identity"] = {"state": "passed", "reason": identity.raw}
+                stages["compatibility_connection" if stage == "manual_binding" else "reconnection"] = {
+                    "state": "passed"
+                }
                 status = runtime.sessions.submit(device_id, "status").result(timeout=duration + 10)
                 stages[stage] = {
                     "state": "passed",
-                    "reason": "已按枚举的 CP210x 绑定，物理串口未打开",
+                    "reason": "固件已通过身份核验",
                     "status": jsonable(status),
                 }
                 stage = "disconnect"
@@ -111,7 +137,6 @@ def verify(
             "reason": str(exc),
         }
     finally:
-        report["physical_open_attempts"] = visa.open_attempts
         report["finished_at"] = utc_now()
         atomic_json(folder / "results.json", report)
         publish_report(folder, summarize)

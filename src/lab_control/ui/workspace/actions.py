@@ -18,7 +18,7 @@ from lab_control.application.catalog import instrument_category
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.domain.instruments import jsonable
-from lab_control.instruments.registry import describe, requires_manual_connection
+from lab_control.instruments.registry import DEVICE_DEFINITIONS, describe, requires_manual_connection
 from lab_control.ui.widgets.slot_picker import choose_slot
 from lab_control.ui.widgets.workspace_combo import choose_item
 
@@ -58,7 +58,13 @@ class WorkspaceActions:
                     return
                 # A USB-to-serial bridge identifies the connection, not the
                 # instrument serial. Reuse its saved adapter as bulk connect does.
-                if config.usb_instance_id and config.transport != "serial" and not config.expected_serial:
+                definition = DEVICE_DEFINITIONS.get(config.adapter)
+                if (
+                    config.usb_instance_id
+                    and config.transport != "serial"
+                    and not config.expected_serial
+                    and not (definition and definition.manual_usb_id)
+                ):
                     serial, accepted = QInputDialog.getText(
                         window, "核对设备序列号", "请输入设备铭牌序列号；连接后将与设备实际读回再次核对"
                     )

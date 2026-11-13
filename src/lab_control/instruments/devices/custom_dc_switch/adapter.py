@@ -23,6 +23,7 @@ ADAPTER_ID = "custom.dc_switch"
 MODEL = "DC / CH3 / CH4 开关板"
 SOURCE = "自制板串口协议（现场提供）"
 ACKS = {"dc_on": "DC已打开", "dc_off": "DC已关闭", "ch3_on": "RF3已打开", "ch4_on": "RF4已打开"}
+FIRMWARE_ID = b"ESP32-S32 Board!"
 MAX_RX = 4096
 REPLY_TIMEOUT_SECONDS = 2.0
 SERIAL_STATUS = "switch_board_serial_status"
@@ -57,7 +58,6 @@ class SwitchBoardAdapter:
     def __init__(self, config: ConnectionConfig, transport: SwitchWire) -> None:
         self.transport = transport
         self.schema = capability_schema(config)
-        self.identity = DeviceIdentity("自制", MODEL, confidence="operator_selected")
         self.last_command = ""
         self.last_rx = b""
         self.partial_line = b""
@@ -67,7 +67,21 @@ class SwitchBoardAdapter:
         self.send_uncertain = False
 
     def identify(self) -> DeviceIdentity:
-        return self.identity
+        self.transport.receive()  # Discard bytes buffered before this request.
+        self.transport.send(b"*IDN?\n")
+        deadline = time.monotonic() + REPLY_TIMEOUT_SECONDS
+        received = bytearray()
+        while len(received) < MAX_RX and (remaining := deadline - time.monotonic()) > 0:
+            chunk = self.transport.receive(timeout=remaining)
+            if not chunk:
+                break
+            received.extend(chunk)
+            if any(
+                line.lstrip(b"\xff").removesuffix(b"\r") == FIRMWARE_ID
+                for line in received[:MAX_RX].split(b"\n")[:-1]
+            ):
+                return DeviceIdentity("自制", MODEL, confidence="model_only", raw=FIRMWARE_ID.decode("ascii"))
+        raise DeviceError("开关板身份校验失败，未收到 ESP32-S32 Board! 完整回包", "identity_mismatch")
 
     def capabilities(self) -> CapabilitySet:
         return self.schema

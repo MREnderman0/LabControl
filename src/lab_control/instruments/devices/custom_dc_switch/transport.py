@@ -15,7 +15,7 @@ STARTUP_SETTLE_SECONDS = 1.5
 
 
 class SwitchTransport(RawSerialVisaTransport):
-    """Bind the application session without asking Windows to open the COM handle."""
+    """Open the selected bridge once for the identity handshake and subsequent commands."""
 
     def __init__(self, config: ConnectionConfig, runtime: VisaRuntime) -> None:
         super().__init__(runtime, config.resource, config.timeout, terminator="", baud_rate=115200)
@@ -30,7 +30,7 @@ class SwitchTransport(RawSerialVisaTransport):
         self.bound = False
         super().close()
 
-    def _open_for_output(self) -> None:
+    def _open_serial(self) -> None:
         if not self.bound:
             raise DeviceError("请重新绑定开关板串口", "manual_reconnect_required")
         if self.handle is not None:
@@ -44,8 +44,7 @@ class SwitchTransport(RawSerialVisaTransport):
             for port in SerialDiscoveryProvider().enumerate()
         ):
             raise DeviceError("已绑定的 USB 转接器不在所选串口，请重新核对接线", "manual_reconnect_required")
-        # Opening the handle itself may pulse DTR/RTS. Only an explicitly
-        # confirmed output operation may cross this boundary.
+        # Opening the handle can pulse DTR/RTS; allow setup to finish before the query.
         try:
             super().open()
             time.sleep(STARTUP_SETTLE_SECONDS)
@@ -60,7 +59,7 @@ class SwitchTransport(RawSerialVisaTransport):
     @measured("write")
     def send(self, payload: bytes) -> None:
         try:
-            self._open_for_output()
+            self._open_serial()
             size = self.handle.write_raw(payload)
             if size != len(payload):
                 raise DeviceError(f"串口写入不完整（{size}/{len(payload)} 字节）", "disconnected")
@@ -91,6 +90,10 @@ class SwitchTransport(RawSerialVisaTransport):
 
 
 def create_transport(config: ConnectionConfig, runtime: VisaRuntime) -> SwitchTransport:
+    if config.transport == "serial" and (port := re.fullmatch(r"COM([1-9][0-9]*)", config.resource, re.I)):
+        from dataclasses import replace
+
+        config = replace(config, resource=f"ASRL{port[1]}::INSTR", transport="visa")
     if config.transport != "visa" or not re.fullmatch(r"ASRL[1-9][0-9]*::INSTR", config.resource):
         raise ValidationError("请选择开关板的 Windows COM 口")
     return SwitchTransport(config, runtime)

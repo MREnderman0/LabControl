@@ -26,6 +26,7 @@ from lab_control.discovery.types import DiscoveryCandidate as DiscoveryCandidate
 from lab_control.discovery.types import DiscoveryProvider as DiscoveryProvider
 from lab_control.domain.connections import ConnectionConfig, canonical_resource
 from lab_control.domain.instruments import DeviceError, DeviceIdentity, utc_now
+from lab_control.instruments.registry import DEVICE_DEFINITIONS
 
 
 class DiscoveryService:
@@ -220,8 +221,26 @@ class DiscoveryService:
                 profile = (
                     ConnectionConfig(**known["config"])
                     if known and known.get("adapterId") and known.get("config")
-                    else self.inventory.serial_profile(serial_candidate.descriptor)
+                    else None
                 )
+                if profile is None:
+                    profile = (
+                        self.inventory.serial_profile(serial_candidate.descriptor)
+                        if not chosen.config.adapter
+                        else None
+                    )
+                if profile is None and not chosen.config.adapter:
+                    # A USB match nominates a protocol only. The session verifies the
+                    # instrument reply before exposing any controls.
+                    matches = [
+                        d
+                        for d in DEVICE_DEFINITIONS.values()
+                        if d.manual_usb_id is not None
+                        and not d.manual_connection_only
+                        and d.matches_manual_port(serial_candidate.descriptor)
+                    ]
+                    if len(matches) == 1:
+                        profile = replace(serial_candidate.config, adapter=matches[0].adapter_id)
                 if profile is not None and profile.adapter:
                     # Probe the currently enumerated COM resource with the
                     # confirmed model profile. The USB bridge identity, not
@@ -255,8 +274,6 @@ class DiscoveryService:
 
         # Each resource is leased atomically before opening a short-lived probe handle.
         def process(candidate: DiscoveryCandidate) -> dict[str, Any]:
-            from lab_control.instruments.registry import DEVICE_DEFINITIONS
-
             if self.cancelled.is_set():
                 return {"resource": candidate.config.resource, "reason": "cancelled"}
             identity, adapter, error, reason = None, candidate.config.adapter, "", "metadata_only"
