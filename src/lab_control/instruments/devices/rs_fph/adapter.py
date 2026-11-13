@@ -1,4 +1,4 @@
-"""FPH02 controls and passive, context-aware spectrum acquisition."""
+"""FPH02 controls and passive Spectrum Rider acquisition."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from lab_control.transport.diagnostics import parsing
 from .protocol import POINTS, RBW, UNITS, VBW, boolean, trace, trace_format, trace_values
 
 TRACE_QUERY = "TRAC:DATA? TRACE1"
-PREAMP_UNAVAILABLE = "仪器未报告 B22 前置放大器选件，前放状态未读取"
+K13_PRODUCT = "1321.1111K13"
 
 FRAME_SETTINGS = (
     "start_frequency",
@@ -86,16 +86,21 @@ class FphAdapter(ScpiAdapter):
         self._context_key: tuple[str, str] = ("", "")
 
     @property
-    def _preamp_unavailable(self) -> bool:
-        # FPH02 preamplifier option, User Manual 1321.1011.02 rev. 21, §3.3.1.2 and *OPT? p.334.
-        return (
-            self.identity is not None
-            and self.identity.firmware == "V2.40"
-            and "B22" not in self.detected_options
-        )
+    def _k13(self) -> bool:
+        return self.identity is not None and self.identity.serial.partition("/")[0] == K13_PRODUCT
+
+    @property
+    def _preamp_unavailable(self) -> str:
+        option = "B24" if self._k13 else "B22"
+        if self.identity and (self._k13 or self.identity.firmware == "V2.40"):
+            if option not in self.detected_options:
+                return f"仪器未报告 {option} 前置放大器选件，前放状态未读取"
+        return ""
 
     @property
     def maximum_frequency(self) -> float:
+        if self._k13:
+            return 20e9 if "B20" in self.detected_options else 13.6e9
         # FPH02 specifications p.4: queried B3 extends 2 to 3 GHz; B3+B4 to 4 GHz.
         return (
             4e9
@@ -107,9 +112,12 @@ class FphAdapter(ScpiAdapter):
 
     def identify(self):
         identity = super().identify()
-        if not identity.serial.startswith("1321.1111K02/"):
+        product, _, serial = identity.serial.partition("/")
+        if not serial or not (
+            product == "1321.1111K02" or (product == K13_PRODUCT and identity.firmware == "V2.33")
+        ):
             self.identity = None
-            raise Unsupported("This FPH contract is qualified for FPH02 (1321.1111K02) only")
+            raise Unsupported(f"尚未接入该 FPH 硬件和固件组合：{product} / {identity.firmware}")
         return identity
 
     def invalidate_acquisition_context(self, reason: str) -> None:
@@ -119,6 +127,8 @@ class FphAdapter(ScpiAdapter):
 
     def read(self, operation: str, channel: int = 1) -> Any:
         self._context(channel, {})
+        if self._k13 and operation == "errors":
+            raise Unsupported("只读连接保留仪器错误队列")
         if operation == "sweep_points":
             # SWE:POIN? is broken in V1.40; fixed in V1.90 release notes.
             value: Any = POINTS
@@ -135,7 +145,7 @@ class FphAdapter(ScpiAdapter):
         readings = []
         for operation in operations:
             if operation == "preamplifier" and self._preamp_unavailable:
-                readings.append(ParameterReading(operation, channel, error=PREAMP_UNAVAILABLE))
+                readings.append(ParameterReading(operation, channel, error=self._preamp_unavailable))
             elif operation in {"marker_frequency", "marker_value"} and not self.read("marker_enabled"):
                 readings.append(ParameterReading(operation, channel, error="标记关闭，查询坐标会开启标记"))
             else:
@@ -199,11 +209,27 @@ class FphAdapter(ScpiAdapter):
             operations = []
             for cap in caps.operations:
                 if cap.name == "preamplifier":
-                    cap = replace(cap, available=False, readable=False, reason=PREAMP_UNAVAILABLE)
+                    cap = replace(cap, available=False, readable=False, reason=self._preamp_unavailable)
                 elif cap.name in {"reference_level", "attenuation", "attenuation_auto"}:
-                    cap = replace(cap, writable=False, reason=PREAMP_UNAVAILABLE)
+                    cap = replace(cap, writable=False, reason=self._preamp_unavailable)
                 operations.append(cap)
             caps = replace(caps, operations=tuple(operations))
+        if self._k13:
+            caps = replace(
+                caps,
+                operations=tuple(
+                    replace(
+                        cap,
+                        writable=False,
+                        available=False,
+                        readable=False,
+                        reason="只读连接保留仪器错误队列",
+                    )
+                    if cap.name == "errors"
+                    else replace(cap, writable=False, available=cap.available and cap.readable)
+                    for cap in caps.operations
+                ),
+            )
         return caps
 
     def prepare_acquisition(self) -> None:
@@ -219,7 +245,7 @@ class FphAdapter(ScpiAdapter):
         try:
             # V2.40 uses the current format on ordinary connection and recovery.
             # Its ASCII and REAL32 trace parsers both consume the instrument readback.
-            if self.identity.firmware != "V2.40" and before["transfer_format"] != "REAL":
+            if not self._k13 and self.identity.firmware != "V2.40" and before["transfer_format"] != "REAL":
                 self.acquisition_preparation["format_write_attempted"] = True
                 self.transport.write("FORM REAL,32")
                 after = {op: self.read(op) for op in before}
@@ -389,7 +415,7 @@ class FphAdapter(ScpiAdapter):
         else:
             before = {op: self.read(op) for op in frame_settings}
             if self._preamp_unavailable:
-                before.update(preamplifier=None, preamplifier_status=PREAMP_UNAVAILABLE)
+                before.update(preamplifier=None, preamplifier_status=self._preamp_unavailable)
             before.update(sweep_points=POINTS, maximum_frequency=self.maximum_frequency)
             before["binary_encoding"] = "SWAP" if self.identity.firmware == "V1.40" else before["byte_order"]
             before["binary_encoding_source"] = (
@@ -399,6 +425,8 @@ class FphAdapter(ScpiAdapter):
             )
             if before["measurement_mode"] != "SAN" or before["frequency_offset"] != 0:
                 raise Unsupported("Only ordinary, unshifted spectrum traces are qualified")
+        if self._k13 and before["transfer_format"] != "ASC":
+            raise Unsupported("FPH13 V2.33 仅验证了 ASCII 迹线，当前传输格式尚未验证")
         raw = self.transport.query(TRACE_QUERY)
         frame_config = trace_format(raw, before, self.identity)
         if not cached:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from lab_control.domain.connections import ConnectionConfig
 from lab_control.domain.instruments import Capability, CapabilitySet, Parameter, ValidationError
 from lab_control.instruments.base import CommandSpec, Profile
@@ -88,7 +90,10 @@ def configured_channels(config: ConnectionConfig) -> tuple[int, ...]:
 
 
 def capability_schema(config: ConnectionConfig) -> CapabilitySet:
-    return CapabilitySet("optical_power_meter", configured_channels(config), _capabilities())
+    operations = _capabilities()
+    if "read_only" in config.options:
+        operations = tuple(replace(cap, writable=False) for cap in operations)
+    return CapabilitySet("optical_power_meter", configured_channels(config), operations)
 
 
 def profile() -> Profile:

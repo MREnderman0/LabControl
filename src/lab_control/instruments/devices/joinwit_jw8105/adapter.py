@@ -190,6 +190,8 @@ class Jw8105Adapter(ScpiAdapter):
 
     def apply(self, command: DeviceCommand) -> ApplyResult:
         capability = self.capabilities().get(command.operation)
+        if not capability.writable:
+            raise Unsupported(f"{command.operation} is read-only")
         parameters = capability.validate(command.parameters)
         try:
             self._confirmed(command)

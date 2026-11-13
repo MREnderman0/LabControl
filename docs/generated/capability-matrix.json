@@ -19010,7 +19010,7 @@
     },
     {
       "adapter_id": "rs.fph",
-      "model": "R&S FPH02",
+      "model": "R&S FPH02 / FPH13",
       "category": "spectrum_analyzer",
       "control_page": "实时监测 / 频谱仪",
       "channels": [

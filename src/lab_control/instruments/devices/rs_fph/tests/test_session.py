@@ -6,7 +6,7 @@ import pytest
 
 from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
-from lab_control.domain.instruments import AcquisitionRequest
+from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand, Unsupported
 from lab_control.instruments.devices.rs_fph.adapter import FphAdapter
 from lab_control.instruments.devices.rs_fph.hardware.trace_readonly import capture_request
 from lab_control.instruments.devices.rs_fph.hardware.validate_control import frame_record
@@ -18,7 +18,8 @@ from .test_protocol import context, raw_trace
 class StateTransport:
     resource = "mock://fph-session"
 
-    def __init__(self, firmware="V1.40"):
+    def __init__(self, firmware="V1.40", product="1321.1111K02"):
+        self.product = product
         self.firmware = firmware
         self.options = b"0"
         self.state = context(byte_order="SWAP")
@@ -39,7 +40,7 @@ class StateTransport:
     def query(self, payload):
         self.history.append(payload)
         extra = {
-            "*IDN?": f"Rohde&Schwarz,FPH,1321.1111K02/TEST,{self.firmware}".encode(),
+            "*IDN?": f"Rohde&Schwarz,FPH,{self.product}/TEST,{self.firmware}".encode(),
             "*OPT?": self.options,
             "SYST:ERR?": b'0,"No error"',
         }
@@ -157,3 +158,44 @@ def test_v240_installed_b22_keeps_preamp_readback_in_trace(tmp_path):
     assert batch.configuration["preamplifier"] is True
     assert "preamplifier_status" not in batch.configuration
     assert transport.history.count("INP:GAIN:STAT?") == 2
+
+
+@pytest.mark.parametrize("product,firmware", [("1321.1111K13", "V2.40"), ("1321.1111K130", "V2.33")])
+def test_unqualified_variant_does_not_connect(product, firmware):
+    adapter = FphAdapter(
+        StateTransport(firmware, product), fph(), ConnectionConfig("mock://fph", "rs.fph", "mock")
+    )
+    with pytest.raises(Unsupported):
+        adapter.identify()
+    assert adapter.identity is None
+
+
+def test_k13_passive_connection_and_readonly_controls(tmp_path):
+    config = ConnectionConfig("mock://k13", "rs.fph", "mock")
+    transport = StateTransport("V2.33", "1321.1111K13")
+    transport.state.update(
+        transfer_format="ASC", start_frequency=9e9, center_frequency=10e9, stop_frequency=11e9, span=2e9
+    )
+    with ApplicationRuntime((config,), root=tmp_path, hardware=False) as app:
+        app.sessions.factory = lambda _: FphAdapter(transport, fph(), config)
+        key = app.add(config)
+        for _ in range(2):
+            assert app.connect(key).result(5).firmware == "V2.33"
+            adapter = app.sessions.sessions[key].adapter
+            assert not any(cap.writable for cap in adapter.capabilities().operations)
+            for name in ("single", "span"):
+                with pytest.raises(Unsupported):
+                    adapter.apply(DeviceCommand(name, confirmed=True))
+            assert adapter.maximum_frequency == 13.6e9
+            with pytest.raises(Unsupported, match="B24"):
+                adapter.capabilities().get("preamplifier")
+            batch = app.sessions.submit(key, "acquire", capture_request(adapter)).result(5)
+            (measurement,) = batch.measurements
+            assert measurement.axis[-1] == 11e9 and len(measurement.values) == 711
+            transport.state["transfer_format"] = "REAL"
+            with pytest.raises(Unsupported, match="ASCII"):
+                adapter.acquire(capture_request(adapter))
+            transport.state["transfer_format"] = "ASC"
+            app.sessions.disconnect(key)
+    assert all("?" in command for command in transport.history)
+    assert "INP:GAIN:STAT?" not in transport.history
