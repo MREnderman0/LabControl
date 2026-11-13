@@ -90,6 +90,8 @@ class DeviceDefinition:
     manual_connection_label: str = ""
     manual_connection_note: str = ""
     manual_usb_id: tuple[int, int] | None = None
+    # For these actions a direct manual click provides confirmation; automation still requires authority.
+    direct_click_operations: tuple[str, ...] = ()
 
     def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
         return self.manual_usb_id is None or self.manual_usb_id == (

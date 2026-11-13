@@ -1,4 +1,4 @@
-"""Raw ASCII serial writes and bounded, unframed receive windows."""
+"""LF-framed serial writes and bounded reads of UTF-8 reply lines."""
 
 import re
 import time
@@ -62,12 +62,10 @@ class SwitchTransport(RawSerialVisaTransport):
     @synchronized
     @measured("read")
     def receive(self, *, wait: bool = False) -> bytes:
-        # No terminator or documented reply length. Later bytes remain available
-        # to a passive status read. Never interpret them as an acknowledgement.
+        # Serial.println terminates each reply with LF. Read across USB packet boundaries.
         if self.handle is None:
             return b""
         end = time.monotonic() + (0.25 if wait else 0)
-        quiet_until = end
         data = bytearray()
         try:
             while True:
@@ -77,8 +75,7 @@ class SwitchTransport(RawSerialVisaTransport):
                     if len(block) != available:
                         raise DeviceError("串口接收缓冲读取不完整", "disconnected")
                     data.extend(block)
-                    quiet_until = time.monotonic() + 0.03
-                if len(data) == 4096 or time.monotonic() >= min(end, quiet_until):
+                if data.endswith(b"\n") or len(data) == 4096 or time.monotonic() >= end:
                     return bytes(data)
                 time.sleep(0.005)
         except Exception as exc:

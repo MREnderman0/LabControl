@@ -24484,7 +24484,7 @@
           "requires_confirmation": true,
           "channel_scoped": false,
           "source": "自制板串口协议（现场提供）",
-          "section": "DC-on",
+          "section": "dc_on",
           "verification": "documented_pending_hardware",
           "option": "",
           "available": true,
@@ -24493,7 +24493,7 @@
           "schema_tested": false,
           "protocol_fixture_tested": false,
           "hardware_passed": false,
-          "ui_label": "发送 DC-on（开启 DC）",
+          "ui_label": "发送 dc_on（开启 DC）",
           "ui_location": ""
         },
         {
@@ -24504,7 +24504,7 @@
           "requires_confirmation": true,
           "channel_scoped": false,
           "source": "自制板串口协议（现场提供）",
-          "section": "DC-off",
+          "section": "dc_off",
           "verification": "documented_pending_hardware",
           "option": "",
           "available": true,
@@ -24513,7 +24513,7 @@
           "schema_tested": false,
           "protocol_fixture_tested": false,
           "hardware_passed": false,
-          "ui_label": "发送 DC-off（关闭 DC）",
+          "ui_label": "发送 dc_off（关闭 DC）",
           "ui_location": ""
         },
         {
@@ -24524,7 +24524,7 @@
           "requires_confirmation": true,
           "channel_scoped": false,
           "source": "自制板串口协议（现场提供）",
-          "section": "CH3-on",
+          "section": "ch3_on",
           "verification": "documented_pending_hardware",
           "option": "",
           "available": true,
@@ -24533,7 +24533,7 @@
           "schema_tested": false,
           "protocol_fixture_tested": true,
           "hardware_passed": false,
-          "ui_label": "发送 CH3-on（选择 CH3，关闭 CH4）",
+          "ui_label": "发送 ch3_on（选择 CH3，关闭 CH4）",
           "ui_location": ""
         },
         {
@@ -24544,7 +24544,7 @@
           "requires_confirmation": true,
           "channel_scoped": false,
           "source": "自制板串口协议（现场提供）",
-          "section": "CH4-on",
+          "section": "ch4_on",
           "verification": "documented_pending_hardware",
           "option": "",
           "available": true,
@@ -24553,7 +24553,7 @@
           "schema_tested": false,
           "protocol_fixture_tested": false,
           "hardware_passed": false,
-          "ui_label": "发送 CH4-on（选择 CH4，关闭 CH3）",
+          "ui_label": "发送 ch4_on（选择 CH4，关闭 CH3）",
           "ui_location": ""
         },
         {

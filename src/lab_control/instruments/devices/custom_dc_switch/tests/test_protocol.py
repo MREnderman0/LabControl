@@ -26,6 +26,7 @@ class Handle:
     def __init__(self):
         self.writes = []
         self.rx = deque()
+        self.reply = b""
         self.closed = False
 
     @property
@@ -34,6 +35,7 @@ class Handle:
 
     def write_raw(self, payload):
         self.writes.append(payload)
+        self.rx.extend(self.reply)
         return len(payload)
 
     def read_bytes(self, count, *, break_on_termchar):
@@ -52,7 +54,7 @@ class Manager:
     def open_resource(self, resource, **_kwargs):
         assert resource == CONFIG.resource
         handle = Handle()
-        handle.rx.extend(self.next_ack)
+        handle.reply = self.next_ack
         self.handles.append(handle)
         return handle
 
@@ -94,14 +96,21 @@ def test_exact_commands_passive_receipts_and_mutual_exclusion_without_companion_
     board = SwitchBoardAdapter(CONFIG, wire)
     try:
         for op, expected in FIXTURE["requests"].items():
+            ack = (FIXTURE["replies"][op] + "\r\n").encode()
             if manager.handles:
-                manager.handles[0].rx.extend(bytes.fromhex(FIXTURE["sample_rx_hex"]))
+                manager.handles[0].reply = ack
             else:
-                manager.next_ack = bytes.fromhex(FIXTURE["sample_rx_hex"])
+                manager.next_ack = ack
             result = board.apply(DeviceCommand(op, confirmed=True))
-            assert result.outcome == "success" and result.readback["板端输出状态"] == "未知"
-            assert result.readback["最近完整发送"] == bytes.fromhex(expected).decode("ascii")
-            assert result.readback["最近串口接收 HEX"] == FIXTURE["sample_rx_hex"].upper()
+            assert result.outcome == "success" and result.acknowledged
+            assert result.readback["最近完整发送"] == op
+            assert (
+                result.readback["板端输出状态"]
+                == result.readback["最近串口接收 UTF-8"]
+                == FIXTURE["replies"][op]
+            )
+            assert result.readback["最近串口接收 HEX"] == ack.hex(" ").upper()
+            assert manager.handles[0].writes[-1] == bytes.fromhex(expected)
         assert len(manager.handles) == 1
         h = manager.handles[0]
         assert (h.baud_rate, h.data_bits, h.parity, h.stop_bits) == (115200, 8, Parity.none, StopBits.one)
@@ -111,11 +120,13 @@ def test_exact_commands_passive_receipts_and_mutual_exclusion_without_companion_
             SerialTermination.none,
         )
         assert h.write_termination is None and h.read_termination is None
+        h.reply = b""
         last = board.apply(DeviceCommand("ch3_on", confirmed=True))
-        assert last.readback["最近完整发送"] == "CH3-on" and last.readback["最近串口接收 HEX"] == "无"
+        assert last.readback["最近完整发送"] == "ch3_on" and last.readback["最近串口接收 HEX"] == "无"
+        assert last.acknowledged is False
         h.rx.extend(b"later\x00")
         assert board.read_settings((SERIAL_STATUS,))[0].value["最近串口接收 HEX"] == "6C 61 74 65 72 00"
-        assert h.writes == [b"DC-on", b"DC-off", b"CH3-on", b"CH4-on", b"CH3-on"]
+        assert h.writes == [b"dc_on\n", b"dc_off\n", b"ch3_on\n", b"ch4_on\n", b"ch3_on\n"]
         with pytest.raises(Unsupported):
             board.apply(DeviceCommand("ch4_off", confirmed=True))
     finally:
@@ -151,9 +162,42 @@ def test_short_write_is_uncertain_without_retry():
             raise DeviceError("short write", "disconnected")
 
         def receive(self, *, wait=False):
-            raise AssertionError("receive after failed write")
+            assert not wait
+            return b""
 
     wire = Wire()
     board = SwitchBoardAdapter(CONFIG, wire)
     result = board.apply(DeviceCommand("dc_on", confirmed=True))
     assert result.outcome == "uncertain" and result.readback["最近完整发送"] == "无" and wire.writes == 1
+
+
+def test_only_complete_current_reply_confirms_even_when_split_across_status_reads():
+    class Wire:
+        incoming = b""
+        reply = b""
+
+        def receive(self, *, wait=False):
+            value, self.incoming = self.incoming, b""
+            return value
+
+        def send(self, payload):
+            self.incoming = self.reply
+
+    wire = Wire()
+    board = SwitchBoardAdapter(CONFIG, wire)
+    command = DeviceCommand("dc_on", confirmed=True)
+    ack = "DC已打开".encode()
+    wire.incoming = ack + b"\r\n"
+    wire.reply = "请输入命令".encode() + b"\r\nRF" + b"3" + "已打开".encode() + b"\r\n" + ack[:3]
+    result = board.apply(command)
+    assert not result.acknowledged and "请输入命令" in result.readback["最近串口接收 UTF-8"]
+    wire.incoming = ack[3:] + b"\r"
+    assert board.read_status().values["板端输出状态"] == "未知"
+    wire.incoming = b"\n"
+    assert board.read_status().values["板端输出状态"] == "DC已打开"
+    wire.reply = b""
+    assert not board.apply(command).acknowledged
+    wire.reply = ack + b"\r\n"
+    assert not board.apply(command).acknowledged  # The preceding identical request is still outstanding.
+    wire.incoming = ack + b"\r\n"
+    assert board.read_status().values["板端输出状态"] == "DC已打开"

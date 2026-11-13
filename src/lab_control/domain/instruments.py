@@ -203,6 +203,7 @@ class ApplyResult:
     timestamp: str = field(default_factory=utc_now)
     adaptation: dict[str, Any] = field(default_factory=dict)
     control_update: ControlUpdate | None = None
+    acknowledged: bool | None = None
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,15 @@
 {
   "operation": "ch3_on",
-  "requests": {"dc_on": "44 43 2d 6f 6e", "dc_off": "44 43 2d 6f 66 66", "ch3_on": "43 48 33 2d 6f 6e", "ch4_on": "43 48 34 2d 6f 6e"},
-  "sample_rx_hex": "4f 4b 0d 0a ff"
+  "requests": {
+    "dc_on": "64 63 5f 6f 6e 0a",
+    "dc_off": "64 63 5f 6f 66 66 0a",
+    "ch3_on": "63 68 33 5f 6f 6e 0a",
+    "ch4_on": "63 68 34 5f 6f 6e 0a"
+  },
+  "replies": {
+    "dc_on": "DC已打开",
+    "dc_off": "DC已关闭",
+    "ch3_on": "RF3已打开",
+    "ch4_on": "RF4已打开"
+  }
 }

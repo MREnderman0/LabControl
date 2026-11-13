@@ -117,8 +117,11 @@ def render(definitions=None) -> dict[Path, str]:
                 or "无"
             )
             state = "缺选件/配置" if not cap.available else "软件已实现；实测按资产查证"
+            confirmation = "需要" if cap.requires_confirmation else "无需"
+            if cap.name in definition.direct_click_operations:
+                confirmation = "点击即发送"
             operations.append(
-                f"| `{cap.name}` | {parameters} | {'通道' if cap.channel_scoped else '整机'} | {'读' if cap.readable else ''}{'/写' if cap.writable else ''} | {'需要' if cap.requires_confirmation else '无需'} | {state} |"
+                f"| `{cap.name}` | {parameters} | {'通道' if cap.channel_scoped else '整机'} | {'读' if cap.readable else ''}{'/写' if cap.writable else ''} | {confirmation} | {state} |"
             )
         rows.append(record)
         card_path = ROOT / f"docs/devices/{card}.md"

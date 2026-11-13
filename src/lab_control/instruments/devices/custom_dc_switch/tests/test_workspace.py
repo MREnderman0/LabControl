@@ -57,14 +57,20 @@ def test_manual_board_gui_only_offers_matching_bridge_and_never_sends_automatica
             assert not page.go_monitor.isVisible() and not manager.handles
             editor = page.form.editors["ch4_on"]
             assert editor.apply_button.isEnabled() and not editor.read_button.isVisible()
-            monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
+            monkeypatch.setattr(QMessageBox, "question", lambda *args: pytest.fail("unexpected confirmation"))
+            manager.next_ack = "请输入命令".encode() + b"\r\n"
             editor.apply_button.click()
-            assert manager.handles == []
-            manager.next_ack = b"OK\x00"
-            monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+            qtbot.waitUntil(lambda: editor.status.text() == "已发送")
+            assert "请输入命令" in editor.readback.text() and "未知" in editor.readback.text()
+            assert manager.handles[0].writes == [b"ch4_on\n"]
+            editor = page.form.editors["ch3_on"]
+            manager.handles[0].reply = "RF3已打开\r\n".encode()
             editor.apply_button.click()
-            qtbot.waitUntil(lambda: "4F 4B 00" in editor.readback.text())
-            assert "未知" in editor.readback.text() and manager.handles[0].writes == [b"CH4-on"]
+            qtbot.waitUntil(lambda: editor.status.text() == "板端已确认")
+            assert "RF3已打开" in editor.readback.text() and manager.handles[0].writes == [
+                b"ch4_on\n",
+                b"ch3_on\n",
+            ]
         finally:
             window.timer.stop()
             window.controller.close()

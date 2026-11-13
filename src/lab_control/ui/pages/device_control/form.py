@@ -26,6 +26,7 @@ from lab_control.application.catalog import mode_applicable
 from lab_control.application.controls import COMMON, OPERATION_LABELS, PARAMETER_LABELS
 from lab_control.domain.instruments import Capability, DeviceCommand, ParameterReading
 from lab_control.domain.readback import normalized_value, usable_reading
+from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.pages.device_control.editors import ArrayEditor, FeedbackLabel, ParameterEditor
 
@@ -449,8 +450,10 @@ class OperationEditor(QFrame):
             return
         try:
             values = self.parameters()
-            confirmed = False
-            if self.cap.requires_confirmation:
+            record = self.controller.records.get(self.device_id, {})
+            definition = DEVICE_DEFINITIONS.get(record.get("adapterId", ""))
+            confirmed = bool(definition and self.cap.name in definition.direct_click_operations)
+            if self.cap.requires_confirmation and not confirmed:
                 record = self.controller.records[self.device_id]
                 answer = QMessageBox.question(
                     self,
@@ -484,8 +487,10 @@ class OperationEditor(QFrame):
             return
         self.busy = False
         self._apply_error = result.outcome != "success"
+        acknowledged = getattr(result, "acknowledged", None)
+        success_labels = {True: "板端已确认", False: "已发送", None: "已应用"}
         labels = {
-            "success": "已应用",
+            "success": success_labels[acknowledged],
             "partial": "部分执行",
             "rejected": "设备拒绝 / 读回不符",
             "uncertain": "结果不确定",
