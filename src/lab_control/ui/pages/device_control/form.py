@@ -331,13 +331,17 @@ class OperationEditor(QFrame):
                         continue
                     if field.spec.kind in {"number", "integer"}:
                         factor = field.unit.currentData() or 1
-                        if (
-                            isinstance(field.input, QLineEdit)
-                            and not field.input.text()
-                            and field.spec.unit == "Hz"
+                        if field.spec.unit == "Hz" and (
+                            (isinstance(field.input, QLineEdit) and not field.input.text())
+                            or (
+                                isinstance(field.input, QComboBox)
+                                and not field.unit_selected
+                                and factor == 1
+                                and field.input.findData(value) < 0
+                            )
                         ):
                             factor = next((f for f in (1e9, 1e6, 1e3) if abs(value) >= f), 1)
-                        field.restore({"value": f"{value / factor:.12g}", "factor": factor})
+                        field.restore({"value": f"{value / factor:.12g}", "factor": factor}, readback=True)
                     else:
                         field.set_value(value)
             if not self._apply_error:
@@ -415,11 +419,11 @@ class OperationEditor(QFrame):
             values = reading.value if isinstance(reading.value, dict) else {"value": reading.value}
             for name, value in values.items():
                 if name in self.editors:
-                    self.editors[name].set_value(value)
+                    self.editors[name].set_value(value, readback=True)
                     editor = self.editors[name]
                     if self.compact and isinstance(value, (int, float)) and editor.spec.unit == "Hz":
                         factor = next((scale for scale in (1e9, 1e6, 1e3) if abs(value) >= scale), 1)
-                        editor.restore({"value": f"{value / factor:.12g}", "factor": factor})
+                        editor.restore({"value": f"{value / factor:.12g}", "factor": factor}, readback=True)
         self.refresh_enabled()
 
     def parameters(self) -> dict[str, Any]:

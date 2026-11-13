@@ -150,7 +150,11 @@ class SpectrumControls(QFrame):
             self.refresh_buttons()
 
     def target(self) -> dict[str, Any]:
-        return {name: op.editors["value"].value() for name, op in self.editors.items()}
+        current = self.current()
+        return {
+            name: current[name] if name in current and not op.dirty else op.editors["value"].value()
+            for name, op in self.editors.items()
+        }
 
     def current(self) -> dict[str, Any]:
         return {

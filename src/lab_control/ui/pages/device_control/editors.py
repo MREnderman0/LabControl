@@ -9,6 +9,7 @@ import numpy as np
 import pyqtgraph as pg
 import shiboken6
 from PySide6.QtCore import QAbstractTableModel, QEvent, QModelIndex, Qt, QTimer, Signal
+from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -89,6 +90,8 @@ class ParameterEditor(QWidget):
         self.feedback: QLabel
         self._editing_number = False
         self._last_factor = 1.0
+        self.unit_selected = False
+        self._readback_choice: float | None = None
         self._last_valid_draft: dict[str, Any] | None = None
         outer = QVBoxLayout(self)
         outer.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
@@ -206,10 +209,10 @@ class ParameterEditor(QWidget):
         return super().eventFilter(watched, event)
 
     def unit_changed(self) -> None:
+        self.unit_selected = True
         factor = self.unit.currentData() or 1
         if isinstance(self.input, QComboBox) and self.spec.kind in {"number", "integer"}:
-            for index in range(self.input.count()):
-                self.input.setItemText(index, f"{self.input.itemData(index) / factor:.12g}")
+            self._format_choices(self.input, factor)
         if not self._editing_number and isinstance(self.input, QLineEdit):
             try:
                 old_value = float(self.input.text())
@@ -254,6 +257,10 @@ class ParameterEditor(QWidget):
             self.feedback.clear()
             self.changed.emit()
             return
+        if isinstance(self.input, QComboBox) and self._readback_choice is not None:
+            if self.input.currentData() == self._readback_choice:
+                self.feedback.clear()
+                return
         try:
             self.value()
             self._last_valid_draft = self.draft()
@@ -305,7 +312,26 @@ class ParameterEditor(QWidget):
             value = float(value) / factor if value is not None else None
         return {"value": value, "factor": factor}
 
-    def restore(self, draft: dict[str, Any]) -> None:
+    def _format_choices(self, combo: QComboBox, factor: float) -> None:
+        for index in range(combo.count()):
+            value = combo.itemData(index)
+            suffix = "（只读）" if value == self._readback_choice else ""
+            combo.setItemText(index, f"{value / factor:.12g}{suffix}")
+
+    def _sync_readback_choice(self, combo: QComboBox, value: float) -> None:
+        # Show an instrument value outside the permitted writes as a disabled row.
+        if self._readback_choice is not None and self._readback_choice != value:
+            combo.removeItem(combo.findData(self._readback_choice))
+            self._readback_choice = None
+        if combo.findData(value) >= 0:
+            return
+        model = combo.model()
+        assert isinstance(model, QStandardItemModel)
+        combo.addItem("", value)
+        model.item(combo.count() - 1).setEnabled(False)
+        self._readback_choice = value
+
+    def restore(self, draft: dict[str, Any], *, readback: bool = False) -> None:
         value = draft.get("value")
         self.input.blockSignals(True)
         self.unit.blockSignals(True)
@@ -314,6 +340,8 @@ class ParameterEditor(QWidget):
         elif isinstance(self.input, QComboBox):
             if self.spec.kind in {"number", "integer"} and value is not None:
                 value = float(value) * draft.get("factor", 1)
+                if readback and math.isfinite(value):
+                    self._sync_readback_choice(self.input, value)
             index = self.input.findData(value)
             if index >= 0:
                 self.input.setCurrentIndex(index)
@@ -326,15 +354,14 @@ class ParameterEditor(QWidget):
         self.unit.blockSignals(False)
         self._last_factor = self.unit.currentData() or 1
         if isinstance(self.input, QComboBox) and self.spec.kind in {"number", "integer"}:
-            for index in range(self.input.count()):
-                self.input.setItemText(index, f"{self.input.itemData(index) / self._last_factor:.12g}")
+            self._format_choices(self.input, self._last_factor)
         self._editing_number = False
         self.update_range_label()
 
         if self.input_is_valid():
             self._last_valid_draft = self.draft()
 
-    def set_value(self, value: Any) -> None:
+    def set_value(self, value: Any, *, readback: bool = False) -> None:
         if self.spec.kind == "boolean":
             if isinstance(value, str):
                 normalized = value.strip().upper()
@@ -344,7 +371,7 @@ class ParameterEditor(QWidget):
             elif value not in (0, 1, False, True):
                 return
         if self.spec.kind in {"number", "integer"} and isinstance(value, (int, float)):
-            self.restore({"value": f"{value:.12g}", "factor": 1})
+            self.restore({"value": f"{value:.12g}", "factor": 1}, readback=readback)
         else:
             self.restore({"value": value, "factor": 1})
 

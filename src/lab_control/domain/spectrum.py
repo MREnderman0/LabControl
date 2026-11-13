@@ -83,11 +83,11 @@ def prepare_changes(
     current: dict[str, Any], target: dict[str, Any], caps: CapabilitySet
 ) -> list[DeviceCommand]:
     """Plan only changed writes, with legal intermediate frequency and attenuation states."""
-    for name, value in target.items():
-        caps.get(name).validate({"value": value})
+    changed = {k for k, v in target.items() if current.get(k) != v}
+    for name in changed:
+        caps.get(name).validate({"value": target[name]})
     if target["start_frequency"] > target["stop_frequency"]:
         raise ValidationError("起始频率不能高于终止频率")
-    changed = {k for k, v in target.items() if current.get(k) != v}
     order = ["start_frequency", "stop_frequency"]
     if target["start_frequency"] > current["stop_frequency"]:
         order.reverse()
