@@ -42,6 +42,47 @@ def scope(qapp, qtbot, tmp_path):
         window.bridge.worker.shutdown()
 
 
+def test_declared_scope_writes_select_controls_independently_of_readback(scope, qtbot, monkeypatch):
+    from lab_control.ui.pages.monitoring.oscilloscope_controls import OscilloscopeControls
+    from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
+
+    window, page, _, key, _ = scope
+    declared = window.controller.declared_capabilities
+    readonly = {"record_length", "offset", "channel_enabled", "trigger_level", "trigger_slope", "auto_setup"}
+
+    def schema(device, channel=1):
+        result = declared(device, channel)
+        return replace(
+            result,
+            operations=tuple(
+                replace(op, writable=False) if op.name in readonly else op for op in result.operations
+            ),
+        )
+
+    monkeypatch.setattr(window.controller, "declared_capabilities", schema)
+    controls = OscilloscopeControls(window.controller, key, lambda: None)
+    qtbot.addWidget(controls)
+    controls.values.update(page.controls.values)
+    assert (
+        controls.checks == {}
+        and controls.points is None
+        and controls.trigger_slider is None
+        and controls.auto_button is None
+    )
+    assert (1, "offset") not in controls.sliders and (1, "scale") in controls.sliders
+    assert (1, "channel_enabled") in controls.keys() and controls.channels() == page.controls.channels()
+    counts = []
+
+    def inspect():
+        dialog = controls.findChild(QDialog)
+        counts.append(len(dialog.findChildren(WorkspaceComboBox)))
+        dialog.reject()
+
+    QTimer.singleShot(0, inspect)
+    controls.trigger_dialog()
+    assert counts == [2]
+
+
 def test_navigation_keeps_card_and_only_monitoring_route(scope):
     window, page, _, key, _ = scope
     window.navigate("设备管理", "oscilloscope", key)

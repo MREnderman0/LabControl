@@ -366,8 +366,13 @@ class CoreMorrowE00Page(PowerSupplyPage):
         self.empty.setVisible(not device_id)
         if device_id:
             schema = self.controller.capabilities(device_id)
-            voltage = next((c for c in schema.operations if c.name == "voltage"), None)
-            wave_cap = next((c for c in schema.operations if c.name == "standard_waveform"), None)
+            writable = {
+                c.name for c in self.controller.declared_capabilities(device_id).operations if c.writable
+            }
+            voltage = next((c for c in schema.operations if c.name == "voltage" and c.name in writable), None)
+            wave_cap = next(
+                (c for c in schema.operations if c.name == "standard_waveform" and c.name in writable), None
+            )
             if voltage is not None:
                 for channel in schema.channels:
                     panel = CoreMorrowE00Channel(

@@ -111,6 +111,8 @@ def test_manual_pump_connection_control_and_monitoring_use_selected_port_only(qt
             off = page.form.editors[OUTPUT_OFF]
             assert off.apply_button.isEnabled() and not off.read_button.isVisible()
             assert not page.form.editors["output"].cap.writable
+            assert not page.form.editors["output"].editors
+            assert page.form.editors["output"].apply_button.isHidden()
             monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
             off.apply_button.click()
             assert manager.handle.writes == [SETTINGS_REQUEST]

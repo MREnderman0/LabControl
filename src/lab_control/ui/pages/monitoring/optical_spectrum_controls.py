@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.domain.instruments import DeviceCommand, DeviceError
+from lab_control.domain.readback import usable_reading
 from lab_control.domain.spectrum import OPTICAL_SETTINGS, prepare_optical_changes
 from lab_control.ui.pages.device_control.form import OperationEditor
 
@@ -65,13 +66,18 @@ class OpticalSpectrumControls(QFrame):
             "rbw": "分辨率 RBW",
             "sensitivity": "灵敏度",
         }
-        for index, name in enumerate(OPTICAL_SETTINGS):
+        declared = {cap.name: cap for cap in controller.declared_capabilities(device_id).operations}
+        self.setting_names = tuple(
+            name for name in OPTICAL_SETTINGS if name in declared and declared[name].readable
+        )
+        for name in self.setting_names:
             cap = caps.get(name)
-            if cap is None:
+            if cap is None or not declared[name].writable:
                 continue
             op = OperationEditor(
                 controller, device_id, cap, 1, body, compact=True, actions=False, workspace_mode=self.mode
             )
+            index = len(self.editors)
             self.editors[name] = op
             title = op.findChild(QLabel, "controlTitle")
             if title:
@@ -100,6 +106,7 @@ class OpticalSpectrumControls(QFrame):
         layout.addWidget(self.status)
         buttons = QHBoxLayout()
         self.apply_button = QPushButton("应用修改", self)
+        self.apply_button.setVisible(bool(self.editors))
         self.apply_button.setObjectName("primaryButton")
         self.apply_button.clicked.connect(self.apply)
         buttons.addWidget(self.apply_button)
@@ -108,11 +115,30 @@ class OpticalSpectrumControls(QFrame):
         self.refresh()
 
     def current(self) -> dict[str, Any]:
-        return {
+        values = {
             name: op.current_value["value"]
             for name, op in self.editors.items()
             if op._reading_valid and isinstance(op.current_value, dict) and "value" in op.current_value
         }
+
+        state = self.controller.states.get(self.device_id, {})
+        caps = {cap.name: cap for cap in self.controller.capabilities(self.device_id).operations}
+        frames = self.controller.runtime.sessions.readback_frames(self.device_id)
+        for name in self.setting_names:
+            if name in self.editors:
+                continue
+            frame = frames.get((1, name))
+            cap = caps.get(name)
+            if (
+                frame
+                and cap
+                and frame.session_id == state.get("sessionId")
+                and frame.configuration_version == state.get("configurationVersion")
+                and usable_reading(frame.reading, cap.parameters)
+            ):
+                raw = frame.reading.value
+                values[name] = raw.get("value") if isinstance(raw, dict) else raw
+        return values
 
     def target(self) -> dict[str, Any]:
         return {name: op.editors["value"].value() for name, op in self.editors.items()}
@@ -125,12 +151,21 @@ class OpticalSpectrumControls(QFrame):
         try:
             for op in self.editors.values():
                 op.editors["value"].finish_editing(force=True)
-            current, target = self.current(), self.target()
-            if len(current) != len(self.editors):
+            current = self.current()
+            target = {**current, **self.target()}
+            if set(current) != set(OPTICAL_SETTINGS):
                 raise DeviceError("等待四项有效读回后再应用")
             self.pending = prepare_optical_changes(
                 current, target, self.controller.capabilities(self.device_id)
             )
+            caps = self.controller.capabilities(self.device_id)
+            if any(
+                cmd.operation not in self.editors
+                or not caps.get(cmd.operation).available
+                or not caps.get(cmd.operation).writable
+                for cmd in self.pending
+            ):
+                raise DeviceError("当前仪器状态不允许修改所选参数")
             if self.pending:
                 self._begin(False)
                 self._next_command()
@@ -143,7 +178,7 @@ class OpticalSpectrumControls(QFrame):
         try:
             self._begin(False)
             self.refresh_only = True
-            self.read_pending = list(self.editors)
+            self.read_pending = list(self.setting_names)
             self._read_next()
         except Exception as exc:
             self.status.setText(str(exc))
@@ -164,7 +199,7 @@ class OpticalSpectrumControls(QFrame):
             self.finish("会话已改变，停止后续操作；草稿已保留")
             return
         if not self.pending:
-            self.read_pending = list(self.editors)
+            self.read_pending = list(self.setting_names)
             self._read_next()
             return
         command = self.pending[0]
@@ -215,11 +250,9 @@ class OpticalSpectrumControls(QFrame):
             failed(exc)
 
     def _read_done(self, readings) -> None:
-        from lab_control.domain.readback import usable_reading
-
+        caps = self.controller.capabilities(self.device_id)
         for reading in readings:
-            op = self.editors[reading.operation]
-            if not usable_reading(reading, op.cap.parameters):
+            if not usable_reading(reading, caps.get(reading.operation).parameters):
                 self.finish("读回未确认；草稿已保留")
                 return
             self.verified[reading.operation] = reading
@@ -250,12 +283,15 @@ class OpticalSpectrumControls(QFrame):
             and not state.get("capabilityStale", True)
             and self.device_id not in self.controller.group_devices
         )
+        caps = self.controller.capabilities(self.device_id)
+        dirty = [name for name, op in self.editors.items() if op.dirty]
         self.apply_button.setEnabled(
             available
-            and len(self.current()) == len(self.editors)
-            and any(op.dirty for op in self.editors.values())
+            and set(self.current()) == set(OPTICAL_SETTINGS)
+            and bool(dirty)
+            and all(caps.get(name).available and caps.get(name).writable for name in dirty)
         )
-        self.refresh_button.setEnabled(available)
+        self.refresh_button.setEnabled(available and bool(self.setting_names))
         self.busy_changed.emit(self.running)
 
     def refresh(self) -> None:
@@ -274,7 +310,7 @@ class OpticalSpectrumControls(QFrame):
                     op.sync_token = token
                     op.show_reading(frame.reading)
         health, reason = self.controller.runtime.monitoring.settings_status(
-            self.device_id, tuple((1, name) for name in self.editors)
+            self.device_id, tuple((1, name) for name in self.setting_names)
         )
         self.health.setText("采集中 · 参数已锁定" if state.get("controlsLocked") else health)
         self.health.setToolTip(reason)

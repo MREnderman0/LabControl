@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import pytest
 from PySide6.QtWidgets import QMessageBox, QWidget
@@ -19,7 +20,7 @@ from lab_control.domain.instruments import (
 from lab_control.instruments.registry import PROFILES, SDK_ADAPTERS, describe
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.pages.device_control.editors import ArrayEditor, ParameterEditor
-from lab_control.ui.pages.device_control.form import OperationEditor
+from lab_control.ui.pages.device_control.form import ControlForm, OperationEditor
 from lab_control.ui.pages.monitoring.dashboard import ResponsiveGrid
 from lab_control.ui.pages.monitoring.frequency_counter import FrequencyCounterMonitoringPage
 from lab_control.ui.pages.monitoring.optical_power import OpticalPowerMonitoringPage
@@ -81,6 +82,49 @@ def test_units_boolean_readback_and_utf8_array_import(qtbot, tmp_path):
     with pytest.raises(DeviceError):
         table.load_file(path)
     assert len(table.model.rows) == 4  # A rejected import does not lose existing draft data.
+
+
+def test_readonly_settings_are_status_without_inputs_and_regain_controls_when_writable(
+    qtbot, tmp_path, monkeypatch
+):
+    config = ConnectionConfig("mock://control", "rigol.dg5504pro", "mock")
+    with ApplicationRuntime((config,), root=tmp_path, hardware=False) as runtime:
+        device = runtime.add(config)
+        runtime.connect(device).result()
+        parent = QWidget()
+        qtbot.addWidget(parent)
+        controller = WorkspaceController(runtime, parent)
+        schema = controller.capabilities(device)
+        frequency = schema.get("frequency")
+        current = replace(schema, operations=(frequency,))
+        monkeypatch.setattr(controller, "capabilities", lambda *_args: current)
+        form = ControlForm(controller)
+        qtbot.addWidget(form)
+        form.set_device(device)
+        writable = form.editors["frequency"]
+        writable.editors["value"].input.setText("2050")
+        writable.save_draft()
+        saved = runtime.repository.load_workspace(writable.key)
+        assert saved and writable.dirty
+
+        current = replace(schema, operations=(replace(frequency, writable=False),))
+        form.refresh_access()
+        status = form.editors["frequency"]
+        assert not status.editors and status.array_editor is None and not status.dirty
+        assert status.read_button.isEnabled() and status.apply_button.isHidden()
+        assert form.groups == [[], [], ["frequency"]]
+        assert form.tabs.currentIndex() == 2
+        status.show_reading(ParameterReading("frequency", 1, 3000000, "instrument"))
+        assert "3 MHz" in status.readback.text()
+        monkeypatch.setattr(controller, "apply", lambda *_args, **_kwargs: pytest.fail("read-only write"))
+        status.apply()
+        assert runtime.repository.load_workspace(status.key) == saved
+
+        current = replace(schema, operations=(frequency,))
+        form.refresh_access()
+        restored = form.editors["frequency"]
+        assert not form.groups[2] and not form.tabs.isTabVisible(2)
+        assert restored.dirty and restored.parameters()["value"] == 2050
 
 
 def test_draft_is_not_overwritten_and_cancel_sends_nothing(qtbot, tmp_path, monkeypatch):
@@ -228,6 +272,9 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
                     assert set(monitor.channel_checks) == set(caps.channels)
                     assert all(check.isChecked() for check in monitor.channel_checks.values())
                     assert not hasattr(monitor, "form")
+                elif category == "optical_spectrometer":
+                    editable = {c.name for c in caps.operations if c.writable}
+                    assert set(monitor.form.editors) == set(monitor.controls.editors) <= editable
                 else:
                     assert set(monitor.form.editors) == {c.name for c in caps.operations}
         window.navigate("实时监测")

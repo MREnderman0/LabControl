@@ -45,7 +45,9 @@ def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch):
             window.navigate("实时监测", "spectrum_analyzer", key)
             page = window.stack.currentWidget()
             assert isinstance(page, SpectrumMonitoringPage)
-            assert not page.controls.editors["span"].editors["value"].isEnabled()
+            assert not page.controls.editors
+            assert page.controls.apply_button.isHidden()
+            assert page.controls.auto_button.isHidden()
             page.toggle_monitoring()
             qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
             (trace,) = page.plot.displayed_frame.batch.measurements

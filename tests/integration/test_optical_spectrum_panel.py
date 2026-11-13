@@ -16,6 +16,44 @@ def shutdown(window):
     window.bridge.worker.shutdown()
 
 
+def test_readonly_optical_endpoint_is_cached_for_range_validation_without_an_editor(
+    qtbot, tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    runtime = create_demo_runtime(tmp_path)
+    window = RealWindow(runtime)
+    qtbot.addWidget(window)
+    declared = window.controller.declared_capabilities
+
+    def partial(device, channel=1):
+        schema = declared(device, channel)
+        return replace(
+            schema,
+            operations=tuple(
+                replace(op, writable=False) if op.name == "start_wavelength" else op
+                for op in schema.operations
+            ),
+        )
+
+    monkeypatch.setattr(window.controller, "declared_capabilities", partial)
+    try:
+        window.navigate("实时监测", "optical_spectrometer")
+        page = window.stack.currentWidget()
+        qtbot.waitUntil(lambda: len(page.controls.current()) == 4)
+        assert set(page.controls.editors) == {"stop_wavelength", "rbw", "sensitivity"}
+        assert "start_wavelength" not in page.form.editors
+        original = page.controls.current()["start_wavelength"]
+        page.controls.editors["rbw"].editors["value"].set_value(0.2)
+        page.controls.apply()
+        qtbot.waitUntil(lambda: not page.controls.running)
+        assert (
+            page.controls.current()["rbw"] == 0.2 and page.controls.current()["start_wavelength"] == original
+        )
+    finally:
+        shutdown(window)
+
+
 @pytest.mark.parametrize("layout_mode", ["electronic", "optical"])
 def test_optical_page_has_four_instrument_settings_and_fixed_interval(
     qtbot, tmp_path, monkeypatch, layout_mode

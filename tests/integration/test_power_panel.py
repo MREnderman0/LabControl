@@ -224,3 +224,20 @@ def test_local_failure_cleans_up_and_reports_unconfirmed(tmp_path):
         runtime.sessions.disconnect(key)
     assert adapter.closed and key not in runtime.sessions.sessions
     runtime.close()
+
+
+def test_declared_readonly_voltage_has_only_measured_readout(power, qtbot, monkeypatch):
+    window, page, runtime, key, _adapter = power
+    declared = window.controller.declared_capabilities
+
+    def query_only(device_id, channel=1):
+        caps = declared(device_id, channel)
+        operations = tuple(replace(c, writable=False) if c.name == "voltage" else c for c in caps.operations)
+        return replace(caps, operations=operations)
+
+    monkeypatch.setattr(window.controller, "declared_capabilities", query_only)
+    page.select_device("")
+    page.select_device(key)
+    panel = page.panels[1]
+    assert "voltage" not in panel.editors and "current" in panel.editors
+    qtbot.waitUntil(lambda: "3.3" in panel.measurements["voltage"].text())

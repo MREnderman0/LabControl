@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.domain.instruments import DeviceCommand, DeviceError
+from lab_control.domain.readback import boolean_value, usable_reading
 from lab_control.domain.spectrum import (
     AUTOMATIC,
     FREQUENCY,
@@ -44,6 +45,7 @@ class SpectrumControls(QFrame):
         self.running = False
         self.link_busy = False
         self.last_frequency = ""
+        self._auto_readings: dict[str, bool | None] = {}
         self.pending: list[DeviceCommand] = []
         self.completed: list[str] = []
         self.read_pending: list[str] = []
@@ -70,54 +72,11 @@ class SpectrumControls(QFrame):
         self.body_layout = QVBoxLayout(body)
         self.body_layout.setContentsMargins(2, 0, 6, 8)
         self.body_layout.setSpacing(10)
-        grid = QGridLayout()
+        self.grid = grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(12)
         self.body_layout.addLayout(grid)
-        caps = {c.name: c for c in controller.capabilities(device_id).operations}
-        for name in SETTINGS:
-            if name not in caps:
-                continue
-            op = OperationEditor(controller, device_id, caps[name], 1, self, compact=True, actions=False)
-            op.enable_auto_sync()
-            self.editors[name] = op
-            field = op.editors["value"]
-            field.unit.setMinimumWidth(0)
-            fit = getattr(field.unit, "fit_contents", None)
-            if callable(fit):
-                fit(52)
-            else:
-                field.unit.setFixedWidth(64)
-            field.input.setMinimumWidth(0)
-            field.changed.connect(self.changed)
-            if name in NUMERIC:
-                index = NUMERIC.index(name)
-                grid.addWidget(op, index // 2, index % 2, Qt.AlignmentFlag.AlignTop)
-                title = op.findChild(QLabel, "controlTitle")
-                if title:
-                    title.setMinimumHeight(22)
-                if title and name in {"rbw", "vbw", "span"}:
-                    title.setText({"rbw": "RBW", "vbw": "VBW", "span": "扫宽"}[name])
-            else:
-                op.hide()
-            if name in FREQUENCY:
-                if isinstance(field.input, QLineEdit):
-                    field.input.textEdited.connect(lambda _text, n=name: self.frequency_started(n))
-                    field.input.editingFinished.connect(
-                        lambda n=name: QTimer.singleShot(0, lambda: self.link(n))
-                    )
-                field.unit.currentIndexChanged.connect(
-                    lambda _i, n=name: QTimer.singleShot(0, lambda: self.link(n))
-                )
-        for name, automatic in AUTOMATIC.items():
-            if name in self.editors and automatic in self.editors:
-                check = cast(QCheckBox, self.editors[automatic].editors["value"].input)
-                check.setText("自动")
-                item = cast(QVBoxLayout, self.editors[name].layout()).itemAt(0)
-                assert item is not None
-                heading = cast(QHBoxLayout, item.layout())
-                heading.addWidget(check)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         self.marker_slot = QVBoxLayout()
@@ -142,6 +101,74 @@ class SpectrumControls(QFrame):
         controller.refreshed.connect(self.refresh)
         self.refresh()
 
+    def sync_controls(self) -> None:
+        capabilities = self.controller.capabilities(self.device_id)
+        by_name = {cap.name: cap for cap in capabilities.operations if cap.available and cap.writable}
+        caps = {name: by_name[name] for name in SETTINGS if name in by_name}
+        if caps.keys() == self.editors.keys():
+            return
+        # Preserve active edits; recreate only an automatic control whose host changes.
+        removed = self.editors.keys() - caps.keys()
+        for name, automatic in AUTOMATIC.items():
+            if (name in caps) != (name in self.editors) and automatic in self.editors:
+                removed.add(automatic)
+        for name in removed:
+            op = self.editors.pop(name)
+            self.grid.removeWidget(op)
+            op.hide()
+            if name in AUTOMATIC.values():
+                op.editors["value"].input.hide()
+                op.editors["value"].input.setParent(op)
+            op.deleteLater()
+        for name, cap in caps.items():
+            if name in self.editors:
+                continue
+            op = OperationEditor(self.controller, self.device_id, cap, 1, self, compact=True, actions=False)
+            # The panel refreshes editors before applying linked automatic/manual state.
+            self.controller.refreshed.disconnect(op.refresh_enabled)
+            op.enable_auto_sync()
+            self.editors[name] = op
+            field = op.editors["value"]
+            field.unit.setMinimumWidth(0)
+            fit = getattr(field.unit, "fit_contents", None)
+            if callable(fit):
+                fit(52)
+            else:
+                field.unit.setFixedWidth(64)
+            field.input.setMinimumWidth(0)
+            field.changed.connect(self.changed)
+            if name in NUMERIC:
+                title = op.findChild(QLabel, "controlTitle")
+                if title:
+                    title.setMinimumHeight(22)
+                if title and name in {"rbw", "vbw", "span"}:
+                    title.setText({"rbw": "RBW", "vbw": "VBW", "span": "扫宽"}[name])
+            if name in FREQUENCY:
+                if isinstance(field.input, QLineEdit):
+                    field.input.textEdited.connect(lambda _text, n=name: self.frequency_started(n))
+                    field.input.editingFinished.connect(
+                        lambda n=name: QTimer.singleShot(0, lambda: self.link(n))
+                    )
+                field.unit.currentIndexChanged.connect(
+                    lambda _i, n=name: QTimer.singleShot(0, lambda: self.link(n))
+                )
+        for name, automatic in AUTOMATIC.items():
+            if name in self.editors and automatic in self.editors:
+                check = cast(QCheckBox, self.editors[automatic].editors["value"].input)
+                check.setText("自动")
+                item = cast(QVBoxLayout, self.editors[name].layout()).itemAt(0)
+                assert item is not None
+                heading = cast(QHBoxLayout, item.layout())
+                heading.addWidget(check)
+                check.show()
+                self.grid.removeWidget(self.editors[automatic])
+                self.editors[automatic].hide()
+        nested = {auto for name, auto in AUTOMATIC.items() if name in self.editors}
+        visible = [self.editors[name] for name in caps if name not in nested]
+        for i, op in enumerate(visible):
+            self.grid.addWidget(op, i // 2, i % 2, Qt.AlignmentFlag.AlignTop)
+            op.show()
+
     def frequency_started(self, name: str) -> None:
         self.last_frequency = name
 
@@ -152,9 +179,21 @@ class SpectrumControls(QFrame):
     def target(self) -> dict[str, Any]:
         current = self.current()
         return {
-            name: current[name] if name in current and not op.dirty else op.editors["value"].value()
+            name: (
+                current[name]
+                if name in current and (not op.dirty or self._automatic(name))
+                else op.editors["value"].value()
+            )
             for name, op in self.editors.items()
         }
+
+    def _automatic(self, name: str) -> bool:
+        automatic = AUTOMATIC.get(name, "")
+        editor = self.editors.get(automatic)
+        if editor is not None:
+            return cast(QCheckBox, editor.editors["value"].input).isChecked()
+        # A read-only automatic setting must be confirmed off before manual editing.
+        return self._auto_readings.get(automatic, False) is not False
 
     def current(self) -> dict[str, Any]:
         return {
@@ -200,7 +239,9 @@ class SpectrumControls(QFrame):
         state = self.controller.states.get(self.device_id, {})
         frames = self.controller.runtime.sessions.readback_frames(self.device_id)
         if not self.running:
+            self.sync_controls()
             for name, op in self.editors.items():
+                op.refresh_enabled()
                 frame = frames.get((1, name))
                 if frame is None or (frame.session_id, frame.configuration_version) != (
                     state.get("sessionId"),
@@ -211,12 +252,25 @@ class SpectrumControls(QFrame):
                 if op.sync_token != token:
                     op.sync_token = token
                     op.show_reading(frame.reading)
+        caps = {cap.name: cap for cap in self.controller.capabilities(self.device_id).operations}
+        self._auto_readings.clear()
         for name, automatic in AUTOMATIC.items():
-            if name in self.editors and automatic in self.editors:
-                auto_field = cast(QCheckBox, self.editors[automatic].editors["value"].input)
-                enabled = not auto_field.isChecked() and self.editors[name].cap.writable
+            cap = caps.get(automatic)
+            if name in self.editors:
+                if cap is not None and cap.available and cap.readable and automatic not in self.editors:
+                    frame = frames.get((1, automatic))
+                    value = None
+                    if (
+                        frame is not None
+                        and frame.session_id == state.get("sessionId")
+                        and frame.configuration_version == state.get("configurationVersion")
+                        and usable_reading(frame.reading, cap.parameters)
+                    ):
+                        value = boolean_value(frame.reading.value)
+                    self._auto_readings[automatic] = value
+                enabled = not self._automatic(name) and self.editors[name].cap.writable
                 self.editors[name].editors["value"].setEnabled(enabled and not self.running)
-                if auto_field.isChecked():
+                if self._automatic(name) and self._auto_readings.get(automatic, True) is not None:
                     op = self.editors[name]
                     if op._reading_valid:
                         value = op.current_value["value"]
@@ -268,13 +322,7 @@ class SpectrumControls(QFrame):
         self.refresh_buttons()
 
     def dirty(self) -> bool:
-        return any(
-            op.dirty
-            for name, op in self.editors.items()
-            if name not in AUTOMATIC
-            or AUTOMATIC[name] not in self.editors
-            or not cast(QCheckBox, self.editors[AUTOMATIC[name]].editors["value"].input).isChecked()
-        )
+        return any(op.dirty and not self._automatic(name) for name, op in self.editors.items())
 
     def refresh_buttons(self) -> None:
         state = self.controller.states.get(self.device_id, {})
@@ -290,6 +338,9 @@ class SpectrumControls(QFrame):
             and self.mode == self.controller.mode
             and self.device_id not in self.controller.group_devices
         )
+        self.apply_button.setVisible(bool(self.editors))
+        self.refresh_button.setVisible(bool(self.editors))
+        self.health.setVisible(bool(self.editors))
         self.apply_button.setEnabled(available and self.dirty() and len(self.current()) == len(self.editors))
         self.refresh_button.setEnabled(
             state.get("connectionState") in {"connected", "busy"}
@@ -299,6 +350,7 @@ class SpectrumControls(QFrame):
         )
         caps = self.controller.capabilities(self.device_id)
         auto = next((c for c in caps.operations if c.name == "auto_setup"), None)
+        self.auto_button.setVisible(bool(auto and auto.available and auto.writable))
         self.auto_button.setEnabled(bool(available and auto and auto.available and auto.writable))
         self.auto_button.setToolTip(
             "执行仪器 Auto Tune" if auto and auto.available else "当前型号未核实整机 Auto 接口"
@@ -314,10 +366,6 @@ class SpectrumControls(QFrame):
             current = self.current()
             if len(current) != len(self.editors):
                 raise DeviceError("等待有效读回后再应用")
-            # Automatic numeric displays are not manual requests, including saved manual drafts.
-            for name, auto in AUTOMATIC.items():
-                if target.get(auto):
-                    target[name] = current[name]
             self.pending = prepare_changes(current, target, self.controller.capabilities(self.device_id))
             if self.pending:
                 self.begin(False)
@@ -391,6 +439,9 @@ class SpectrumControls(QFrame):
             if command.operation != "auto_setup":
                 op = self.editors[command.operation]
                 op.refresh_enabled()
+                if not op.cap.available or not op.cap.writable:
+                    self.finish("参数可写范围已变化，请核对当前可用控件", failed=command.operation)
+                    return
                 actual = op.parameters()
                 if actual != command.parameters:
                     self.finish("范围已变化，请核对修正后的草稿，再次应用")

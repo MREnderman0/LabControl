@@ -85,11 +85,22 @@ def prepare_changes(
     """Plan only changed writes, with legal intermediate frequency and attenuation states."""
     changed = {k for k, v in target.items() if current.get(k) != v}
     for name in changed:
-        caps.get(name).validate({"value": target[name]})
-    if target["start_frequency"] > target["stop_frequency"]:
+        cap = caps.get(name)
+        if not cap.writable:
+            raise ValidationError(f"{name} 当前只读")
+        cap.validate({"value": target[name]})
+    if (
+        "start_frequency" in target
+        and "stop_frequency" in target
+        and target["start_frequency"] > target["stop_frequency"]
+    ):
         raise ValidationError("起始频率不能高于终止频率")
     order = ["start_frequency", "stop_frequency"]
-    if target["start_frequency"] > current["stop_frequency"]:
+    if (
+        "start_frequency" in target
+        and "stop_frequency" in current
+        and target["start_frequency"] > current["stop_frequency"]
+    ):
         order.reverse()
     # Lower the level before reducing attenuation; raise it only after attenuation is settled.
     lowering = target.get("reference_level", 0) < current.get("reference_level", 0)

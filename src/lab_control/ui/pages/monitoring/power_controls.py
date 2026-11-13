@@ -18,7 +18,17 @@ class PowerMonitorChannel(ParameterGroup):
     def __init__(self, owner, channel: int):
         self.owner = owner
         schema = owner.controller.capabilities(owner.device_id, channel)
-        caps = [c for name in ("voltage", "current") for c in schema.operations if c.name == name]
+        writable = {
+            c.name
+            for c in owner.controller.declared_capabilities(owner.device_id, channel).operations
+            if c.writable
+        }
+        caps = [
+            c
+            for name in ("voltage", "current")
+            for c in schema.operations
+            if c.name == name and name in writable
+        ]
         super().__init__(owner.controller, owner.device_id, channel, caps, columns=2, parent=owner)
         self.setObjectName("powerMonitorChannel")
         layout = cast(QVBoxLayout, self.layout())
@@ -37,7 +47,11 @@ class PowerMonitorChannel(ParameterGroup):
         layout.insertLayout(0, heading)
         self.measurements: dict[str, QLabel] = {}
         actual = QHBoxLayout()
-        for name, editor in self.editors.items():
+        for name in ("voltage", "current"):
+            if name not in self.editors and not any(
+                c.name == "measured_" + name and c.readable for c in schema.operations
+            ):
+                continue
             label = QLabel("实测 — " + ("V" if name == "voltage" else "A"))
             label.setObjectName("powerLiveValue")
             # Equal readout columns must not resize when a value gains digits.
@@ -46,6 +60,9 @@ class PowerMonitorChannel(ParameterGroup):
             label.setWordWrap(False)
             actual.addWidget(label, 1)
             self.measurements[name] = label
+            if name not in self.editors:
+                continue
+            editor = self.editors[name]
             field_title = editor.findChild(QLabel, "controlTitle")
             if field_title:
                 field_title.setText("电压设置" if name == "voltage" else "电流限值")
@@ -60,11 +77,12 @@ class PowerMonitorChannel(ParameterGroup):
             field.unit.setFixedWidth(54)
         layout.insertLayout(1, actual)
         self.apply_button.setText("应用修改")
+        self.apply_button.setVisible(bool(self.editors))
         self.apply_button.setProperty("buttonSize", "compact")
         self.apply_button.setFixedWidth(88)
         self.fields.setSpacing(8)
         self.output = None
-        if not owner.master and any(c.name == "output" and c.available for c in schema.operations):
+        if not owner.master and any(c.name == "output" for c in schema.operations):
             self.output = MonitoredPowerOutput(owner, "output", channel)
             layout.insertWidget(2, self.output)
 
@@ -148,7 +166,10 @@ class PowerControls(QWidget):
         self.owns_group = False
         self.session_id = ""
         schema = controller.capabilities(device_id)
-        self.master = any(c.name == "all_outputs" and c.available for c in schema.operations)
+        self.master = any(
+            c.name == "all_outputs" and c.writable
+            for c in controller.declared_capabilities(device_id).operations
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)

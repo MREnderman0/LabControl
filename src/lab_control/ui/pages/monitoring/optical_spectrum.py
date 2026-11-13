@@ -134,15 +134,16 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
             self.controls.deleteLater()
             self.controls = None
         self.data_source = None
+        self.form.editors = {}
         self.splitter.setVisible(bool(device_id))
         self.empty.setVisible(not device_id)
         if device_id:
             config = config_from_record(self.controller.records[device_id])
-            self.form.editors = {cap.name: cap for cap in self.controller.capabilities(device_id).operations}
             self.data_source = next(
                 (source for source in data_sources(config) if source.kind == "spectrum"), None
             )
             self.controls = OpticalSpectrumControls(self.controller, device_id, self.right)
+            self.form.editors = self.controls.editors
             self.right_layout.addWidget(self.controls)
             self.controls.busy_changed.connect(lambda busy: self.selector.setEnabled(not busy))
             self.controller.focus_settings(device_id)

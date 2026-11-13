@@ -459,3 +459,59 @@ def test_frame_notification_draws_without_general_poll_and_hidden_page_skips(spe
     qtbot.waitUntil(lambda: runtime.monitoring.snapshots()[key]["sequence"] > seq + 2)
     assert len(draws) == count
     runtime.monitoring.stop(key).result(3)
+
+
+def test_live_spectrum_writable_controls_follow_capabilities_and_preserve_drafts(
+    spectrum, qtbot, monkeypatch
+):
+    window, page, runtime, key, adapter = spectrum
+    controls = page.controls
+    caps = window.controller.capabilities(key)
+    blocked = {"reference_level", "attenuation", "attenuation_auto", "rbw_auto"}
+    frames = runtime.sessions.readback_frames(key)
+    before = controls.editors["rbw"]
+    frames[(1, "rbw_auto")] = replace(
+        frames[(1, "rbw_auto")], reading=replace(frames[(1, "rbw_auto")].reading, value=True)
+    )
+
+    def effective(device_id, channel=1):
+        return replace(
+            caps,
+            operations=tuple(
+                replace(cap, writable=False) if cap.name in blocked else cap for cap in caps.operations
+            ),
+        )
+
+    original = adapter.apply
+    calls = []
+    monkeypatch.setattr(adapter, "apply", lambda c: (calls.append(c), original(c))[1])
+    edit(qtbot, page, "reference_level", "-15")
+    assert controls.editors["reference_level"].dirty
+    monkeypatch.setattr(window.controller, "capabilities", effective)
+    monkeypatch.setattr(runtime.sessions, "readback_frames", lambda _: frames)
+    window.controller.refreshed.emit()
+    assert not (controls.editors.keys() & blocked)
+    assert controls.editors["rbw"] is before
+    assert not before.editors["value"].isEnabled()
+    assert not controls.dirty() and not calls
+
+    frames[(1, "rbw_auto")] = replace(
+        frames[(1, "rbw_auto")], reading=replace(frames[(1, "rbw_auto")].reading, value=False)
+    )
+    window.controller.refreshed.emit()
+    assert before.editors["value"].isEnabled()
+    blocked.clear()
+    window.controller.refreshed.emit()
+    assert controls.editors["reference_level"].dirty
+    assert controls.editors["reference_level"].parameters() == {"value": -15.0}
+    assert controls.editors["rbw_auto"].editors["value"].input.isVisible()
+
+    blocked.add("rbw")
+    window.controller.refreshed.emit()
+    assert "rbw" not in controls.editors
+    assert controls.editors["rbw_auto"].isVisible()
+    blocked.clear()
+    window.controller.refreshed.emit()
+    assert controls.editors["rbw"].isVisible()
+    assert controls.editors["rbw_auto"].editors["value"].input.isVisible()
+    assert not calls

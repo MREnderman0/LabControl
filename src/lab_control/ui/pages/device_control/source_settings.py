@@ -82,7 +82,13 @@ class SourceSettingsDialog(QDialog):
         description = QLabel(f"{model}  ·  以下设置作用于整台设备", self)
         description.setObjectName("mutedText")
         layout.addWidget(description)
+        definitions = {cap.name: cap for cap in controller.declared_capabilities(device_id).operations}
+        self.option_labels: dict[str, dict[str, str]] = {}
         for name, label, options in SETTING_SECTIONS:
+            declared = definitions.get(name)
+            if declared is None or declared.channel_scoped or not (declared.readable or declared.writable):
+                continue
+            self.option_labels[name] = dict(options)
             section = QFrame(self)
             section.setObjectName("sourceSettingsSection")
             section_layout = QVBoxLayout(section)
@@ -93,6 +99,9 @@ class SourceSettingsDialog(QDialog):
             current.setObjectName("mutedText")
             self.current_labels[name] = current
             section_layout.addWidget(current)
+            layout.addWidget(section)
+            if not declared.writable:
+                continue
             row = QHBoxLayout()
             row.setSpacing(8)
             self.choices[name] = {}
@@ -109,7 +118,6 @@ class SourceSettingsDialog(QDialog):
                 row.addWidget(choice, 1)
                 self.choices[name][value] = choice
             section_layout.addLayout(row)
-            layout.addWidget(section)
         self.status = QLabel(self)
         self.status.setObjectName("inputFeedback")
         self.status.setWordWrap(True)
@@ -117,7 +125,7 @@ class SourceSettingsDialog(QDialog):
         layout.addWidget(self.status)
         footer = QHBoxLayout()
         footer.addStretch()
-        self.cancel_button = QPushButton("取消", self)
+        self.cancel_button = QPushButton("取消" if self.choices else "关闭", self)
         self.cancel_button.clicked.connect(self.reject)
         self.apply_button = QPushButton("应用", self)
         self.apply_button.setObjectName("primaryButton")
@@ -126,6 +134,7 @@ class SourceSettingsDialog(QDialog):
             button.setProperty("buttonSize", "dialog")
             button.setFixedWidth(84)
         footer.addWidget(self.cancel_button)
+        self.apply_button.setVisible(bool(self.choices))
         footer.addWidget(self.apply_button)
         layout.addLayout(footer)
         controller.refreshed.connect(self.refresh)
@@ -141,7 +150,7 @@ class SourceSettingsDialog(QDialog):
     def sync_keys(self):
         return tuple(
             (1, name)
-            for name in self.choices
+            for name in self.current_labels
             if (cap := self.capability(name)) and cap.available and cap.readable and not cap.channel_scoped
         )
 
@@ -155,6 +164,8 @@ class SourceSettingsDialog(QDialog):
         )
 
     def choose(self, name: str, value: str) -> None:
+        if value not in self.choices.get(name, {}):
+            return
         self.drafts[name] = value
         self.message("")
         self.refresh()
@@ -176,7 +187,7 @@ class SourceSettingsDialog(QDialog):
         frames = self.controller.runtime.sessions.readback_frames(self.device_id)
         ready = bool(idle and not state.get("capabilityStale", True))
         changed = False
-        for name, choices in self.choices.items():
+        for name, label in self.current_labels.items():
             cap = self.capability(name)
             available = bool(
                 cap and cap.available and cap.readable and cap.writable and not cap.channel_scoped
@@ -196,18 +207,22 @@ class SourceSettingsDialog(QDialog):
             if fresh and cap and frame:
                 raw = frame.reading.value
                 raw = raw.get("value") if isinstance(raw, dict) else raw
-                current = normalized_value(raw, cap.parameters["value"])
+                current = normalized_value(raw, cap.parameters["value"]) if "value" in cap.parameters else raw
             self.current[name] = current
-            self.current_labels[name].setText(
-                "此型号未开放参考源设置"
-                if not available
-                else "当前：" + choices[current].text()
-                if current in choices
+            labels = self.option_labels[name]
+            label.setText(
+                "当前：" + labels[current]
+                if isinstance(current, str) and current in labels
+                else "当前未开放参考源读回"
+                if not (cap and cap.available and cap.readable)
                 else "当前：未读取"
                 if not frame
                 else "当前：待核实"
             )
-            self.current_labels[name].setToolTip((cap.reason if cap else "") or reason)
+            label.setToolTip((cap.reason if cap else "") or reason)
+            choices = self.choices.get(name)
+            if not choices:
+                continue
             selected = self.drafts.get(name, current)
             group = self.choice_groups[name]
             group.setExclusive(False)
@@ -227,7 +242,7 @@ class SourceSettingsDialog(QDialog):
 
     def apply(self) -> None:
         self.refresh()
-        if not self.apply_button.isEnabled():
+        if not self.choices or not self.apply_button.isEnabled():
             return
         # Only one operation is currently registered. No implicit batch or replay.
         name, value = next((n, v) for n, v in self.drafts.items() if v != self.current.get(n))

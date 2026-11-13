@@ -48,6 +48,12 @@ class PowerOutput(QWidget):
         self.button.setProperty("buttonSize", "panel")
         self.button.setFixedWidth(112)
         self.button.clicked.connect(self.toggle)
+        self.button.setVisible(
+            any(
+                c.name == operation and c.writable
+                for c in controller.declared_capabilities(device_id, channel).operations
+            )
+        )
         row.addWidget(self.state)
         row.addWidget(self.button)
         controller.refreshed.connect(self.refresh)
@@ -163,7 +169,15 @@ class PowerOutput(QWidget):
 class PowerChannel(ParameterGroup):
     def __init__(self, controller, device_id: str, channel: int, *, channel_output: bool, parent=None):
         schema = controller.capabilities(device_id, channel)
-        caps = [c for name in ("voltage", "current") for c in schema.operations if c.name == name]
+        writable = {
+            c.name for c in controller.declared_capabilities(device_id, channel).operations if c.writable
+        }
+        caps = [
+            c
+            for name in ("voltage", "current")
+            for c in schema.operations
+            if c.name == name and name in writable
+        ]
         super().__init__(controller, device_id, channel, caps, columns=2, parent=parent)
         self.setObjectName("powerChannel")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
@@ -200,6 +214,16 @@ class PowerChannel(ParameterGroup):
             cast(QVBoxLayout, field.layout()).insertWidget(1, measurement)
             self.measurements[name] = measurement
             field.changed.connect(self.refresh)
+        for name in ("voltage", "current"):
+            if name not in self.measurements and any(
+                c.name == "measured_" + name and c.readable for c in schema.operations
+            ):
+                label = QLabel(self)
+                label.setObjectName("powerMeasured")
+                label.setWordWrap(True)
+                layout.insertWidget(1, label)
+                self.measurements[name] = label
+        self.apply_button.setVisible(bool(self.editors))
         self.output = PowerOutput(controller, device_id, "output", channel, self) if channel_output else None
         if self.output:
             self.footer_layout.addWidget(self.output, 0, 0)
@@ -262,17 +286,15 @@ class PowerChannel(ParameterGroup):
                 and not isinstance(value, bool)
                 and math.isfinite(value)
             )
-            field = self.editors[name].editors["value"]
-            # Keep the source on its own line instead of wrapping its last character on small screens.
-            bounds, separator, source = field.range_label.toolTip().rpartition(" · ")
-            range_text = f"{bounds}\n来源：{source}" if separator else field.range_label.toolTip()
-            if field.range_label.text() != range_text:
-                field.range_label.setText(range_text)
-            display = (
-                f"{cast(float, value) / (field.unit.currentData() or 1):.6g} {field.unit.currentText()}"
-                if valid
-                else "—"
-            )
+            factor, unit = 1, "V" if name == "voltage" else "A"
+            if name in self.editors:
+                field = self.editors[name].editors["value"]
+                bounds, separator, source = field.range_label.toolTip().rpartition(" · ")
+                range_text = f"{bounds}\n来源：{source}" if separator else field.range_label.toolTip()
+                if field.range_label.text() != range_text:
+                    field.range_label.setText(range_text)
+                factor, unit = field.unit.currentData() or 1, field.unit.currentText()
+            display = f"{cast(float, value) / factor:.6g} {unit}" if valid else "—"
             text = ("实测电压：" if name == "voltage" else "实测电流：") + display
             if health != "正常":
                 text += " · " + health
@@ -342,14 +364,13 @@ class PowerSupplyPage(QWidget):
         self.empty.setVisible(not device_id)
         if device_id:
             schema = self.controller.capabilities(device_id)
-            master = any(c.name == "all_outputs" and c.available for c in schema.operations)
+            declared = self.controller.declared_capabilities(device_id)
+            master = any(c.name == "all_outputs" and c.writable for c in declared.operations)
             if master:
                 self.output = PowerOutput(self.controller, device_id, "all_outputs", 1, self)
                 self.header.addWidget(self.output)
             for index, channel in enumerate(schema.channels):
-                channel_output = not master and any(
-                    c.name == "output" and c.available for c in schema.operations
-                )
+                channel_output = not master and any(c.name == "output" for c in schema.operations)
                 panel = PowerChannel(
                     self.controller, device_id, channel, channel_output=channel_output, parent=self.body
                 )

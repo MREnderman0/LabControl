@@ -415,6 +415,12 @@ class OutputControl(QWidget):
         self.button.setObjectName("sourceOutputButton" if embedded else "")
         self.button.setProperty("buttonSize", "dialog")
         self.button.clicked.connect(self.toggle)
+        self.button.setVisible(
+            any(
+                c.name == "output" and c.writable
+                for c in controller.declared_capabilities(device_id, channel).operations
+            )
+        )
         self.button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         row.addWidget(self.state)
         row.addWidget(self.button)
@@ -650,7 +656,14 @@ class SignalSourcePage(QWidget):
             for ch in schema.channels:
                 self.advanced_channel.addItem(f"CH {ch}", ch)
                 caps = self.controller.capabilities(device_id, ch).operations
-                main = [cap for name in PRIMARY_CONTROLS for cap in caps if cap.name == name]
+                writable = {
+                    cap.name
+                    for cap in self.controller.declared_capabilities(device_id, ch).operations
+                    if cap.writable
+                }
+                main = [
+                    cap for name in PRIMARY_CONTROLS for cap in caps if cap.name == name and name in writable
+                ]
                 card = QFrame()
                 card.setObjectName("channelPanel")
                 card.setProperty("simplified", True)
@@ -661,15 +674,16 @@ class SignalSourcePage(QWidget):
                 heading = QLabel("射频信号" if self.rf else f"CH {ch}")
                 heading.setObjectName("channelTitle")
                 heading.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-                output = OutputControl(self.controller, device_id, ch, rf=self.rf, embedded=True)
-                self.outputs[ch] = output
                 header = QFrame(card)
                 header.setObjectName("sourceChannelHeader")
                 header_layout = QHBoxLayout(header)
                 header_layout.setContentsMargins(20, 14, 20, 14)
                 header_layout.addWidget(heading)
                 header_layout.addStretch()
-                header_layout.addWidget(output)
+                if any(cap.name == "output" for cap in caps):
+                    output = OutputControl(self.controller, device_id, ch, rf=self.rf, embedded=True)
+                    self.outputs[ch] = output
+                    header_layout.addWidget(output)
                 card_layout.addWidget(header)
                 group = ParameterGroup(
                     self.controller,

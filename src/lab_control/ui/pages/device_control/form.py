@@ -63,9 +63,11 @@ class OperationEditor(QFrame):
         simplified: bool = False,
         follow_readback: bool = True,
         workspace_mode: str | None = None,
+        status_only: bool = False,
     ) -> None:
         super().__init__(parent)
         self.compact = compact
+        self.status_only = status_only
         self.show_actions = actions
         # Some devices expose a deliberately rounded or delayed readback.  Their
         # readback is still useful for status, but must not replace the user's
@@ -106,7 +108,8 @@ class OperationEditor(QFrame):
             heading.addWidget(QLabel(f"CH {self.channel}" if cap.channel_scoped else "整机"))
         layout.addLayout(heading)
         form = QFormLayout()
-        for name, parameter in cap.parameters.items():
+        fields = {} if status_only else cap.parameters
+        for name, parameter in fields.items():
             if parameter.kind != "array":
                 label = (
                     OPERATION_LABELS.get(cap.name, cap.name)
@@ -145,7 +148,7 @@ class OperationEditor(QFrame):
             form.setContentsMargins(0, 0, 0, 0)
         if form.rowCount():
             layout.addLayout(form)
-        arrays = {k: v for k, v in cap.parameters.items() if v.kind == "array"}
+        arrays = {k: v for k, v in fields.items() if v.kind == "array"}
         if arrays:
             self.array_editor = ArrayEditor(arrays)
             layout.addWidget(self.array_editor)
@@ -167,7 +170,7 @@ class OperationEditor(QFrame):
         self.status.setObjectName("operationStatus")
         actions_row.addWidget(self.status, 1)
         self.read_button = QPushButton("读取", self)
-        self.read_button.setVisible(not self.data_only and (cap.readable or bool(cap.parameters)))
+        self.read_button.setVisible(not self.data_only and (cap.readable or bool(fields)))
         self.read_button.clicked.connect(self.read)
         self.apply_button = QPushButton("应用" if cap.parameters else "执行", self)
         self.apply_button.setObjectName("primaryButton")
@@ -179,7 +182,7 @@ class OperationEditor(QFrame):
         actions_row.addWidget(self.read_button)
         actions_row.addWidget(self.apply_button)
         layout.addLayout(actions_row)
-        draft = controller.runtime.repository.load_workspace(self.key)
+        draft = None if status_only else controller.runtime.repository.load_workspace(self.key)
         if draft:
             for name, value in draft.get("fields", {}).items():
                 if name in self.editors:
@@ -284,7 +287,9 @@ class OperationEditor(QFrame):
                 and self.device_id not in self.controller.group_devices
             )
         )
-        self.apply_button.setVisible(self.cap.writable and (not self.compact or self.show_actions))
+        self.apply_button.setVisible(
+            not self.status_only and self.cap.writable and (not self.compact or self.show_actions)
+        )
         for editor in self.editors.values():
             editor.setEnabled(self.cap.available and self.cap.writable and not state.get("controlsLocked"))
         if self.auto_sync:
@@ -401,7 +406,12 @@ class OperationEditor(QFrame):
         self.current_value = reading.value
         raw = reading.value.get("value") if isinstance(reading.value, dict) else reading.value
         spec = self.cap.parameters.get("value")
-        if self.compact and spec and isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        if (
+            (self.compact or self.status_only)
+            and spec
+            and isinstance(raw, (int, float))
+            and not isinstance(raw, bool)
+        ):
             factor, unit = 1.0, spec.unit
             if spec.unit == "Hz":
                 factor, unit = next(
@@ -435,6 +445,8 @@ class OperationEditor(QFrame):
         return self.cap.validate(values)
 
     def apply(self) -> None:
+        if self.status_only or not self.cap.writable:
+            return
         try:
             values = self.parameters()
             confirmed = False
@@ -543,6 +555,8 @@ class ControlForm(QWidget):
         self.tabs.currentChanged.connect(self.read_visible)
         layout.addWidget(self.tabs)
         self.groups: list[list[str]] = []
+        self._operation_access: tuple[tuple[str, bool], ...] = ()
+        controller.refreshed.connect(self.refresh_access)
 
     def show_snapshot_status(self) -> None:
         self.refresh_button.setEnabled(
@@ -566,13 +580,27 @@ class ControlForm(QWidget):
         except Exception as exc:
             self.controller.message.emit(str(exc))
 
+    def refresh_access(self) -> None:
+        if self.device_id in self.controller.records:
+            self.set_device(self.device_id, self.channel)
+
     def set_device(self, device_id: str, channel: int = 1) -> None:
-        if (device_id, channel, self.controller.mode) == (
+        schema = self.controller.capabilities(device_id, channel) if device_id else None
+        operations = tuple(
+            cap
+            for cap in (schema.operations if schema else ())
+            if not self.capability_filter or self.capability_filter(cap, schema)
+        )
+        access = tuple((cap.name, cap.writable) for cap in operations)
+        same_device = (device_id, channel, self.controller.mode) == (
             self.device_id,
             self.channel,
             getattr(self, "mode", ""),
-        ):
+        )
+        if same_device and self._operation_access == access:
             return
+        selected = self.tabs.currentIndex() if same_device else -1
+        self._operation_access = access
         self.device_id, self.channel, self.mode = device_id, channel, self.controller.mode
         self.tabs.blockSignals(True)
         while self.tabs.count():
@@ -582,7 +610,6 @@ class ControlForm(QWidget):
                 page.deleteLater()
         self.editors, self.groups = {}, [[], [], []]
         if device_id:
-            schema = self.controller.capabilities(device_id, channel)
             layouts = []
             for title in ("常用", "高级", "状态与诊断"):
                 scroll = QScrollArea()
@@ -594,16 +621,19 @@ class ControlForm(QWidget):
                 scroll.setWidget(body)
                 layouts.append(group_layout)
                 self.tabs.addTab(scroll, title)
-            for cap in schema.operations:
-                if self.capability_filter and not self.capability_filter(cap, schema):
-                    continue
+            for cap in operations:
                 group = 2 if not cap.writable else 0 if cap.name in COMMON else 1
-                editor = OperationEditor(self.controller, device_id, cap, channel)
+                editor = OperationEditor(
+                    self.controller, device_id, cap, channel, status_only=not cap.writable
+                )
                 layouts[group].addWidget(editor)
                 self.editors[cap.name] = editor
                 self.groups[group].append(cap.name)
-            for group_layout in layouts:
+            for index, group_layout in enumerate(layouts):
                 group_layout.addStretch()
+                self.tabs.setTabVisible(index, bool(self.groups[index]))
+            if selected >= 0 and self.groups[selected]:
+                self.tabs.setCurrentIndex(selected)
         self.tabs.blockSignals(False)
         self.show_snapshot_status()
         self.read_visible()
@@ -618,13 +648,12 @@ class ControlForm(QWidget):
             or state.get("controlsLocked")
         ):
             return
-        for name in self.groups[self.tabs.currentIndex()]:
+        index = self.tabs.currentIndex()
+        if index < 0:
+            return
+        for name in self.groups[index]:
             editor = self.editors[name]
-            if (
-                editor.cap.available
-                and not editor.data_only
-                and (editor.cap.readable or editor.cap.parameters)
-            ):
+            if editor.cap.available and not editor.data_only and (editor.cap.readable or editor.editors):
                 editor.read()
 
     def showEvent(self, event) -> None:  # noqa: N802

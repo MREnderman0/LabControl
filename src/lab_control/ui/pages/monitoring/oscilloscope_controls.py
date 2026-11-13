@@ -328,6 +328,13 @@ class OscilloscopeControls(QFrame):
         super().__init__(parent)
         self.setObjectName("scopeControls")
         self.controller, self.device_id, self.resume = controller, device_id, resume
+        self.instrument_channels = tuple(controller.capabilities(device_id).channels)
+        self.model_writes = {
+            (ch, op.name)
+            for ch in self.instrument_channels
+            for op in controller.declared_capabilities(device_id, ch).operations
+            if op.writable
+        }
         self.running = False
         self.session_id = ""
         self.values: dict[tuple[int, str], Any] = {}
@@ -373,19 +380,21 @@ class OscilloscopeControls(QFrame):
         horizontal = section("水平")
         self.add_slider(horizontal, 1, "timebase", "时基", "s", coarse=True)
         self.add_slider(horizontal, 1, "time_position", "偏移", "s")
-        point_row = QHBoxLayout()
-        point_row.addWidget(QLabel("采集点数"))
-        self.points = ScopePoints()
-        self.points.setAccessibleName("采集点数")
-        self.points.setMinimumWidth(115)
-        self.points.setMaximumWidth(160)
-        self.points.committed.connect(self.set_points)
-        point_row.addWidget(self.points)
-        self.points_range = QLabel("等待读回")
-        self.points_range.setObjectName("rangeHint")
-        self.points_range.setWordWrap(True)
-        point_row.addWidget(self.points_range, 1)
-        horizontal.addLayout(point_row)
+        self.points: ScopePoints | None = None
+        if (1, "record_length") in self.model_writes:
+            point_row = QHBoxLayout()
+            point_row.addWidget(QLabel("采集点数"))
+            self.points = ScopePoints()
+            self.points.setAccessibleName("采集点数")
+            self.points.setMinimumWidth(115)
+            self.points.setMaximumWidth(160)
+            self.points.committed.connect(self.set_points)
+            point_row.addWidget(self.points)
+            self.points_range = QLabel("等待读回")
+            self.points_range.setObjectName("rangeHint")
+            self.points_range.setWordWrap(True)
+            point_row.addWidget(self.points_range, 1)
+            horizontal.addLayout(point_row)
         self.sample_rate = QLabel("采样率：—")
         self.sample_rate.setObjectName("scopeSampleRate")
         self.sample_rate.setAccessibleName("仪器采样率（只读）")
@@ -393,13 +402,16 @@ class OscilloscopeControls(QFrame):
         self._sample_rate_session = None
         self._sample_rate_value: float | None = None
         horizontal.addWidget(self.sample_rate)
-        for ch in controller.capabilities(device_id).channels:
+        for ch in self.instrument_channels:
             box = section("")
-            check = QCheckBox(f"CH {ch}")
-            check.setStyleSheet(f"color: {COLORS[(ch - 1) % 4]}; font-weight: 600;")
-            check.clicked.connect(lambda enabled, c=ch: self.set_channel(c, enabled))
-            box.addWidget(check)
-            self.checks[ch] = check
+            if (ch, "channel_enabled") in self.model_writes:
+                check = QCheckBox(f"CH {ch}")
+                check.setStyleSheet(f"color: {COLORS[(ch - 1) % 4]}; font-weight: 600;")
+                check.clicked.connect(lambda enabled, c=ch: self.set_channel(c, enabled))
+                box.addWidget(check)
+                self.checks[ch] = check
+            else:
+                box.addWidget(QLabel(f"CH {ch}"))
             self.add_slider(box, ch, "scale", "档位", "V", coarse=True)
             self.add_slider(box, ch, "offset", "偏移", "V")
         trigger = section("")
@@ -407,51 +419,68 @@ class OscilloscopeControls(QFrame):
         self.trigger_label = QLabel("触发 · 等待读回")
         self.trigger_label.setObjectName("spectrumChartTitle")
         row.addWidget(self.trigger_label, 1)
-        self.gear = QToolButton()
-        self.gear.setIcon(gear_icon())
-        self.gear.setIconSize(QSize(20, 20))
-        self.gear.setFixedSize(26, 24)
-        self.gear.setAccessibleName("触发设置")
-        self.gear.setToolTip("触发源、边沿和模式")
-        self.gear.clicked.connect(self.trigger_dialog)
-        row.addWidget(self.gear)
+        self.gear: QToolButton | None = None
+        if any(name in {"trigger_source", "trigger_slope", "trigger_mode"} for _, name in self.model_writes):
+            self.gear = QToolButton()
+            self.gear.setIcon(gear_icon())
+            self.gear.setIconSize(QSize(20, 20))
+            self.gear.setFixedSize(26, 24)
+            self.gear.setAccessibleName("触发设置")
+            self.gear.setToolTip("触发源、边沿和模式")
+            self.gear.clicked.connect(self.trigger_dialog)
+            row.addWidget(self.gear)
         trigger.addLayout(row)
-        self.trigger_slider = ScopeSlider("电平", "V")
-        self.trigger_slider.committed.connect(self.set_trigger_level)
-        trigger.addWidget(self.trigger_slider)
+        self.trigger_slider: ScopeSlider | None = None
+        if any(name == "trigger_level" for _, name in self.model_writes):
+            self.trigger_slider = ScopeSlider("电平", "V")
+            self.trigger_slider.committed.connect(self.set_trigger_level)
+            trigger.addWidget(self.trigger_slider)
         stack.addStretch()
         self.scroller.setWidget(body)
         layout.addWidget(self.scroller, 1)
         actions = QHBoxLayout()
-        self.fine_button = QToolButton()
-        self.fine_button.setObjectName("scopeFineButton")
-        self.fine_button.setProperty("buttonSize", "panel")
-        self.fine_button.setText("微调")
-        self.fine_button.setCheckable(True)
-        self.fine_button.setToolTip("偏移和触发电平：普通 0.1 格，微调 0.01 格；微调拖动减速")
-        self.fine_key = f"scope-fine/{controller.mode}/{device_id}"
-        self.fine_button.setChecked(bool(controller.runtime.repository.load_workspace(self.fine_key, False)))
-        for field in (*self.sliders.values(), self.trigger_slider):
-            field.set_fine(self.fine_button.isChecked())
-        self.fine_button.toggled.connect(self.change_fine)
-        actions.addWidget(self.fine_button)
-        self.auto_button = QPushButton("Auto 自动设置")
-        self.auto_button.setObjectName("primaryButton")
-        self.auto_button.setProperty("buttonSize", "panel")
-        self.auto_button.clicked.connect(self.auto_setup)
-        actions.addWidget(self.auto_button, 1)
+        self.fine_button: QToolButton | None = None
+        if any(not field.coarse for field in self.slider_fields()):
+            self.fine_button = QToolButton()
+            self.fine_button.setObjectName("scopeFineButton")
+            self.fine_button.setProperty("buttonSize", "panel")
+            self.fine_button.setText("微调")
+            self.fine_button.setCheckable(True)
+            self.fine_button.setToolTip("偏移和触发电平：普通 0.1 格，微调 0.01 格；微调拖动减速")
+            self.fine_key = f"scope-fine/{controller.mode}/{device_id}"
+            self.fine_button.setChecked(
+                bool(controller.runtime.repository.load_workspace(self.fine_key, False))
+            )
+            for field in self.slider_fields():
+                field.set_fine(self.fine_button.isChecked())
+            self.fine_button.toggled.connect(self.change_fine)
+            actions.addWidget(self.fine_button)
+        self.auto_button: QPushButton | None = None
+        if (1, "auto_setup") in self.model_writes:
+            self.auto_button = QPushButton("Auto 自动设置")
+            self.auto_button.setObjectName("primaryButton")
+            self.auto_button.setProperty("buttonSize", "panel")
+            self.auto_button.clicked.connect(self.auto_setup)
+            actions.addWidget(self.auto_button, 1)
         layout.addLayout(actions)
-        self.status = QLabel("拖动预览目标值 · 松手后写入仪器")
+        self.status = QLabel("拖动预览目标值 · 松手后写入仪器" if self.slider_fields() else "")
         self.status.setObjectName("rangeHint")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         controller.refreshed.connect(self.refresh)
         self.refresh()
 
+    def slider_fields(self) -> tuple[ScopeSlider, ...]:
+        return (
+            (*self.sliders.values(), self.trigger_slider)
+            if self.trigger_slider
+            else tuple(self.sliders.values())
+        )
+
     def change_fine(self, enabled: bool) -> None:
         self.preview_cancelled.emit()
         self.controller.runtime.repository.save_workspace(self.fine_key, enabled)
-        for field in (*self.sliders.values(), self.trigger_slider):
+        for field in self.slider_fields():
             field.set_fine(enabled)
         self.refresh()
 
@@ -460,6 +489,8 @@ class OscilloscopeControls(QFrame):
         self.submit([DeviceCommand("auto_setup", confirmed=True)], channels=True)
 
     def add_slider(self, layout, channel, name, title, unit, *, coarse=False) -> None:
+        if (channel, name) not in self.model_writes:
+            return
         field = ScopeSlider(title, unit, coarse=coarse)
         self.sliders[channel, name] = field
         field.committed.connect(lambda value: self.submit([DeviceCommand(name, {"value": value}, channel)]))
@@ -474,7 +505,7 @@ class OscilloscopeControls(QFrame):
         return tuple(
             dict.fromkeys(
                 (ch if cap.channel_scoped else 1, cap.name)
-                for ch in self.checks
+                for ch in self.instrument_channels
                 for cap in self.capabilities(ch).values()
                 if cap.readable
                 and cap.available
@@ -483,12 +514,14 @@ class OscilloscopeControls(QFrame):
         )
 
     def channels(self) -> tuple[int, ...]:
-        return tuple(ch for ch in self.checks if boolean_value(self.values.get((ch, "channel_enabled"))))
+        return tuple(
+            ch for ch in self.instrument_channels if boolean_value(self.values.get((ch, "channel_enabled")))
+        )
 
     def trigger_channel(self) -> int | None:
         source = str(self.values.get((1, "trigger_source"), ""))
         match = re.fullmatch(r"(?:C|CH|CHAN)([1-9])", source.upper())
-        return int(match[1]) if match and int(match[1]) in self.checks else None
+        return int(match[1]) if match and int(match[1]) in self.instrument_channels else None
 
     def refresh(self) -> None:
         state = self.controller.states.get(self.device_id, {})
@@ -496,7 +529,7 @@ class OscilloscopeControls(QFrame):
         context = (state.get("sessionId"), state.get("configurationVersion"))
         if context != self.last_context:
             self.values.clear()
-            for field in (*self.sliders.values(), self.trigger_slider):
+            for field in self.slider_fields():
                 field.cancel()
             self.last_context = context
         if not self.running:
@@ -519,25 +552,36 @@ class OscilloscopeControls(QFrame):
         )
         point_cap = self.capabilities().get("record_length")
         point_value = self.values.get((1, "record_length"))
-        if point_value is not None and point_cap and "value" in point_cap.parameters:
-            self.points.configure(int(point_value), point_cap.parameters["value"])
-        self.points.setEnabled(
-            bool(available and point_cap and point_cap.writable and point_value is not None)
-        )
-        if point_cap and "value" in point_cap.parameters:
-            point_spec = point_cap.parameters["value"]
-            if point_spec.minimum is not None and point_spec.maximum is not None:
-                self.points_range.setText(f"{point_spec.minimum:,.0f}～{point_spec.maximum:,.0f}\n含软件限制")
-                if point_spec.choices:
-                    self.points_range.setText(
-                        self.points_range.text()
-                        + "\n档位："
-                        + " / ".join(engineering(float(v), "").replace(" ", "") for v in point_spec.choices)
-                    )
-                self.points.setToolTip(
-                    point_cap.reason
-                    or "仪器最大采集长度；实际有效点数以收到的波形为准。超范围原值不自动修改。"
+        if self.points is not None:
+            if point_value is not None and point_cap and "value" in point_cap.parameters:
+                self.points.configure(int(point_value), point_cap.parameters["value"])
+            self.points.setEnabled(
+                bool(
+                    available
+                    and point_cap
+                    and point_cap.available
+                    and point_cap.writable
+                    and point_value is not None
                 )
+            )
+            if point_cap and "value" in point_cap.parameters:
+                point_spec = point_cap.parameters["value"]
+                if point_spec.minimum is not None and point_spec.maximum is not None:
+                    self.points_range.setText(
+                        f"{point_spec.minimum:,.0f}～{point_spec.maximum:,.0f}\n含软件限制"
+                    )
+                    if point_spec.choices:
+                        self.points_range.setText(
+                            self.points_range.text()
+                            + "\n档位："
+                            + " / ".join(
+                                engineering(float(v), "").replace(" ", "") for v in point_spec.choices
+                            )
+                        )
+                    self.points.setToolTip(
+                        point_cap.reason
+                        or "仪器最大采集长度；实际有效点数以收到的波形为准。超范围原值不自动修改。"
+                    )
         for (ch, name), field in self.sliders.items():
             cap = self.capabilities(ch).get(name)
             actual = self.values.get((ch, name))
@@ -562,29 +606,33 @@ class OscilloscopeControls(QFrame):
         level_key = (trigger_ch or 1 if cap and cap.channel_scoped else 1, "trigger_level")
         level = self.values.get(level_key)
         valid = bool(trigger_ch and cap and cap.available and cap.writable and level is not None)
-        if valid and level is not None:
-            valid = self.trigger_slider.configure(
-                float(level), cap.parameters["value"], self.values.get((trigger_ch or 1, "scale"), 1)
-            )
-        self.trigger_slider.setEnabled(bool(available and valid))
-        self.trigger_slider.setToolTip(cap.reason if cap else "当前型号未提供触发电平")
+        if self.trigger_slider is not None:
+            if valid and level is not None:
+                valid = self.trigger_slider.configure(
+                    float(level), cap.parameters["value"], self.values.get((trigger_ch or 1, "scale"), 1)
+                )
+            self.trigger_slider.setEnabled(bool(available and valid))
+            self.trigger_slider.setToolTip(cap.reason if cap else "当前型号未提供触发电平")
         source = self.values.get((1, "trigger_source"), "—")
         mode = self.values.get((1, "trigger_mode"), "—")
         self.trigger_label.setText(f"触发 · {source} · {mode}")
-        self.gear.setEnabled(bool(available and self.values))
+        if self.gear is not None:
+            self.gear.setEnabled(bool(available and self.values))
         auto = self.capabilities().get("auto_setup")
-        self.auto_button.setEnabled(bool(available and auto and auto.available and auto.writable))
-        auto_running = self.running and any(c.operation == "auto_setup" for c in self.pending)
-        self.auto_button.setText("自动设置中…" if auto_running else "Auto 自动设置")
-        self.auto_button.setToolTip("执行仪器自动设置" if auto else "当前型号未提供自动设置")
-        self.fine_button.setEnabled(available)
+        if self.auto_button is not None:
+            self.auto_button.setEnabled(bool(available and auto and auto.available and auto.writable))
+            auto_running = self.running and any(c.operation == "auto_setup" for c in self.pending)
+            self.auto_button.setText("自动设置中…" if auto_running else "Auto 自动设置")
+            self.auto_button.setToolTip("执行仪器自动设置" if auto else "当前型号未提供自动设置")
+        if self.fine_button is not None:
+            self.fine_button.setEnabled(available)
         self.health.setText(
             "设置中 · 完成后自动续采"
             if self.running
             else "记录收尾前参数锁定"
             if state.get("controlsLocked")
             else "参数已同步"
-            if all((ch, "channel_enabled") in self.values for ch in self.checks)
+            if all((ch, "channel_enabled") in self.values for ch in self.instrument_channels)
             else "等待参数同步"
         )
 
@@ -628,7 +676,7 @@ class OscilloscopeControls(QFrame):
         self.submit([DeviceCommand("channel_enabled", {"value": value}, channel)], channels=True)
 
     def set_points(self, value: int) -> None:
-        if self.running or not self.points.isEnabled():
+        if self.running or self.points is None or not self.points.isEnabled():
             return
         try:
             if value != self.values.get((1, "record_length")):
@@ -650,7 +698,11 @@ class OscilloscopeControls(QFrame):
             self.controller.ensure_applicable(self.device_id)
             for cmd in commands:
                 cap = self.controller.capabilities(self.device_id, cmd.channel).get(cmd.operation)
-                if not cap.writable:
+                if (
+                    not cap.available
+                    or not cap.writable
+                    or (cmd.channel, cmd.operation) not in self.model_writes
+                ):
                     raise DeviceError(cap.reason or "此设置暂不可写")
                 cap.validate(cmd.parameters)
             self.controller.begin_group(self.device_id)
@@ -702,7 +754,7 @@ class OscilloscopeControls(QFrame):
             return
         self.read_pending = []
         if not self.control_complete:
-            for ch in self.checks:
+            for ch in self.instrument_channels:
                 names = tuple(name for channel, name in self.keys() if channel == ch)
                 self.read_pending.extend((ch, names[i : i + 4]) for i in range(0, len(names), 4))
         self.read_next()
@@ -768,7 +820,13 @@ class OscilloscopeControls(QFrame):
     def clamp_points_after_range_change(self) -> bool:
         """Only explicit control groups may lower a value after its range shrinks."""
         cap = self.capabilities().get("record_length")
-        if not cap or not cap.available or not cap.writable or self.point_limit_before is None:
+        if (
+            self.points is None
+            or not cap
+            or not cap.available
+            or not cap.writable
+            or self.point_limit_before is None
+        ):
             return False
         spec = cap.parameters["value"]
         maximum = spec.maximum
@@ -843,29 +901,39 @@ class OscilloscopeControls(QFrame):
         dialog.setMinimumWidth(320)
         form = QFormLayout(dialog)
         combos = {}
-        source = WorkspaceComboBox(dialog)
         caps = self.capabilities()
         source_cap = caps.get("trigger_source")
-        for value in source_cap.parameters["value"].choices if source_cap else ():
-            source.addItem(value, value)
         current_source = self.values.get((1, "trigger_source"))
-        if current_source is not None and source.findData(current_source) < 0:
-            source.addItem(str(current_source) + "（只读）", current_source)
-        source.setCurrentIndex(source.findData(current_source))
-        source.setEnabled(
-            bool(source_cap and source_cap.available and source_cap.writable and current_source is not None)
-        )
-        form.addRow("触发源", source)
-        combos["trigger_source"] = source
+        source: WorkspaceComboBox | None = None
+        if (1, "trigger_source") in self.model_writes:
+            source = WorkspaceComboBox(dialog)
+            for value in source_cap.parameters["value"].choices if source_cap else ():
+                source.addItem(value, value)
+            if current_source is not None and source.findData(current_source) < 0:
+                source.addItem(str(current_source) + "（只读）", current_source)
+            source.setCurrentIndex(source.findData(current_source))
+            source.setEnabled(
+                bool(
+                    source_cap and source_cap.available and source_cap.writable and current_source is not None
+                )
+            )
+            form.addRow("触发源", source)
+            combos["trigger_source"] = source
         for name, title in (("trigger_slope", "边沿"), ("trigger_mode", "模式")):
+            if not any(op == name for _, op in self.model_writes):
+                continue
             combo = WorkspaceComboBox(dialog)
             form.addRow(title, combo)
             combos[name] = combo
 
         def update():
-            match = re.fullmatch(r"(?:C|CH|CHAN)([1-9])", str(source.currentData()))
+            match = re.fullmatch(
+                r"(?:C|CH|CHAN)([1-9])", str(source.currentData() if source else current_source)
+            )
             ch = int(match[1]) if match else None
             for name in ("trigger_slope", "trigger_mode"):
+                if name not in combos:
+                    continue
                 combo = combos[name]
                 cap = self.capabilities(ch or 1).get(name)
                 combo.clear()
@@ -881,7 +949,8 @@ class OscilloscopeControls(QFrame):
                 combo.setCurrentIndex(combo.findData(value))
                 combo.setEnabled(bool(cap and cap.available and cap.writable and value is not None))
 
-        source.currentIndexChanged.connect(update)
+        if source is not None:
+            source.currentIndexChanged.connect(update)
         update()
         notice = QLabel("仅修改本次选择的字段；不改变其他触发条件。")
         notice.setWordWrap(True)
@@ -897,7 +966,7 @@ class OscilloscopeControls(QFrame):
             try:
                 if context != self.last_context:
                     raise DeviceError("弹窗打开期间参数已变化，请重新打开")
-                selected = str(source.currentData())
+                selected = str(source.currentData() if source else current_source)
                 match = re.fullmatch(r"(?:C|CH|CHAN)([1-9])", selected)
                 ch = int(match[1]) if match else 1
                 commands = []

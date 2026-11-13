@@ -6,6 +6,7 @@ from dataclasses import replace
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QPushButton
 
 from lab_control.app import load_stylesheet, load_ui_font
 from lab_control.application.config import ConnectionConfig
@@ -218,3 +219,23 @@ def test_device_switch_discards_dialog_but_legacy_mode_keeps_general_workspace(s
     assert page.advanced_groups == []
     assert window.controller.mode == "general"
     assert writes == []
+
+
+def test_readonly_reference_is_a_label_without_choices_or_apply(source, qtbot):
+    window, page, runtime, _ids, writes = source
+    adapter_id = "siglent.sdg6032xe"
+    if adapter_id not in PROFILES:
+        pytest.skip("Requires SDG6032X-E")
+    key = runtime.add(ConnectionConfig("mock://electronics/sdg6032xe", adapter_id, "mock"))
+    runtime.connect(key).result()
+    runtime.sessions.sessions[key].adapter.values["1.reference_clock"] = "EXT"
+    window.controller.poll()
+    window.navigate("设备管理", "signal_generator", key)
+    dialog = open_settings(page, qtbot)
+    assert dialog.current["reference_clock"] == "EXT"
+    assert dialog.current_labels["reference_clock"].text() == "当前：外部参考"
+    assert "reference_clock" not in dialog.choices and not dialog.apply_button.isVisible()
+    assert not set(dialog.findChildren(QPushButton, "referenceChoice"))
+    assert (1, "reference_clock") in dialog.sync_keys()
+    dialog.choose("reference_clock", "INT")
+    assert not dialog.drafts and not writes

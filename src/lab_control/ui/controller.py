@@ -16,6 +16,7 @@ from lab_control.application.runtime import ApplicationRuntime
 from lab_control.discovery.presence import LIVE_CONNECTIONS
 from lab_control.domain.instruments import DeviceCommand, DeviceError
 from lab_control.domain.workspace import GENERAL, WORKSPACE_MODES
+from lab_control.instruments.registry import describe
 
 Job = tuple[Future[Any], Callable[[Any], None] | None, Callable[[Exception], None] | None]
 
@@ -216,6 +217,11 @@ class WorkspaceController(QObject):
         # always general; legacy labels no longer switch pages or preferences.
         if mode not in WORKSPACE_MODES:
             raise DeviceError("未知工作区标识", "invalid_parameter")
+
+    def declared_capabilities(self, device_id: str, channel: int = 1):
+        """Model capabilities before applying the current session's options and limits."""
+        config = config_from_record(self.records[device_id])
+        return control_capabilities(config, channel, schema=describe(config))
 
     def capabilities(self, device_id: str, channel: int = 1):
         snapshot = self.runtime.sessions.capability_snapshot(device_id)
