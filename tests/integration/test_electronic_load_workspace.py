@@ -18,6 +18,20 @@ def test_readonly_load_monitoring_and_export(qtbot, tmp_path, monkeypatch, selec
         "MEAS:CURR?": ",".join(str(ch / 4) for ch in channels),
     }
 
+    replies.update(
+        {
+            q: ",".join(value for _ in channels)
+            for q, value in (
+                ("INP?", "0"),
+                ("MODE?", "CURR"),
+                ("CURR?", "1"),
+                ("VOLT?", "5"),
+                ("POW?", "2"),
+                ("RES?", "10"),
+            )
+        }
+    )
+
     class ReadonlyTransport(MockTransport):
         def query(self, command):
             commands.append(command)
@@ -38,6 +52,19 @@ def test_readonly_load_monitoring_and_export(qtbot, tmp_path, monkeypatch, selec
     qtbot.addWidget(window)
     window.show()
     try:
+        window.navigate("设备管理", "electronic_load", key)
+        controls = window.stack.currentWidget()
+        assert controls.selector.channel.count() == 8
+        assert {
+            "load_input",
+            "load_mode",
+            "current",
+            "voltage",
+            "load_power",
+            "resistance",
+        } <= controls.form.editors.keys()
+        controls.selector.select(key, 7)
+        assert controls.form.editors["load_input"].channel == 7
         window.navigate("实时监测", "electronic_load", key)
         page = window.stack.currentWidget()
         assert isinstance(page, PowerMonitoringPage)
@@ -47,6 +74,7 @@ def test_readonly_load_monitoring_and_export(qtbot, tmp_path, monkeypatch, selec
         spec = next(s for s in window.dashboard.specs if s["device_id"] == key)
         assert spec["channels"] == list(channels) and spec["sources"] == ["voltage", "current"]
 
+        qtbot.waitUntil(page.once_action.isEnabled)
         page.once_action.trigger()
         qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
         assert len(page.plot.displayed_frame.batch.measurements) == 2 * len(channels)

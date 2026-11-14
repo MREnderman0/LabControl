@@ -25,7 +25,7 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 | Siglent SPD4306X | `siglent.spd4306x` | 22 | power | [型号卡片](../devices/power-supplies/spd4306x.md) |
 | SIGLENT SPS5000X 系列 | `siglent.sps5000x` | 6 | power | [型号卡片](../devices/power-supplies/sps5000x.md) |
 | ITECH IT6322 | `itech.it6322` | 8 | power | [型号卡片](../devices/power-supplies/it6322.md) |
-| DUOHEYI DH-8318 | `duoheyi.dh8318` | 2 | power | [型号卡片](../devices/temperature-load-drivers/duoheyi-dh8318.md) |
+| DUOHEYI DH-8318 | `duoheyi.dh8318` | 8 | power | [型号卡片](../devices/temperature-load-drivers/duoheyi-dh8318.md) |
 | RIGOL DG5504 Pro | `rigol.dg5504pro` | 41 | 外部仪器测量输出 | [型号卡片](../devices/signal-sources/dg5504-pro.md) |
 | Tektronix AFG31252 | `tek.afg31252` | 37 | 外部仪器测量输出 | [型号卡片](../devices/signal-sources/afg31252.md) |
 | Siglent SDG2082X | `siglent.sdg2082x` | 42 | 外部仪器测量输出 | [型号卡片](../devices/signal-sources/sdg2082x.md) |

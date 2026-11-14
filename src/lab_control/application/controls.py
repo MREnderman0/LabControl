@@ -183,6 +183,10 @@ list_trigger=触发列表
 upload_list=上传频率 / 功率列表
 voltage=电压设定
 current=电流设定
+load_input=负载输入（拉载）
+load_mode=负载模式（CC / CV / CP / CR）
+load_power=恒功率设定
+resistance=电阻设定
 measured_voltage=实测电压
 measured_current=实测电流
 measured_power=实测功率
@@ -363,6 +367,10 @@ COMMON = {
     "dc_off",
     "ch3_on",
     "ch4_on",
+    "load_input",
+    "load_mode",
+    "load_power",
+    "resistance",
     "all_outputs",
     "voltage",
     "current",

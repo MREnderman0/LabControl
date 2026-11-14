@@ -6,6 +6,8 @@ from lab_control.instruments.registry import DEVICE_DEFINITIONS
 def readable_power_channels(controller, device_id: str) -> tuple[int, ...]:
     snapshot = controller.runtime.sessions.capability_snapshot(device_id)
     if snapshot is not None:
+        if "acquisition_channels" in snapshot.details:
+            return tuple(snapshot.details["acquisition_channels"])
         return tuple(snapshot.channels)
     return tuple(controller.capabilities(device_id).channels)
 

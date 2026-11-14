@@ -268,7 +268,7 @@ class WorkspaceNavigation:
                             category == "electronic_load"
                             and any(
                                 surface_applicable(record, "monitoring")
-                                and not surface_applicable(record, "management")
+                                and not record.get("adapterId", "").startswith("sim.")
                                 for record in window.controller.connected_records(category)
                             )
                         )

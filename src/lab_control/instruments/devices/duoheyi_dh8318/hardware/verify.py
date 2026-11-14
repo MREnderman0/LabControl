@@ -15,7 +15,12 @@ QUERIES = ("CH?", "MEAS:VOLT?", "MEAS:CURR?")
 
 
 def capture_request(adapter: ScpiAdapter) -> AcquisitionRequest:
-    return AcquisitionRequest("scalar", channels=adapter.capabilities().channels, points=1, allow_setup=False)
+    return AcquisitionRequest(
+        "scalar",
+        channels=tuple(adapter.capability_details["acquisition_channels"]),
+        points=1,
+        allow_setup=False,
+    )
 
 
 def verify_readonly(config: ConnectionConfig, folder: Path, **kwargs: Any) -> dict[str, Any]:

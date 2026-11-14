@@ -38,7 +38,7 @@ def test_single_selected_channel_is_not_relabeled_as_ch1():
     adapter, io = connected(
         [("CH?", b"6\n"), ("MEAS:CURR?", b"0\n"), ("CH?", b"6\n"), ("CH?", b"6\n")], selected=b"6\n"
     )
-    assert adapter.capabilities().channels == (6,)
+    assert adapter.selected_channels == (6,) and adapter.capabilities().channels == CHANNELS
     values = adapter.acquire(AcquisitionRequest("scalar", (6,), quantity="current")).measurements
     assert [(v.channel, v.quantity, v.values) for v in values] == [(6, "current", [0.0])]
     with pytest.raises(DeviceError) as failure:
@@ -62,7 +62,7 @@ def test_channel_change_during_acquisition_discards_entire_batch():
     with pytest.raises(DeviceError) as failure:
         adapter.acquire(AcquisitionRequest("scalar", (1, 2)))
     assert failure.value.code == "configuration_changed"
-    assert adapter.capabilities().channels == (2,)
+    assert adapter.capability_details["acquisition_channels"] == (2,)
     assert adapter.read("measured_voltage", 2) == 19.1
     assert not io.exchanges
 
@@ -123,7 +123,7 @@ def test_wrong_or_partial_identity_rejected_before_additional_queries(raw):
     assert io.history == ["*IDN?"]
 
 
-def test_no_setting_or_active_capture_command():
+def test_measurement_only_operations_and_active_capture_are_rejected():
     adapter, io = connected([])
     for operation in ("measured_voltage", "output", "short", "channel"):
         with pytest.raises(DeviceError):
