@@ -574,6 +574,8 @@ class WorkspaceOverview:
                         )
                     )
                 )
+            elif key == "monitor":
+                button.setVisible(bool(record and surface_applicable(record, "monitoring")))
             enabled = bool(record)
             if key == "connect":
                 enabled &= not bool(state) and bool(

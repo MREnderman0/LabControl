@@ -74,6 +74,9 @@ QTreeWidget::item:hover { background: #262b2d; }
 QHeaderView::section { color: #aeb5b5; background: #1a1e20; padding: 8px; border: 0; border-bottom: 1px solid #343b3e; font-size: 11px; }
 QTextBrowser { padding: 12px; }
 QTableView { background: #15191b; gridline-color: #343b3e; alternate-background-color: #1b2022; }
+QTableWidget#loadChannels { border: 1px solid #343b3e; alternate-background-color: #181d1f; }
+QTableWidget#loadChannels::item { padding: 0 9px; border-bottom: 1px solid #282f31; }
+QTableWidget#loadChannels::item:selected { background: #443723; color: #ffda9f; }
 
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox { background: #171c1e; border: 1px solid #485054; border-radius: 3px; padding: 6px 10px; min-height: 23px; selection-background-color: #685035; }
 QComboBox { padding-right: 6px; border-radius: 6px; }

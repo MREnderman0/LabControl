@@ -285,6 +285,9 @@ class ParameterGroup(QFrame):
             self.reading = False
             self.message(str(error))
 
+    def command_order(self, item):
+        return ORDER.index(item[0]) if item[0] in ORDER else len(ORDER)
+
     def apply(self) -> None:
         if self.running or self.device_id in self.controller.group_devices:
             return
@@ -325,7 +328,7 @@ class ParameterGroup(QFrame):
                     != QMessageBox.StandardButton.Yes
                 ):
                     return
-            prepared.sort(key=lambda item: ORDER.index(item[0]) if item[0] in ORDER else len(ORDER))
+            prepared.sort(key=self.command_order)
             self.pending, self.completed = prepared, []
             self.running = True
             self.controller.begin_group(self.device_id)

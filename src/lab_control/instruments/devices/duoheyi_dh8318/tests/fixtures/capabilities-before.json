@@ -1,0 +1,89 @@
+{
+  "capabilities": {
+    "category": "electronic_load",
+    "channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "operations": [
+      {
+        "name": "measured_voltage",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "MEAS:VOLT?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "measured_current",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "MEAS:CURR?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "duoheyi.dh8318",
+    "manufacturer": [
+      "DUOHEYI"
+    ],
+    "models": [
+      "DH-8318"
+    ],
+    "category": "electronic_load",
+    "channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+    "revision": "V1.1，第 19、22–24、27–28 页",
+    "status": [],
+    "identity_query": "*IDN?",
+    "error_query": "",
+    "acquisition": "power",
+    "channel_limits": {},
+    "model_alias": null
+  },
+  "commands": {
+    "measured_voltage": {
+      "writes": [],
+      "query": "MEAS:VOLT?",
+      "select": [],
+      "compare": false
+    },
+    "measured_current": {
+      "writes": [],
+      "query": "MEAS:CURR?",
+      "select": [],
+      "compare": false
+    }
+  }
+}

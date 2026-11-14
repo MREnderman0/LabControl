@@ -4,12 +4,12 @@ from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.instruments.registry import build_scpi_adapter
 from lab_control.transport.base import MockTransport
-from lab_control.ui.pages.monitoring.power import PowerMonitoringPage
+from lab_control.ui.pages.device_control.electronic_load import ElectronicLoadPage
 from lab_control.ui.real_window import RealWindow
 
 
 @pytest.mark.parametrize("selection,channels", [("ALL", tuple(range(1, 9))), ("6", (6,))])
-def test_readonly_load_monitoring_and_export(qtbot, tmp_path, monkeypatch, selection, channels):
+def test_load_management_readback_and_export(qtbot, tmp_path, monkeypatch, selection, channels):
     commands = []
     replies = {
         "*IDN?": "DUOHEYI,DH-8318,TEST0001,VER:TEST",
@@ -53,44 +53,41 @@ def test_readonly_load_monitoring_and_export(qtbot, tmp_path, monkeypatch, selec
     window.show()
     try:
         window.navigate("设备管理", "electronic_load", key)
-        controls = window.stack.currentWidget()
-        assert controls.selector.channel.count() == 8
-        assert {
-            "load_input",
-            "load_mode",
-            "current",
-            "voltage",
-            "load_power",
-            "resistance",
-        } <= controls.form.editors.keys()
-        controls.selector.select(key, 7)
-        assert controls.form.editors["load_input"].channel == 7
-        window.navigate("实时监测", "electronic_load", key)
         page = window.stack.currentWidget()
-        assert isinstance(page, PowerMonitoringPage)
-        assert page.controls is None
-        assert page.channels() == channels
-        assert tuple(page.readouts.rows) == channels
-        spec = next(s for s in window.dashboard.specs if s["device_id"] == key)
-        assert spec["channels"] == list(channels) and spec["sources"] == ["voltage", "current"]
-
-        qtbot.waitUntil(page.once_action.isEnabled)
-        page.once_action.trigger()
-        qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
-        assert len(page.plot.displayed_frame.batch.measurements) == 2 * len(channels)
-        for ch in channels:
-            assert page.readouts.rows[ch].text(1) == f"{ch * 2:g}"
-            assert page.readouts.rows[ch].text(2) == f"{ch / 4:g}"
+        assert isinstance(page, ElectronicLoadPage)
+        qtbot.waitUntil(lambda: page.frame is not None)
+        assert "electronic_load" not in window._submenu_categories("实时监测")
+        assert all(spec["device_id"] != key for spec in window.dashboard.specs)
+        window.selected_id = key
+        window.refresh_details()
+        assert window.action_buttons["monitor"].isHidden()
+        assert not window.action_buttons["manage"].isHidden()
+        window.navigate("实时监测", "electronic_load", key)
+        assert window.stack.currentWidget() is page and window.current_module == "设备管理"
+        assert page.table.rowCount() == 8
+        assert page.table.verticalScrollBar().maximum() == 0
+        visible = [editor for editor in page.editors.values() if editor.isVisible()]
+        assert len(visible) == 3
+        assert all(not editor.apply_button.isVisible() for editor in page.editors.values())
+        assert page.group.apply_button.isVisible() and not page.group.apply_button.isEnabled()
+        for ch in range(1, 9):
+            row = [page.table.item(ch - 1, col).text() for col in range(1, 6)]
+            assert row == (
+                ["关闭", "CC", "1 A", f"{ch * 2:g}", f"{ch / 4:g}"] if ch in channels else ["—"] * 5
+            )
+        page.table.selectRow(6)
+        assert page.channel == 7 and all(e.channel == 7 for e in page.editors.values())
+        qtbot.waitUntil(page.editors["current"].isVisible)
         assert commands.count("MEAS:VOLT?") == commands.count("MEAS:CURR?") == 1
         assert all(command.endswith("?") for command in commands)
         saved = []
         monkeypatch.setattr(
             runtime.repository, "export", lambda batch, _mode, **kw: (saved.append(batch), tmp_path)[1]
         )
-        qtbot.waitUntil(page.save_action.isEnabled)
-        page.save_action.trigger()
+        qtbot.waitUntil(page.save_button.isEnabled)
+        page.save_button.click()
         qtbot.waitUntil(lambda: bool(saved))
-        assert saved[0].measurements == page.plot.displayed_frame.batch.measurements
+        assert saved[0].measurements == page.frame.batch.measurements
     finally:
         window.timer.stop()
         window.controller.close()

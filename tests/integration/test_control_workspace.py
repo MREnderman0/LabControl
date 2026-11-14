@@ -214,6 +214,11 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
                         set(panel.editors) == {"voltage", "current"}
                         for panel in page.controls.panels.values()
                     )
+                elif category == "electronic_load":
+                    assert set(page.fallback.editors) == {c.name for c in caps.operations}
+                    window.navigate("实时监测", category)
+                    assert window.current_module == "设备管理" and window.stack.currentWidget() is page
+                    continue
                 else:
                     assert set(page.form.editors) == {c.name for c in caps.operations}
             window.navigate("实时监测", category)

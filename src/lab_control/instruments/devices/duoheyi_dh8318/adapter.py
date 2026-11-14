@@ -16,7 +16,6 @@ from lab_control.domain.instruments import (
     Quality,
     Unsupported,
     ValidationError,
-    readable_serial,
 )
 from lab_control.instruments.base import Profile, ScpiAdapter, identity_from_scpi, number, read_command
 from lab_control.transport.streams import SerialTransport
@@ -76,7 +75,7 @@ class Dh8318Adapter(ScpiAdapter):
         identity = identity_from_scpi(body)
         if identity.manufacturer.upper() != "DUOHEYI" or not self.profile.matches_identity(identity):
             raise DeviceError("所连设备的厂家或型号与 DH-8318 不符", "identity_conflict")
-        if not readable_serial(identity.serial) or not identity.firmware:
+        if not identity.key or not identity.firmware:
             raise DeviceError("DH-8318 身份回包缺少序列号或固件", "parse_error")
         return identity
 
@@ -107,8 +106,30 @@ class Dh8318Adapter(ScpiAdapter):
         return self.selected_channels
 
     def read_status(self) -> DeviceStatus:
-        self.refresh_capabilities()
-        return DeviceStatus({"selected_channels": self.selected_channels})
+        selected = self._selection()
+        self._remember_selection(selected)
+        settings = {ch: {} for ch in selected}
+
+        def read_column(operation):
+            command = self.profile.commands[operation].query
+            fields = line(self.transport.query(command)).split(b",")
+            if len(fields) != len(selected):
+                raise DeviceError("负载设置返回的通道数与面板选择不一致", "parse_error")
+            for ch, raw in zip(selected, fields, strict=True):
+                if operation not in SETPOINTS or settings[ch]["load_mode"] == SETPOINTS[operation][0]:
+                    settings[ch][operation] = decode_setting(operation, raw.strip())
+
+        read_column("load_input")
+        read_column("load_mode")
+        modes = {values["load_mode"] for values in settings.values()}
+        for operation, (mode, _, _) in SETPOINTS.items():
+            if mode in modes:
+                read_column(operation)
+        after = self._selection()
+        if after != selected:
+            self._remember_selection(after)
+            raise DeviceError("读取设置期间面板通道发生变化，请刷新", "configuration_changed")
+        return DeviceStatus({"selected_channels": selected, "channels": settings})
 
     def _read_values(self, channels: tuple[int, ...], quantities: tuple[str, ...]):
         selected = self._selection()

@@ -1,0 +1,298 @@
+{
+  "capabilities": {
+    "category": "electronic_load",
+    "channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "operations": [
+      {
+        "name": "load_input",
+        "parameters": {
+          "value": {
+            "kind": "boolean",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "INP",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "load_mode",
+        "parameters": {
+          "value": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "CC",
+              "CV",
+              "CP",
+              "CR"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "MODE",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "current",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "A",
+            "minimum": 0,
+            "maximum": 30,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "CURR",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "voltage",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "V",
+            "minimum": 0,
+            "maximum": 150,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "VOLT",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "load_power",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "W",
+            "minimum": 0,
+            "maximum": 150,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "POW",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "resistance",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Ω",
+            "minimum": 0.05,
+            "maximum": 50000,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "RES",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "measured_voltage",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "MEAS:VOLT?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "measured_current",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+        "section": "MEAS:CURR?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "duoheyi.dh8318",
+    "manufacturer": [
+      "DUOHEYI"
+    ],
+    "models": [
+      "DH-8318"
+    ],
+    "category": "electronic_load",
+    "channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+    "revision": "V1.1，第 7、19、22–28 页",
+    "status": [],
+    "identity_query": "*IDN?",
+    "error_query": "",
+    "acquisition": "power",
+    "channel_limits": {},
+    "model_alias": null
+  },
+  "commands": {
+    "load_input": {
+      "writes": [
+        "INP {value}"
+      ],
+      "query": "INP?",
+      "select": [],
+      "compare": true
+    },
+    "load_mode": {
+      "writes": [
+        "MODE {value}"
+      ],
+      "query": "MODE?",
+      "select": [],
+      "compare": true
+    },
+    "current": {
+      "writes": [
+        "CURR {value}"
+      ],
+      "query": "CURR?",
+      "select": [],
+      "compare": true
+    },
+    "voltage": {
+      "writes": [
+        "VOLT {value}"
+      ],
+      "query": "VOLT?",
+      "select": [],
+      "compare": true
+    },
+    "load_power": {
+      "writes": [
+        "POW {value}"
+      ],
+      "query": "POW?",
+      "select": [],
+      "compare": true
+    },
+    "resistance": {
+      "writes": [
+        "RES {value}"
+      ],
+      "query": "RES?",
+      "select": [],
+      "compare": true
+    },
+    "measured_voltage": {
+      "writes": [],
+      "query": "MEAS:VOLT?",
+      "select": [],
+      "compare": false
+    },
+    "measured_current": {
+      "writes": [],
+      "query": "MEAS:CURR?",
+      "select": [],
+      "compare": false
+    }
+  }
+}

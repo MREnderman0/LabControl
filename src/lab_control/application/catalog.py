@@ -33,6 +33,8 @@ def surface_applicable(record: dict[str, Any], surface: str) -> bool:
         return surface == "monitoring" and definition.monitoring_surface
     if definition is not None and not definition.monitoring_surface:
         return surface == "management" and definition.management_surface
+    if definition is None and instrument_category(record) == "electronic_load":
+        return surface == "management"
     if instrument_category(record) != "power_supply":
         return True
     if definition is None:

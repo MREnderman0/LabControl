@@ -14,6 +14,7 @@ from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.discovery.presence import LIVE_CONNECTIONS
 from lab_control.ui.pages.data_processing import DataProcessingPage
 from lab_control.ui.pages.device_control.coremorrow_e00 import CoreMorrowE00Page
+from lab_control.ui.pages.device_control.electronic_load import ElectronicLoadPage
 from lab_control.ui.pages.device_control.page import DeviceControlPage
 from lab_control.ui.pages.device_control.phase_noise import PhaseNoisePage
 from lab_control.ui.pages.device_control.power_supply import PowerSupplyPage
@@ -172,14 +173,14 @@ class WorkspaceNavigation:
     def navigate(self, module: str, category: str = "", device_id: str = "") -> None:
         window = self.window
         requested = window.controller.records.get(device_id)
-        if module == "实时监测" and category == "phase_noise_analyzer":
+        if module == "实时监测" and category in {"phase_noise_analyzer", "electronic_load"}:
             # Retain old navigation targets while keeping this finite capture in management.
             module = "设备管理"
         if module == "设备管理" and requested and not surface_applicable(requested, "management"):
             module = "实时监测"
         if (
             module == "设备管理"
-            and category
+            and category not in {"", "electronic_load"}
             and not any(
                 instrument_category(record) == category and surface_applicable(record, "management")
                 for record in window.controller.connected_records(category)
@@ -254,6 +255,8 @@ class WorkspaceNavigation:
                         if category == "power_supply"
                         else PhaseNoisePage(window.controller)
                         if category == "phase_noise_analyzer"
+                        else ElectronicLoadPage(window.controller)
+                        if category == "electronic_load"
                         else DeviceControlPage(window.controller, category)
                     )
                 elif module == "实时监测":
@@ -262,16 +265,8 @@ class WorkspaceNavigation:
                         if category == "spectrum_analyzer"
                         else OscilloscopeMonitoringPage(window.controller, window.dashboard.add)
                         if category == "oscilloscope"
-                        else PowerMonitoringPage(window.controller, window.dashboard.add, category=category)
+                        else PowerMonitoringPage(window.controller, window.dashboard.add)
                         if category == "power_supply"
-                        or (
-                            category == "electronic_load"
-                            and any(
-                                surface_applicable(record, "monitoring")
-                                and not record.get("adapterId", "").startswith("sim.")
-                                for record in window.controller.connected_records(category)
-                            )
-                        )
                         else OpticalPowerMonitoringPage(window.controller, window.dashboard.add)
                         if category == "optical_power_meter"
                         else OpticalSpectrumMonitoringPage(window.controller, window.dashboard.add)
@@ -301,6 +296,7 @@ class WorkspaceNavigation:
             page,
             (
                 DeviceControlPage,
+                ElectronicLoadPage,
                 MonitoringPage,
                 SpectrumMonitoringPage,
                 OscilloscopeMonitoringPage,

@@ -40,6 +40,9 @@ class LoadWire(MockTransport):
         elif command.endswith(":RANG?"):
             self.lines.append(self.rng)
         elif command.endswith("?"):
+            if command.startswith("MEAS:"):
+                self.lines.append(",".join("0" for _ in (self.state if self.selected == "ALL" else [0])))
+                return
             group = self.state if self.selected == "ALL" else (self.selected,)
             self.lines.append(",".join(self.state[ch][command[:-1]] for ch in group))
         else:
@@ -159,7 +162,23 @@ def test_passive_read_in_all_mode_uses_requested_channel():
     assert all(s.endswith("?") for s in wire.history)
 
 
-def test_management_buttons_use_selected_channel(qtbot, tmp_path, monkeypatch):
+def test_mixed_active_targets_are_read_in_columns_without_selecting_channels():
+    wire = LoadWire()
+    wire.state["2"].update(MODE="VOLT", VOLT="12.5")
+    wire.state["3"].update(MODE="POW", POW="2")
+    wire.state["4"].update(MODE="RES", RES="120")
+    wire.state["5"].update(MODE="DYN")
+    status = connect(wire).read_status().values["channels"]
+    assert status[2] == {"load_input": False, "load_mode": "CV", "voltage": 12.5}
+    assert status[3]["load_power"] == 2 and status[4]["resistance"] == 120
+    assert status[5] == {"load_input": False, "load_mode": "DYN"}
+    assert all(line.endswith("?") for line in wire.history)
+    for query in ("INP?", "MODE?", "CURR?", "VOLT?", "POW?", "RES?"):
+        assert wire.history.count(query) == 1
+
+
+@pytest.mark.parametrize("fail_target", [False, True])
+def test_management_group_uses_selected_channel(qtbot, tmp_path, monkeypatch, fail_target):
     from PySide6.QtWidgets import QMessageBox
 
     from lab_control.application.runtime import ApplicationRuntime
@@ -167,6 +186,7 @@ def test_management_buttons_use_selected_channel(qtbot, tmp_path, monkeypatch):
     from lab_control.ui.real_window import RealWindow
 
     wire = LoadWire()
+    wire.state["1"].update(MODE="RES", RES="100")
     monkeypatch.setattr(
         "lab_control.application.runtime.create_adapter",
         lambda config, _visa: build_scpi_adapter(config, wire),
@@ -181,32 +201,46 @@ def test_management_buttons_use_selected_channel(qtbot, tmp_path, monkeypatch):
         try:
             window.navigate("设备管理", "electronic_load", key)
             page = window.stack.currentWidget()
+            qtbot.waitUntil(lambda: page.frame is not None)
+            page.table.selectRow(6)
+            page.table.selectRow(0)
+            qtbot.waitUntil(page.editors["resistance"].isVisible)
+            assert page.group.mode_box.currentData() == "CR" and page.editors["current"].isHidden()
+            assert page.editors["resistance"].current_value == 100
             page.selector.select(key, 4)
-            for op, value in (
-                ("load_mode", "CP"),
-                ("load_power", 2.5),
-                ("load_input", True),
-                ("load_input", False),
-            ):
-                editor = page.form.editors[op]
-                qtbot.waitUntil(lambda: runtime.sessions.snapshots()[0]["pending"] == 0 and not editor.busy)
-                field = editor.editors["value"].input
-                if op == "load_input":
-                    field.setChecked(value)
-                elif op == "load_mode":
-                    field.setCurrentIndex(field.findData(value))
-                else:
-                    field.setText(str(value))
-                qtbot.waitUntil(editor.apply_button.isEnabled)
-                editor.apply_button.click()
-                qtbot.waitUntil(lambda: not editor.busy and editor.current_value == value)
-            assert [s for s in wire.history if not s.endswith("?") and not s.startswith("CH ")] == [
-                "MODE POW",
-                "POW 2.5",
-                "INP 1",
-                "INP 0",
-            ]
-            assert wire.selected == "ALL" and wire.state["4"]["POW"] == "2.5"
+            qtbot.waitUntil(lambda: page.frame is not None and not page.reading)
+            mode = page.editors["load_mode"].editors["value"].input
+            checkbox = page.editors["load_input"].editors["value"].input
+            mode.setCurrentIndex(mode.findData("CP"))
+            target = page.editors["load_power"]
+            qtbot.waitUntil(target.isVisible)
+            assert page.editors["current"].isHidden()
+            field = target.editors["value"].input
+            field.setFocus()
+            qtbot.keyClicks(field, "2.5")
+            checkbox.click()
+            if fail_target:
+                wire.fail = "POW 2.5"
+            qtbot.waitUntil(page.group.apply_button.isEnabled)
+            page.group.apply_button.click()
+            qtbot.waitUntil(lambda: not page.group.running and not page.reading)
+
+            def writes():
+                return [cmd for cmd in wire.history if not cmd.endswith("?") and not cmd.startswith("CH ")]
+
+            if fail_target:
+                assert writes() == ["MODE POW", "POW 2.5"]
+                assert wire.state["4"]["INP"] == "0" and "未执行" in page.group.status.text()
+            else:
+                assert writes() == ["MODE POW", "POW 2.5", "INP 1"]
+                assert not page.group.apply_button.isEnabled()
+                checkbox.click()
+                mode.setCurrentIndex(mode.findData("CC"))
+                qtbot.waitUntil(page.group.apply_button.isEnabled)
+                page.group.apply_button.click()
+                qtbot.waitUntil(lambda: not page.group.running and not page.reading)
+                assert writes()[-2:] == ["INP 0", "MODE CURR"]
+            assert wire.selected == "ALL"
         finally:
             window.close()
             qtbot.waitUntil(lambda: window.closing and not window.isVisible())
