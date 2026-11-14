@@ -32,7 +32,7 @@ def snapshot(*, mode="SA", span=None, fmt="ASC", start=1e6, stop=2e6, trace="CLR
         (":BAND?", rbw),
     ]
     if start == stop:
-        fields.append((":SWE:TIME?", 0.125))
+        fields.append((":SWE:TIME?", 125))
     return exchanges + [(cmd, str(value).encode()) for cmd, value in fields]
 
 
@@ -137,7 +137,7 @@ def test_normal_detector_rejects_incomplete_or_extra_pairs(length):
     assert error.value.code == "parse_error"
 
 
-@pytest.mark.parametrize("opts,span", [((), 1e6), (("no_list_sweep",), 3e6)])
+@pytest.mark.parametrize("opts,span", [((), 3e6), (("no_list_sweep",), 3e6)])
 def test_unverified_axis_retains_original_wire_order(opts, span):
     settings = snapshot(detector="SAMP", span=span)
     adapter, _ = device([*settings, (TRACE_QUERY, TRACE), *settings], options=opts)
@@ -225,7 +225,12 @@ def test_front_panel_linear_confirmation_is_scoped_and_checks_each_frame(mode, s
     if unit == "Hz":
         assert (trace.axis[0], trace.axis[-1]) == (95e6, 105e6)
         assert trace.metadata["settings"]["sweep_mode_source"] == "operator_confirmed_linear"
-    assert adapter.acquire(AcquisitionRequest("spectrum")).measurements[0].axis_unit == "index"
+    automatic = adapter.acquire(AcquisitionRequest("spectrum")).measurements[0]
+    assert automatic.axis_unit == unit
+    if unit == "Hz":
+        np.testing.assert_array_equal(automatic.axis, np.linspace(95e6, 105e6, POINTS))
+        assert automatic.metadata["settings"]["sweep_mode_source"] == "linear_default"
+        assert "sweep_mode" not in automatic.metadata["settings"]
     assert all(cmd.endswith("?") for cmd in transport.history)
     if not mode:
         assert ":SWE:MODE?" not in transport.history
@@ -246,5 +251,5 @@ def test_optional_query_rejection_falls_back_without_repeated_panel_errors():
         options=("4959-S13",),
     )
     for _ in range(2):
-        assert adapter.acquire(capture_request(adapter)).measurements[0].axis_unit == "index"
+        assert adapter.acquire(capture_request(adapter)).measurements[0].axis_unit == "Hz"
     assert transport.history.count(":SWE:MODE?") == 1

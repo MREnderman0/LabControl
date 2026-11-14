@@ -180,7 +180,7 @@ class MicrowaveAnalyzer(ScpiAdapter):
             else:
                 self._sweep_query_rejected = True
         if settings["start_frequency"] == settings["stop_frequency"]:
-            settings["sweep_time"] = read("sweep_time")
+            settings["sweep_time"] = read("sweep_time") / 1000  # SA reply: ms; measurement axis: s.
         settings["measurement_mode"] = mode
         return settings
 
@@ -211,31 +211,34 @@ class MicrowaveAnalyzer(ScpiAdapter):
         values = ascii_trace(self.transport.query(TRACE_QUERY), points, settings["detector"])
         if settings != self.frame_settings():
             raise DeviceError("4959E configuration changed during trace read", "configuration_changed")
-        # List sweep is optional (4959-S13). Querying its mode can raise a
-        # front-panel conflict on an unequipped instrument. Only a verified
-        # option inventory bound to this serial permits a linear physical axis.
-        confirmed_linear = settings.get("sweep_mode") == "LINE" or (
+        mode = settings.get("sweep_mode")
+        if mode is not None:
+            axis_source = "instrument_sweep_mode"
+        elif (
             self.identity is not None
             and self.identity.serial == self.config.expected_serial
             and bool(self.config.expected_serial)
             and "no_list_sweep" in self.config.options
             and "4959-S13" not in self.config.options
-        )
+        ):
+            axis_source = "verified_linear_only"
+        elif request.panel_linear_sweep:  # Retain provenance on older explicit requests.
+            axis_source = "operator_confirmed_linear"
+        else:
+            axis_source = "linear_default"
         consistent = np.isclose(settings["span"], stop - start, rtol=1e-8, atol=1e-3) and np.isclose(
             settings["center_frequency"], (start + stop) / 2, rtol=1e-9, atol=1e-3
         )
-        if request.panel_linear_sweep and "sweep_mode" not in settings:
-            confirmed_linear = True
-            settings["sweep_mode_source"] = "operator_confirmed_linear"
         double = values.size == 2 * points
         layout_verified = not double or (
             self.identity is not None
             and self.identity.firmware == "2.6.14"
             and bool(np.all(values[:points] >= values[points:]))
         )
-        if not confirmed_linear or not consistent or not layout_verified:
+        if mode == "LIST" or not consistent or not layout_verified:
             axis, unit, axis_kind = np.arange(values.size), "index", "transfer_sample_index"
         else:
+            settings["sweep_mode_source"] = axis_source
             axis, unit = (
                 (np.linspace(0, settings["sweep_time"], points), "s")
                 if start == stop

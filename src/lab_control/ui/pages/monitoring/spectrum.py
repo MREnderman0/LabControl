@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import asdict
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -79,11 +78,6 @@ class SpectrumMonitoringPage(QWidget):
         title.setObjectName("spectrumChartTitle")
         toolbar.addWidget(title)
         toolbar.addStretch()
-        self.panel_linear = QCheckBox("面板已确认线性扫描", chart)
-        self.panel_linear.setToolTip("核对 4959E 面板后勾选，仅用于本轮监测的横轴。")
-        self.panel_linear.hide()
-        self.axis_session = ""
-        toolbar.addWidget(self.panel_linear)
         self.record_button = RecordingButton(chart)
         self.record_button.clicked.connect(self.record)
         toolbar.addWidget(self.record_button)
@@ -139,9 +133,6 @@ class SpectrumMonitoringPage(QWidget):
         if self.device_id == device_id and self.mode == self.controller.mode and self.controls:
             return
         self.device_id, self.mode = device_id, self.controller.mode
-        self.panel_linear.setChecked(False)
-        self.panel_linear.hide()
-        self.axis_session = ""
         self.timing.bind(device_id, self.mode)
         self.plot.reset()
         self.marker_list = None
@@ -156,9 +147,6 @@ class SpectrumMonitoringPage(QWidget):
         self.empty.setVisible(not device_id)
         if device_id:
             config = config_from_record(self.controller.records[device_id])
-            self.panel_linear.setVisible(
-                config.adapter == "ceyear.4959e" and "no_list_sweep" not in config.options
-            )
             self.source = next((s for s in data_sources(config) if s.kind == "spectrum"), None)
             self.controls = SpectrumControls(self.controller, device_id, self.right)
             self.right_layout.addWidget(self.controls)
@@ -226,15 +214,12 @@ class SpectrumMonitoringPage(QWidget):
                 # Passive reads: never INIT, change trigger mode, or start a physical sweep.
                 self.timing.commit()
                 request = self.source.request((1,))
-                if self.panel_linear.isVisible() and self.panel_linear.isChecked():
-                    request = replace(request, panel_linear_sweep=True)
                 self.controller.start_monitoring(
                     self.device_id,
                     (request,),
                     **self.timing.options(),
                     mode=self.mode,
                 )
-                self.panel_linear.setChecked(False)
             except Exception as exc:
                 self.controller.message.emit(str(exc))
 
@@ -332,11 +317,6 @@ class SpectrumMonitoringPage(QWidget):
         state = self.controller.states.get(self.device_id, {})
         service = self.controller.runtime.monitoring
         task = service.snapshots().get(self.device_id, {})
-        session_id = state.get("sessionId", "")
-        if self.axis_session != session_id:
-            self.axis_session = session_id
-            self.panel_linear.setChecked(False)
-        self.panel_linear.setEnabled(not task.get("running") and state.get("connectionState") == "connected")
         self.timing.refresh(task)
         self.actual.setText(self.timing.actual.text())
         busy = bool(self.controls and self.controls.running)

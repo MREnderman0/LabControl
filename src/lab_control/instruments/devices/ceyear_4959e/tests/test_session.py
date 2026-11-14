@@ -18,7 +18,6 @@ def test_passive_session_returns_instrument_axis_and_saves_no_failed_frame(tmp_p
         DEFINITION.adapter_id,
         "mock",
         expected_serial="TEST",
-        options=("no_list_sweep",),
     )
     replies = {
         "*IDN?": b"Ceyear Technologies,4959E,TEST,2.6.14",
@@ -65,6 +64,7 @@ def test_passive_session_returns_instrument_axis_and_saves_no_failed_frame(tmp_p
             item = json.loads(str(saved["metadata_json"]))["measurements"][0]
             assert (item["unit"], item["axis_unit"]) == ("dBm", "Hz")
             assert item["metadata"]["settings"]["sweep_points"] == 101
+            assert item["metadata"]["settings"]["sweep_mode_source"] == "linear_default"
         replies[":TRAC1:TYPE?"] = b"BLAN"
         with pytest.raises(Unsupported, match="trace 1 must be visible"):
             runtime.sessions.submit(device, "acquire", request).result(timeout=5)
