@@ -171,3 +171,75 @@ def test_pending_input_check_can_cancel_or_skip_one_device(qtbot, tmp_path, monk
         window.bridge.worker.shutdown(wait=True)
         window.closing = True
         window.close()
+
+
+def test_overview_resizes_whole_categories_and_reports_session_counts(qtbot, tmp_path):
+    from lab_control.app import load_stylesheet
+
+    runtime = ApplicationRuntime(root=tmp_path, hardware=False)
+    window = RealWindow(runtime)
+    qtbot.addWidget(window)
+    window.setStyleSheet(load_stylesheet())
+    try:
+        window.resize(1456, 932)
+        window.show()
+        window.navigate("实时监测")
+        dashboard = window.dashboard
+        window.controller.timer.stop()
+        window.timer.stop()
+        models = ["keysight.e36313a"] * 2 + ["rigol.dsa815"] * 5 + ["joinwit.jw8105", "rs.fspn26"]
+        keys = []
+        for i, model in enumerate(models):
+            key = runtime.add(ConnectionConfig(f"mock://overview/groups/{i}", model, "mock"))
+            runtime.connect(key, configure_acquisition=False).result(3)
+            keys.append(key)
+            window.controller.poll()
+            qtbot.wait(2)
+
+        def assert_geometry():
+            groups = dashboard.grid.items
+            previous = None
+            for group in groups:
+                cards = group.grid.items
+                assert (
+                    min(c.y() for c in cards)
+                    == group.heading.geometry().bottom() + 1 + group.layout().spacing()
+                )
+                assert min(c.x() for c in cards) == 0
+                assert (
+                    max(c.geometry().bottom() for c in cards) + 1
+                    == group.height() - group.layout().contentsMargins().bottom()
+                )
+                assert group.y() == (previous.geometry().bottom() + 17 if previous else 0)
+                assert all(c.height() >= c.heightForWidth(c.width()) for c in cards)
+                previous = group
+            assert dashboard.grid.body.height() == previous.geometry().bottom() + 1
+            assert dashboard.grid.horizontalScrollBar().maximum() == 0
+
+        assert dashboard.hint.text() == "已连接 9 台 · 可参与采样 8 台 · 已勾选 8 台"
+        dashboard.cards[keys[0]].enabled.setChecked(False)
+        assert dashboard.hint.text().endswith("已勾选 7 台")
+        for width in (1456, 850, 1150, 2300, 1456):
+            window.resize(width, 932)
+            qtbot.wait(40)
+            assert_geometry()
+        card = dashboard.cards[keys[2]]
+        text = card.slot.text()
+        card.slot.setText("用于测量的功能槽位名称 " * 38)
+        qtbot.waitUntil(lambda: card.slot.height() >= card.slot.heightForWidth(card.slot.width()))
+        qtbot.waitUntil(assert_geometry)
+        card.slot.setText(text)
+        qtbot.waitUntil(assert_geometry)
+        runtime.sessions.disconnect(keys[6])
+        window.controller.poll()
+        qtbot.waitUntil(assert_geometry)
+        runtime.connect(keys[6], configure_acquisition=False).result(3)
+        window.controller.poll()
+        qtbot.waitUntil(assert_geometry)
+    finally:
+        window.timer.stop()
+        window.controller.close()
+        runtime.close()
+        window.bridge.worker.shutdown(wait=True)
+        window.closing = True
+        window.close()

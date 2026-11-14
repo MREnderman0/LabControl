@@ -4,12 +4,11 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -66,47 +65,50 @@ def scope_channels(controller, device_id: str, channels) -> tuple[int, ...]:
 
 
 class ResponsiveGrid(QScrollArea):
-    def __init__(self, parent=None) -> None:
+    """Stack groups using the same viewport width that determines their card rows."""
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.body = QWidget()
-        self.grid = QGridLayout(self.body)
-        self.grid.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
-        self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setSpacing(16)
-        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.setWidget(self.body)
-        self.items: list[QWidget] = []
-        self.columns = 0
+        self.items = []
+        self._pending = False
         self.viewport().installEventFilter(self)
 
     def eventFilter(self, obj, event):  # noqa: N802
-        if obj is self.viewport() and event.type() == QEvent.Type.Resize:
-            QTimer.singleShot(0, self, self.reflow)
+        if event.type() == QEvent.Type.LayoutRequest or (
+            obj is self.viewport() and event.type() == QEvent.Type.Resize
+        ):
+            self._schedule()
         return super().eventFilter(obj, event)
+
+    def _schedule(self):
+        if not self._pending:
+            self._pending = True
+            QTimer.singleShot(0, self, self._arrange)
+
+    def _arrange(self):
+        self._pending = False
+        width = self.viewport().width()
+        y = 0
+        for item in self.items:
+            height = item.heightForWidth(width) if item.hasHeightForWidth() else item.sizeHint().height()
+            height = max(height, item.minimumHeight())
+            item.setGeometry(0, y, width, height)
+            y += height + 16
+        self.body.resize(width, max(0, y - 16))
 
     def set_items(self, items: Sequence[QWidget]) -> None:
         if self.items == list(items):
             return
         self.items = list(items)
-        self.reflow(force=True)
-        QTimer.singleShot(0, self, self.reflow)
-
-    def reflow(self, force: bool = False) -> None:
-        # Each category owns a full-width row; only its devices flow horizontally.
-        columns = 1
-        if columns == self.columns and not force:
-            return
-        old_columns = self.columns
-        self.columns = columns
-        while self.grid.count():
-            self.grid.takeAt(0)
-        for index in range(max(old_columns, columns)):
-            self.grid.setColumnStretch(index, 1 if index < columns else 0)
-            self.grid.setColumnMinimumWidth(index, 0)
-        for index, item in enumerate(self.items):
-            self.grid.addWidget(item, index // columns, index % columns, Qt.AlignmentFlag.AlignTop)
+        for item in self.items:
+            if item.parentWidget() is not self.body:
+                item.setParent(self.body)
+                item.show()
+            item.installEventFilter(self)
+        self._arrange()
 
 
 class RecordingDeviceCard(QFrame):
@@ -296,58 +298,100 @@ class DeviceCategoryGroup(QFrame):
         self.heading.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.heading, 0, Qt.AlignmentFlag.AlignTop)
         self.grid = CategoryGrid()
-        layout.addWidget(self.grid)
+        layout.addLayout(self.grid)
 
     def set_cards(self, cards: Sequence[QWidget]) -> None:
         self.grid.set_items(cards)
 
 
-class CategoryGrid(QWidget):
-    """A growing grid used inside the single overview scroll area."""
+class CategoryGrid(QLayout):
+    """Use the same width and card measurements for both scroll sizing and placement."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.layout_grid = QGridLayout(self)
-        self.layout_grid.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
-        self.layout_grid.setContentsMargins(0, 0, 0, 0)
-        self.layout_grid.setSpacing(12)
-        self.layout_grid.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.items: list[QWidget] = []
-        self.columns = 0
-        self.installEventFilter(self)
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(12)
+        self._items = []
 
-    def eventFilter(self, obj, event):  # noqa: N802
-        if obj is self and event.type() == QEvent.Type.Resize:
-            QTimer.singleShot(0, self, self.reflow)
-        return super().eventFilter(obj, event)
+    @property
+    def items(self):
+        return [item.widget() for item in self._items]
 
-    def set_items(self, items: Sequence[QWidget]) -> None:
-        if self.items == list(items):
+    def set_items(self, cards: Sequence[QWidget]) -> None:
+        if self.items == list(cards):
             return
-        self.items = list(items)
-        self.reflow(force=True)
-        QTimer.singleShot(0, self, self.reflow)
+        while self.count():
+            self.takeAt(0)
+        for card in cards:
+            self.addWidget(card)
+        self.invalidate()
 
-    def reflow(self, force: bool = False) -> None:
-        columns = min(3, max(1, (self.width() + 16) // 376))
-        if columns == self.columns and not force:
-            return
-        old_columns = self.columns
-        self.columns = columns
-        while self.layout_grid.count():
-            self.layout_grid.takeAt(0)
-        for index in range(max(old_columns, columns)):
-            self.layout_grid.setColumnStretch(index, 1 if index < columns else 0)
-            self.layout_grid.setColumnMinimumWidth(index, 0)
-        for row in range(self.layout_grid.rowCount()):
-            self.layout_grid.setRowMinimumHeight(row, 0)
-        for index, item in enumerate(self.items):
-            row, column = divmod(index, columns)
-            self.layout_grid.addWidget(item, row, column, Qt.AlignmentFlag.AlignTop)
-            self.layout_grid.setRowMinimumHeight(
-                row, max(self.layout_grid.rowMinimumHeight(row), item.sizeHint().height())
-            )
-        self.updateGeometry()
+    def addItem(self, item) -> None:  # noqa: N802
+        self._items.append(item)
+        self.invalidate()
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):  # noqa: N802
+        return self._items[index] if 0 <= index < self.count() else None
+
+    def takeAt(self, index):  # noqa: N802
+        if 0 <= index < self.count():
+            item = self._items.pop(index)
+            self.invalidate()
+            return item
+        return None
+
+    def _column_count(self, width):
+        return max(1, min(3, self.count(), (width + self.spacing()) // (360 + self.spacing())))
+
+    @property
+    def columns(self):
+        return self._column_count(self.geometry().width())
+
+    def hasHeightForWidth(self):  # noqa: N802
+        return True
+
+    def sizeHint(self):  # noqa: N802
+        return QSize(360, self.heightForWidth(360))
+
+    def minimumSize(self):  # noqa: N802
+        return QSize(0, 0)
+
+    def heightForWidth(self, width):  # noqa: N802
+        return self._arrange(QRect(0, 0, width, 0), place=False)
+
+    def setGeometry(self, rect):  # noqa: N802
+        super().setGeometry(rect)
+        self._arrange(rect, place=True)
+
+    def _arrange(self, rect, *, place):
+        spacing = self.spacing()
+        columns = self._column_count(rect.width())
+        space = max(columns, rect.width() - (columns - 1) * spacing)
+        y = rect.y()
+        for first in range(0, self.count(), columns):
+            cells = []
+            for column, item in enumerate(self._items[first : first + columns]):
+                left = space * column // columns
+                width = space * (column + 1) // columns - left
+                card = item.widget()
+                height = card.heightForWidth(width) if card.hasHeightForWidth() else card.sizeHint().height()
+                cells.append(
+                    (
+                        item,
+                        rect.x() + left + column * spacing,
+                        width,
+                        max(height, item.minimumSize().height()),
+                    )
+                )
+            height = max(cell[3] for cell in cells)
+            if place:
+                for item, x, width, _ in cells:
+                    item.setGeometry(QRect(x, y, width, height))
+            y += height + spacing
+        return max(0, y - rect.y() - spacing)
 
 
 class MonitoringDashboard(QWidget):
@@ -570,7 +614,8 @@ class MonitoringDashboard(QWidget):
             self.mode = self.controller.mode
             self._load_preferences()
         specs = []
-        for record in self.controller.connected_records():
+        connected = self.controller.connected_records()
+        for record in connected:
             spec = self._spec_for(record)
             if spec is not None:
                 specs.append(spec)
@@ -627,9 +672,12 @@ class MonitoringDashboard(QWidget):
             ordered_groups.append(group)
         self.grid.set_items(ordered_groups)
         self._update_button()
-        self.hint.setText(
-            f"当前显示 {len(specs)} 台已连接设备 · 已勾选 {sum(bool(s.get('enabled')) for s in specs)} 台"
-        )
+        self._update_counts()
+
+    def _update_counts(self):
+        connected = len(self.controller.connected_records())
+        checked = sum(card.enabled.isChecked() for card in self.cards.values())
+        self.hint.setText(f"已连接 {connected} 台 · 可参与采样 {len(self.cards)} 台 · 已勾选 {checked} 台")
 
     def _persist_card(self, changed_device: str = "", interval_edited: bool = False) -> None:
         for spec in self.specs:
@@ -668,6 +716,7 @@ class MonitoringDashboard(QWidget):
                 self.controller.watch(self.controller.runtime.monitoring.stop(spec["device_id"]))
         self._persist()
         self._update_button()
+        self._update_counts()
 
     def _open_device(self, device_id: str) -> None:
         record = self.controller.records.get(device_id)

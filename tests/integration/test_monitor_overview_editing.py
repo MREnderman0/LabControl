@@ -107,11 +107,13 @@ def test_categories_start_new_rows_and_devices_wrap_at_three(workspace, qtbot):
     window, _, dashboard, _, meters = workspace
     group = dashboard.groups["optical_power_meter"]
     qtbot.waitUntil(lambda: group.grid.columns == 3)
-    positions = [group.grid.layout_grid.getItemPosition(i)[:2] for i in range(4)]
-    assert positions == [(0, 0), (0, 1), (0, 2), (1, 0)]
+    a, b, c, d = group.grid.items
+    assert a.y() == b.y() == c.y() < d.y()
+    assert a.x() == d.x() < b.x() < c.x()
     assert {card.spec["device_id"] for card in group.grid.items} == set(meters)
-    assert dashboard.grid.columns == 1
-    assert [dashboard.grid.grid.getItemPosition(i)[:2] for i in range(2)] == [(0, 0), (1, 0)]
+    assert all(
+        item.x() == 0 and item.width() == dashboard.grid.viewport().width() for item in dashboard.grid.items
+    )
     source = dashboard.groups["signal_generator"]
     assert group.y() >= source.y() + source.height()
     window.resize(2200, 900)

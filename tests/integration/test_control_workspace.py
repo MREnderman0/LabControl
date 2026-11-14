@@ -167,10 +167,10 @@ def test_overview_scroll_reuses_stacked_category_rows(qtbot):
     grid.show()
     for width in (320, 790, 1700, 1100, 450):
         grid.resize(width, 650)
-        qtbot.waitUntil(lambda: grid.columns == 1)
+        qtbot.waitUntil(lambda: all(card.width() == grid.viewport().width() for card in cards))
         assert grid.items == cards
         for index, card in enumerate(cards):
-            assert grid.grid.itemAtPosition(index // grid.columns, index % grid.columns).widget() is card
+            assert card.y() == index * (180 + 16)
             assert card.geometry().right() <= grid.viewport().width()
         assert grid.horizontalScrollBar().maximum() == 0
 
@@ -303,7 +303,9 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
                 window.sidebar.setFixedWidth(196)
                 qtbot.wait(20)
                 assert window.width() == max(760, window.minimumWidth())
-                assert dashboard.grid.columns >= 1
+                assert all(
+                    group.width() == dashboard.grid.viewport().width() for group in dashboard.grid.items
+                )
         assert dashboard.cards == widgets
         dashboard._persist()
         saved = runtime.repository.load_workspace("monitor_overview/all")
