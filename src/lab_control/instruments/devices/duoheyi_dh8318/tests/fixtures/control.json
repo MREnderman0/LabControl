@@ -1,0 +1,10 @@
+{
+  "fixture_origin": "Synthetic LF-framed DH-8318 example based on the programmable DC electronic load manual V1.1.",
+  "adapter": "duoheyi.dh8318",
+  "operation": "measured_voltage",
+  "access": "read",
+  "channel": 3,
+  "identity_exchanges": [["*IDN?", "DUOHEYI,DH-8318,TEST0001,VER:DEMO\n"], ["CH?", "ALL\n"]],
+  "exchanges": [["CH?", "ALL\n"], ["MEAS:VOLT?", "0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8\n"], ["CH?", "ALL\n"]],
+  "expected": 0.3
+}

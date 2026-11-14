@@ -210,6 +210,7 @@ class Inventory:
         reason: str = "",
         *,
         error_code: str = "",
+        serial_binding: ConnectionConfig | None = None,
     ) -> dict[str, Any]:
         from lab_control.instruments.registry import requires_manual_connection
 
@@ -218,6 +219,21 @@ class Inventory:
             stable_existing = self.by_stable_id(candidate.config.usb_instance_id)
             resource_existing = self.by_resource(resource)
             existing: dict[str, Any] | None
+            if (
+                serial_binding is None
+                and candidate.source == "configured"
+                and candidate.config.transport == "serial"
+            ):
+                serial_binding = candidate.config
+            pinned = bool(
+                serial_binding
+                and serial_binding.expected_serial
+                and not serial_binding.usb_instance_id
+                and resource_existing
+                and resource_existing.get("identityKey")
+                and resource_existing.get("adapterId") == serial_binding.adapter
+                and resource_existing.get("identity", {}).get("serial") == serial_binding.expected_serial
+            )
             # A stable USB identity wins over a reused COM number. If an old
             # record predates this field, adopt it once at the same resource so
             # it can follow the bridge on later insertions.
@@ -229,6 +245,8 @@ class Inventory:
                     if resource_existing and not resource_existing.get("config", {}).get("usb_instance_id")
                     else None
                 )
+            elif pinned:
+                existing = resource_existing
             elif candidate.config.transport == "serial":
                 # Without a USB bridge serial there is no safe asset key. Keep
                 # unconfigured metadata together for this endpoint, but do not
@@ -369,6 +387,8 @@ class Inventory:
                 entry.update(presenceState="present", evidenceScanRunId=scan_id)
             elif error or reason == "probe_failed":
                 entry.update(presenceState="unreachable", evidenceScanRunId=scan_id)
+            elif pinned and identity is None:
+                entry.update(presenceState="unknown", evidenceScanRunId=scan_id)
             elif identity is not None or local_seen:
                 entry.update(presenceState="present", evidenceScanRunId=scan_id)
             elif reason != "pending_probe" and scan_id != "manual":
@@ -376,7 +396,9 @@ class Inventory:
             else:
                 entry.setdefault("presenceState", "unknown")
             # A configured address alone (including failed probing) is not a sighting.
-            if not error and (identity is not None or local_enumeration(candidate.source, resource)):
+            if not error and (
+                identity is not None or (not pinned and local_enumeration(candidate.source, resource))
+            ):
                 entry["lastSeenAt"] = now
                 record["lastSeenAt"] = now
             record["candidates"][resource] = entry

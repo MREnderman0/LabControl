@@ -29,6 +29,7 @@ from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.pages.monitoring.channel_selection import (
     instrument_scan_channels,
+    readable_power_channels,
     selected_input,
     single_input,
 )
@@ -395,6 +396,8 @@ class MonitoringDashboard(QWidget):
         if scan is not None:
             return scan
         category = instrument_category(record)
+        if category == "electronic_load":
+            return readable_power_channels(self.controller, device_id)
         if category not in {"oscilloscope", "power_supply", "optical_power_meter", "frequency_counter"}:
             return (1,)
         try:
@@ -415,6 +418,7 @@ class MonitoringDashboard(QWidget):
             if category
             in {
                 "power_supply",
+                "electronic_load",
                 "signal_generator",
                 "network_analyzer",
                 "phase_noise_analyzer",

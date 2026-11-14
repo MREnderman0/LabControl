@@ -262,8 +262,16 @@ class WorkspaceNavigation:
                         if category == "spectrum_analyzer"
                         else OscilloscopeMonitoringPage(window.controller, window.dashboard.add)
                         if category == "oscilloscope"
-                        else PowerMonitoringPage(window.controller, window.dashboard.add)
+                        else PowerMonitoringPage(window.controller, window.dashboard.add, category=category)
                         if category == "power_supply"
+                        or (
+                            category == "electronic_load"
+                            and any(
+                                surface_applicable(record, "monitoring")
+                                and not surface_applicable(record, "management")
+                                for record in window.controller.connected_records(category)
+                            )
+                        )
                         else OpticalPowerMonitoringPage(window.controller, window.dashboard.add)
                         if category == "optical_power_meter"
                         else OpticalSpectrumMonitoringPage(window.controller, window.dashboard.add)

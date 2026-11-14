@@ -12,7 +12,7 @@ from lab_control.application.acquisition_pipeline import validate_displayed_batc
 from lab_control.application.monitoring import MonitorFrame
 from lab_control.domain.instruments import DeviceError
 
-CHANNEL_COLORS = ("#e3a252", "#69c9d4", "#b5d979", "#cda8e8")
+CHANNEL_COLORS = ("#e3a252", "#69c9d4", "#b5d979", "#cda8e8", "#86accf", "#e18e85", "#81c8ab", "#ead172")
 
 
 class _TimeAxis(pg.AxisItem):
@@ -126,7 +126,7 @@ class PowerPlot(QWidget):
                 history.popleft()
             if key not in self.curves:
                 self.curves[key] = self.plots[key[1]].plot(
-                    pen=pg.mkPen(CHANNEL_COLORS[(key[0] - 1) % 4], width=1.6),
+                    pen=pg.mkPen(CHANNEL_COLORS[(key[0] - 1) % len(CHANNEL_COLORS)], width=1.6),
                     name=f"CH {key[0]}",
                 )
             if history:

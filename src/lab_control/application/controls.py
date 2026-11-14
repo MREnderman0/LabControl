@@ -496,6 +496,11 @@ def data_sources(config: ConnectionConfig) -> tuple[DataSource, ...]:
             DataSource("voltage", "电压", "scalar", measurement="voltage"),
             DataSource("current", "电流", "scalar", measurement="current"),
         )
+    if category == "electronic_load" and not config.adapter.startswith("sim."):
+        return tuple(
+            DataSource(key, label, "scalar", measurement=key, request_defaults={"allow_setup": False})
+            for key, label in (("voltage", "电压"), ("current", "电流"))
+        )
     if category == "oscilloscope":
         sources = [DataSource("waveform", "时域波形", "waveform")]
         definition = DEVICE_DEFINITIONS.get(config.adapter)

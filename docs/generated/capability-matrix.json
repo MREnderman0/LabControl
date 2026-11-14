@@ -9152,6 +9152,84 @@
       ]
     },
     {
+      "adapter_id": "duoheyi.dh8318",
+      "model": "DUOHEYI DH-8318",
+      "category": "electronic_load",
+      "control_page": "实时监测 / 电子负载",
+      "channels": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+      "revision": "V1.1，第 19、22–24、27–28 页",
+      "acquisition": "power",
+      "metric_profiles": [],
+      "channel_limits": {},
+      "hardware_passed": false,
+      "operations": [
+        {
+          "name": "measured_voltage",
+          "parameters": {},
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": true,
+          "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+          "section": "MEAS:VOLT?",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": true,
+          "hardware_passed": false,
+          "ui_label": "实测电压",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [],
+            "query": "MEAS:VOLT?",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "measured_current",
+          "parameters": {},
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": true,
+          "source": "《单通道、多通道 可编程直流电子负载 用户使用手册》",
+          "section": "MEAS:CURR?",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "实测电流",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [],
+            "query": "MEAS:CURR?",
+            "custom_encoder": false
+          }
+        }
+      ]
+    },
+    {
       "adapter_id": "rigol.dg5504pro",
       "model": "RIGOL DG5504 Pro",
       "category": "signal_generator",
@@ -25785,7 +25863,7 @@
     "GOCA-8-NK2603212": "Manufacturer/protocol required",
     "multi-channel optical power meter": "Model and protocol required",
     "temperature_controller": "Model and protocol required",
-    "electronic_load": "Model and protocol required",
+    "other electronic loads": "Exact model and protocol required",
     "other optical_spectrometers": "Exact model and protocol required; Ceyear 6362D has an independent module"
   }
 }

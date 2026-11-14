@@ -17,10 +17,13 @@ from PySide6.QtWidgets import (
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import data_sources
 from lab_control.domain.instruments import AcquisitionRequest
+from lab_control.domain.workspace import CATEGORY_LABELS
 from lab_control.ui.controller import state_label
+from lab_control.ui.pages.monitoring.channel_selection import readable_power_channels
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.power_controls import PowerControls
 from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS, PowerPlot
+from lab_control.ui.pages.monitoring.power_readouts import PowerReadouts
 from lab_control.ui.pages.monitoring.recording_state import (
     RecordingButton,
     recording_phase,
@@ -32,11 +35,12 @@ from lab_control.ui.widgets.device_selector import DeviceSelector
 
 
 class PowerMonitoringPage(QWidget):
-    def __init__(self, controller, add_card, parent=None):
+    def __init__(self, controller, add_card, parent=None, *, category="power_supply"):
         super().__init__(parent)
         self.controller, self.add_card = controller, add_card
         self.device_id, self.mode = "", controller.mode
         self.controls: PowerControls | None = None
+        self.readouts = PowerReadouts() if category == "electronic_load" else None
         self.channel_checks: dict[int, QCheckBox] = {}
         self.choices: dict[tuple[str, str], tuple[int, ...]] = {}
         self.transition = False
@@ -47,7 +51,7 @@ class PowerMonitoringPage(QWidget):
         layout.setContentsMargins(14, 10, 14, 12)
         layout.setSpacing(8)
         header = QHBoxLayout()
-        self.selector = DeviceSelector(controller, "power_supply", self, compact=True, surface="monitoring")
+        self.selector = DeviceSelector(controller, category, self, compact=True, surface="monitoring")
         header.addWidget(self.selector, 1)
         self.connection = QLabel()
         self.connection.setObjectName("sourceConnectionState")
@@ -56,7 +60,7 @@ class PowerMonitoringPage(QWidget):
         self.start_button.clicked.connect(self.toggle_monitoring)
         header.addWidget(self.start_button)
         layout.addLayout(header)
-        self.empty = QLabel("请先从总览连接电源，再选择设备。")
+        self.empty = QLabel(f"请先从总览连接{CATEGORY_LABELS[category]}，再选择设备。")
         layout.addWidget(self.empty)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
@@ -110,6 +114,8 @@ class PowerMonitoringPage(QWidget):
         self.right.setMaximumWidth(410)
         self.right_layout = QVBoxLayout(self.right)
         self.right_layout.setContentsMargins(6, 0, 0, 0)
+        if self.readouts is not None:
+            self.right_layout.addWidget(self.readouts)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setSizes([800, 390])
@@ -127,7 +133,11 @@ class PowerMonitoringPage(QWidget):
         if self.device_id in self.controller.group_devices or state.get("controlPending") or self.transition:
             self.selector.select(self.device_id)
             return
-        if (self.device_id, self.mode) == (device_id, self.controller.mode) and self.controls:
+        channels = readable_power_channels(self.controller, device_id) if device_id else ()
+        if (self.device_id, self.mode) == (device_id, self.controller.mode) and (
+            self.controls
+            or (self.readouts is not None and tuple(self.channel_checks) == channels and device_id)
+        ):
             return
         self.generation += 1
         self.device_id, self.mode = device_id, self.controller.mode
@@ -148,7 +158,6 @@ class PowerMonitoringPage(QWidget):
         self.empty.setVisible(not device_id)
         self.splitter.setVisible(bool(device_id))
         if device_id:
-            channels = self.controller.capabilities(device_id).channels
             selected = self.choices.get((device_id, self.mode), channels)
             with self.controller.runtime.monitoring.lock:
                 task = self.controller.runtime.monitoring.tasks.get(device_id)
@@ -165,7 +174,7 @@ class PowerMonitoringPage(QWidget):
                     )
             for ch in channels:
                 check = QCheckBox(f"CH {ch}")
-                color = CHANNEL_COLORS[(ch - 1) % 4]
+                color = CHANNEL_COLORS[(ch - 1) % len(CHANNEL_COLORS)]
                 check.setStyleSheet(
                     f"QCheckBox {{ color: {color}; }} "
                     f"QCheckBox::indicator:checked {{ background-color: {color}; border-color: {color}; }}"
@@ -176,9 +185,12 @@ class PowerMonitoringPage(QWidget):
                 self.channel_checks[ch] = check
                 self.channel_row.addWidget(check)
             self.channel_row.addStretch()
-            self.controls = PowerControls(self.controller, device_id)
-            self.right_layout.addWidget(self.controls)
-            self.controls.busy_changed.connect(lambda _busy: self.refresh())
+            if self.readouts is not None:
+                self.readouts.set_channels(channels)
+            else:
+                self.controls = PowerControls(self.controller, device_id)
+                self.right_layout.addWidget(self.controls)
+                self.controls.busy_changed.connect(lambda _busy: self.refresh())
         if self.isVisible():
             self.controller.focus_settings(device_id)
         self.refresh()
@@ -234,7 +246,7 @@ class PowerMonitoringPage(QWidget):
             self.start()
 
     def start(self, *, once=False) -> None:
-        if not self.controls or not self.channels():
+        if not self.device_id or not self.channels():
             return
         generation, device = self.generation, self.device_id
 
@@ -246,7 +258,11 @@ class PowerMonitoringPage(QWidget):
                 self.timing.commit()
                 self.controller.start_monitoring(
                     device,
-                    (AcquisitionRequest("scalar", self.channels(), points=1),),
+                    (
+                        AcquisitionRequest(
+                            "scalar", self.channels(), points=1, allow_setup=self.readouts is None
+                        ),
+                    ),
                     **self.timing.options(),
                     mode=self.mode,
                     once=once,
@@ -255,7 +271,7 @@ class PowerMonitoringPage(QWidget):
                 self.controller.message.emit(str(exc))
             self.refresh()
 
-        if not all(self.controls.current_settings(ch) for ch in self.controls.panels):
+        if self.controls and not all(self.controls.current_settings(ch) for ch in self.controls.panels):
             self.controls.read_parameters(begin)
         else:
             begin()
@@ -295,6 +311,10 @@ class PowerMonitoringPage(QWidget):
         if (self.selector.device_id, self.controller.mode) != (self.device_id, self.mode):
             self.select_device(self.selector.device_id)
             return
+        if self.readouts is not None and self.device_id and not self.transition:
+            if tuple(self.channel_checks) != readable_power_channels(self.controller, self.device_id):
+                self.select_device(self.device_id)
+                return
         state = self.controller.states.get(self.device_id, {})
         session = state.get("sessionId", "")
         if session and session != self.session_id:
@@ -362,6 +382,8 @@ class PowerMonitoringPage(QWidget):
             self.controls.show_measurements(
                 self.plot.displayed_frame, self.channels(), paused=not task.get("running")
             )
+        elif self.readouts is not None:
+            self.readouts.show_measurements(self.plot.displayed_frame, self.channels())
 
     def refresh_frame(self, device_id: str) -> None:
         if device_id != self.device_id or not self.isVisible():
@@ -372,6 +394,8 @@ class PowerMonitoringPage(QWidget):
             self.controller.runtime.monitoring.displayed(device_id, frame)
             if self.controls:
                 self.controls.show_measurements(self.plot.displayed_frame, self.channels())
+            elif self.readouts is not None:
+                self.readouts.show_measurements(frame, self.channels())
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)

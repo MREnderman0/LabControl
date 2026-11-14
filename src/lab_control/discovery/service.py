@@ -170,10 +170,24 @@ class DiscoveryService:
                         candidate = replace(candidate, error=str(exc), error_code=exc.code)
                 normalized_group.append(candidate)
             group = normalized_group
-            for candidate in group:
-                self.inventory.merge(candidate, scan_id, reason="pending_probe")
             # Explicit connection settings win, independently of provider completion order.
             chosen = max(group, key=lambda c: (bool(c.config.adapter), c.source == "configured"))
+            # USB bridges without a serial number only identify a COM endpoint.  An
+            # explicit instrument serial pins the intended asset for this scan; only
+            # the later identity response (or its active session) confirms presence.
+            serial_binding = None
+            if (
+                chosen.source == "configured"
+                and chosen.config.transport == "serial"
+                and chosen.config.adapter
+                and chosen.config.expected_serial
+                and not any(c.config.usb_instance_id for c in group)
+            ):
+                serial_binding = chosen.config
+            for candidate in group:
+                self.inventory.merge(
+                    candidate, scan_id, reason="pending_probe", serial_binding=serial_binding
+                )
             dhcp = [c for c in group if c.source == "dhcp_leases"]
             if dhcp:
                 # Retain the expected identity even when a configured/remembered
@@ -332,6 +346,20 @@ class DiscoveryService:
                 if leased:
                     identity, adapter = self.probe(candidate)
                     reason = "identified"
+                if (
+                    identity is not None
+                    and candidate.source == "configured"
+                    and candidate.config.transport == "serial"
+                    and candidate.config.expected_serial
+                    and identity.serial
+                    and identity.serial != candidate.config.expected_serial
+                ):
+                    actual = identity.serial
+                    identity = None
+                    raise DeviceError(
+                        f"串口设备序列号 {actual} 与配置的 {candidate.config.expected_serial} 不一致",
+                        "identity_conflict",
+                    )
                 expected = candidate.descriptor.get("expectedIdentityKey")
                 if expected and identity is not None and identity.key != expected:
                     actual = identity.key or identity.raw or identity.model

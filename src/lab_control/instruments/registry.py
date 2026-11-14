@@ -47,7 +47,7 @@ PENDING = {
     "GOCA-8-NK2603212": "Manufacturer/protocol required",
     "multi-channel optical power meter": "Model and protocol required",
     "temperature_controller": "Model and protocol required",
-    "electronic_load": "Model and protocol required",
+    "other electronic loads": "Exact model and protocol required",
     "other optical_spectrometers": "Exact model and protocol required; Ceyear 6362D has an independent module",
 }
 

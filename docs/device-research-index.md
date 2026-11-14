@@ -53,6 +53,7 @@
 | Siglent SPD4306X | `siglent.spd4306x` | USB / LAN VISA / 已配置 TCP Socket | [卡片](devices/power-supplies/spd4306x.md) |
 | SIGLENT SPS5000X 系列 | `siglent.sps5000x` | USB-TMC / LAN VXI-11 / TCP Socket 5025 | [卡片](devices/power-supplies/sps5000x.md) |
 | ITECH IT6322 | `itech.it6322` | RS-232 / 已安装 USB 或 GPIB 接口 | [卡片](devices/power-supplies/it6322.md) |
+| DUOHEYI DH-8318 | `duoheyi.dh8318` | RS232 交叉线，按面板波特率，8N1，LF | [卡片](devices/temperature-load-drivers/duoheyi-dh8318.md) |
 | RIGOL DG5504 Pro | `rigol.dg5504pro` | LAN / USB；优先 PyVISA | [卡片](devices/signal-sources/dg5504-pro.md) |
 | Tektronix AFG31252 | `tek.afg31252` | USB Device / LAN / GPIB（核对实际接口） | [卡片](devices/signal-sources/afg31252.md) |
 | Siglent SDG2082X | `siglent.sdg2082x` | USB USBTMC / LAN VXI-11，经 PyVISA 接入 | [卡片](devices/signal-sources/sdg2082x.md) |

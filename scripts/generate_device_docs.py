@@ -61,8 +61,10 @@ def render(definitions=None) -> dict[Path, str]:
         definition = definitions[adapter]
         profile = definition.profile
         caps = describe_definition(definition, config)
-        monitoring_page = caps.category in MEASUREMENT_CATEGORIES or (
-            caps.category == "power_supply" and not definition.management_surface
+        monitoring_page = (
+            definition.monitoring_only
+            or caps.category in MEASUREMENT_CATEGORIES
+            or (caps.category == "power_supply" and not definition.management_surface)
         )
         page = ("实时监测" if monitoring_page else "设备管理") + " / " + CATEGORY_LABELS[caps.category]
         fixture = definition.root / "tests/fixtures/control.json"

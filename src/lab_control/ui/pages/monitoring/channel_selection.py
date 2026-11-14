@@ -3,6 +3,13 @@
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 
 
+def readable_power_channels(controller, device_id: str) -> tuple[int, ...]:
+    snapshot = controller.runtime.sessions.capability_snapshot(device_id)
+    if snapshot is not None:
+        return tuple(snapshot.channels)
+    return tuple(controller.capabilities(device_id).channels)
+
+
 def instrument_scan_channels(controller, device_id: str) -> tuple[int, ...] | None:
     """Use the model's cached scan list without any UI-side instrument queries."""
     snapshot = controller.runtime.sessions.capability_snapshot(device_id)

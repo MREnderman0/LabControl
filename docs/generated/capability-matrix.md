@@ -25,6 +25,7 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 | Siglent SPD4306X | `siglent.spd4306x` | 22 | power | [型号卡片](../devices/power-supplies/spd4306x.md) |
 | SIGLENT SPS5000X 系列 | `siglent.sps5000x` | 6 | power | [型号卡片](../devices/power-supplies/sps5000x.md) |
 | ITECH IT6322 | `itech.it6322` | 8 | power | [型号卡片](../devices/power-supplies/it6322.md) |
+| DUOHEYI DH-8318 | `duoheyi.dh8318` | 2 | power | [型号卡片](../devices/temperature-load-drivers/duoheyi-dh8318.md) |
 | RIGOL DG5504 Pro | `rigol.dg5504pro` | 41 | 外部仪器测量输出 | [型号卡片](../devices/signal-sources/dg5504-pro.md) |
 | Tektronix AFG31252 | `tek.afg31252` | 37 | 外部仪器测量输出 | [型号卡片](../devices/signal-sources/afg31252.md) |
 | Siglent SDG2082X | `siglent.sdg2082x` | 42 | 外部仪器测量输出 | [型号卡片](../devices/signal-sources/sdg2082x.md) |
@@ -89,5 +90,5 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 | GOCA-8-NK2603212 | 待补信息：Manufacturer/protocol required |
 | multi-channel optical power meter | 待补信息：Model and protocol required |
 | temperature_controller | 待补信息：Model and protocol required |
-| electronic_load | 待补信息：Model and protocol required |
+| other electronic loads | 待补信息：Exact model and protocol required |
 | other optical_spectrometers | 待补信息：Exact model and protocol required; Ceyear 6362D has an independent module |

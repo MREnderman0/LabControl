@@ -26,6 +26,7 @@ DEVICE_MODULES = (
     "lab_control.instruments.devices.siglent_spd4306x",
     "lab_control.instruments.devices.siglent_sps5000x",
     "lab_control.instruments.devices.itech_it6322",
+    "lab_control.instruments.devices.duoheyi_dh8318",
     "lab_control.instruments.devices.rigol_dg5504pro",
     "lab_control.instruments.devices.tek_afg31252",
     "lab_control.instruments.devices.siglent_sdg2082x",
