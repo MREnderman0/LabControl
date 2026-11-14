@@ -413,13 +413,18 @@ class ApplicationRuntime:
         future.add_done_callback(save_identity)
         return saved
 
+    @staticmethod
+    def _slot_name(name: str) -> str:
+        name = name.strip()
+        if not name or len(name) > 64 or any(ord(char) < 32 or ord(char) == 127 for char in name):
+            raise ValidationError("槽位名称须为 1～64 个字符，不能包含换行或控制字符")
+        return name
+
     def create_slot(self, category: str, name: str, mode: str = GENERAL) -> str:
         """Create a named slot, or select the existing slot with the same name."""
         if category not in CATEGORY_LABELS or mode not in WORKSPACE_MODES:
             raise ValidationError("Unknown slot category or workspace mode")
-        name = name.strip()
-        if not name or len(name) > 64 or any(ord(char) < 32 or ord(char) == 127 for char in name):
-            raise ValidationError("槽位名称须为 1～64 个字符，不能包含换行或控制字符")
+        name = self._slot_name(name)
         with self.inventory.lock:
             definitions = self.repository.function_slots.definitions(category, mode)
             for slot, label in definitions.items():
@@ -430,6 +435,24 @@ class ApplicationRuntime:
             self.repository.function_slots.save(category, mode, definitions)
             self.repository.audit("slot_created", slot=slot, label=name, mode=mode)
             return slot
+
+    def rename_slot(self, slot: str, name: str, mode: str = GENERAL) -> None:
+        category = slot.partition(":")[0]
+        if category not in CATEGORY_LABELS or mode not in WORKSPACE_MODES:
+            raise ValidationError("Unknown slot category or workspace mode")
+        name = self._slot_name(name)
+        with self.inventory.lock:
+            definitions = self.repository.function_slots.definitions(category, mode)
+            if slot not in definitions:
+                raise ValidationError("槽位已删除，请重新选择")
+            old = definitions[slot]
+            if old == name:
+                return
+            if any(key != slot and label.casefold() == name.casefold() for key, label in definitions.items()):
+                raise ValidationError("同类设备已有此槽位名称，请换一个名称")
+            definitions[slot] = name
+            self.repository.function_slots.save(category, mode, definitions)
+            self.repository.audit("slot_renamed", slot=slot, previous_label=old, label=name, mode=mode)
 
     def delete_slot(self, slot: str, mode: str = GENERAL) -> None:
         from lab_control.domain.instruments import DeviceError

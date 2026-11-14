@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from lab_control.application.acquisition_pipeline import validate_displayed_batch
 from lab_control.domain.instruments import DeviceError
@@ -14,6 +23,7 @@ from lab_control.ui.pages.monitoring.optical_power import (
     PowerMeterReadoutCard,
     _scalar,
 )
+from lab_control.ui.pages.monitoring.readout_columns import add_readout_column
 
 
 class ScanTrendPlot(OpticalPowerPlot):
@@ -75,9 +85,6 @@ class ScanReadoutCard(PowerMeterReadoutCard):
     display_unit = ""
     WIDTH = 260
     HEIGHT = 28
-    CHANNEL_WIDTH = 72
-    UNIT_WIDTH = 22
-    PEAK_WIDTH = 88
 
     def __init__(self, channel: int, parent=None) -> None:
         super().__init__(channel, parent)
@@ -94,21 +101,19 @@ class ScanReadoutCard(PowerMeterReadoutCard):
         layout.removeWidget(self.value)
         self.heading.takeAt(1)  # The former card header's stretch would squeeze the reading.
         self.heading.setSpacing(6)
-        self.channel_label.setFixedWidth(self.CHANNEL_WIDTH)
-        self.heading.addWidget(self.value, 1)
+        self.channel_label.hide()
+        self.check = QCheckBox()
+        self.check.setStyleSheet(self.channel_label.styleSheet())
         self.value.setObjectName("scanReadoutValue")
-        self.value.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.value.setText("—")
         self.unit = QLabel(self.display_unit)
         self.unit.setObjectName("scanReadoutUnit")
-        self.unit.setFixedWidth(self.UNIT_WIDTH)
         self.unit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.heading.addWidget(self.unit)
         self.peak = QLabel("—")
         self.peak.setObjectName("scanReadoutValue")
-        self.peak.setFixedWidth(self.PEAK_WIDTH)
         self.peak.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.heading.addWidget(self.peak)
+        scan_columns(self.heading, (self.check, self.value, self.unit, self.peak))
 
     def display_value(self, value: float, unit: str) -> float | None:
         return value
@@ -147,6 +152,12 @@ class ScanReadoutCard(PowerMeterReadoutCard):
         )
 
 
+def scan_columns(layout: QHBoxLayout, fields: tuple[QWidget, ...]) -> None:
+    layout.setSpacing(6)
+    for field, (width, stretch) in zip(fields, ((65, 2), (53, 1), (27, 0), (78, 0)), strict=True):
+        add_readout_column(layout, field, width, stretch)
+
+
 def scan_readout_header(parent=None) -> QWidget:
     header = QWidget(parent)
     grid = QGridLayout(header)
@@ -156,22 +167,15 @@ def scan_readout_header(parent=None) -> QWidget:
         group = QWidget(header)
         row = QHBoxLayout(group)
         row.setContentsMargins(4, 0, 4, 0)
-        row.setSpacing(6)
         channel, value, unit = QLabel("曲线 · 通道"), QLabel("读数"), QLabel("单位")
         channel.setObjectName("powerReadoutHeading")
         value.setObjectName("powerReadoutHeading")
         unit.setObjectName("powerReadoutHeading")
-        channel.setFixedWidth(ScanReadoutCard.CHANNEL_WIDTH)
-        unit.setFixedWidth(ScanReadoutCard.UNIT_WIDTH)
-        value.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(channel)
-        row.addWidget(value, 1)
-        row.addWidget(unit)
+        value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         peak = QLabel("峰峰值 · 30 min")
         peak.setObjectName("powerReadoutHeading")
-        peak.setFixedWidth(ScanReadoutCard.PEAK_WIDTH)
         peak.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(peak)
+        scan_columns(row, (channel, value, unit, peak))
         grid.addWidget(group, 0, column)
         grid.setColumnStretch(column, 1)
     header.setFixedHeight(26)
@@ -242,16 +246,6 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
 
     def select_device(self, device_id: str) -> None:
         super().select_device(device_id)
-        for channel, check in self.channel_checks.items():
-            self.channel_row.removeWidget(check)
-            card = self.cards[channel]
-            assert isinstance(card, ScanReadoutCard)
-            card.channel_label.hide()
-            check.setStyleSheet(card.channel_label.styleSheet())
-            check.setMinimumWidth(ScanReadoutCard.CHANNEL_WIDTH)
-            check.setAccessibleName(f"CH {channel} 曲线显示")
-            check.setToolTip("仅控制此通道曲线显示；监测与记录保留完整扫描列表")
-            card.heading.insertWidget(0, check)
         self.channel_title.setText(
             f"仪器扫描 {len(self.channels())} 路 · 记录保留全部通道 · 勾选显示曲线"
             if self.channels()

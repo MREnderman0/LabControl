@@ -9,8 +9,11 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QPushButton,
     QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
@@ -130,6 +133,13 @@ class SlotComboBox(WorkspaceComboBox):
         return super().eventFilter(watched, event)
 
 
+def edit_slot_name(parent, runtime: ApplicationRuntime, slot: str, mode: str) -> None:
+    label = runtime.repository.function_slots.label(slot, mode)
+    name, accepted = QInputDialog.getText(parent, "重命名槽位", "槽位名称", text=label)
+    if accepted:
+        runtime.rename_slot(slot, name, mode)
+
+
 class SlotBindingDialog(QDialog):
     def __init__(self, runtime: ApplicationRuntime, device_id: str, category: str, mode: str, parent=None):
         super().__init__(parent)
@@ -144,11 +154,21 @@ class SlotBindingDialog(QDialog):
         self.combo.createRequested.connect(self._create)
         self.combo.deleteRequested.connect(self._delete)
         self.combo.refreshRequested.connect(self.refresh)
-        layout.addWidget(self.combo)
-        note = QLabel("新建和删除立即保存，点击“确定”应用绑定。")
-        note.setObjectName("mutedText")
-        note.setWordWrap(True)
-        layout.addWidget(note)
+        row = QHBoxLayout()
+        row.addWidget(self.combo, 1)
+        self.rename_button = QPushButton("重命名槽位")
+        self.rename_button.setAutoDefault(False)
+        self.rename_button.clicked.connect(self._rename)
+        self.combo.currentIndexChanged.connect(
+            lambda: self.rename_button.setEnabled(bool(self.combo.currentData()))
+        )
+        row.addWidget(self.rename_button)
+        layout.addLayout(row)
+        self.note = QLabel("新建、改名和删除立即保存。点击“确定”应用绑定。")
+        self.note.setObjectName("mutedText")
+        self.note.setTextFormat(Qt.TextFormat.PlainText)
+        self.note.setWordWrap(True)
+        layout.addWidget(self.note)
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
         )
@@ -160,6 +180,15 @@ class SlotBindingDialog(QDialog):
         self.refresh()
         record = next(r for r in runtime.inventory.all() if r["id"] == device_id)
         self.combo.setCurrentIndex(self.combo.findData(record.get("slots", {}).get(mode, "")))
+        self.rename_button.setEnabled(bool(self.combo.currentData()))
+
+    def _rename(self) -> None:
+        try:
+            edit_slot_name(self, self.runtime, self.combo.currentData(), self.mode)
+            self.note.setText("新建、改名和删除立即保存。点击“确定”应用绑定。")
+        except Exception as exc:
+            self.note.setText(str(exc))
+        self.refresh()
 
     def refresh(self) -> None:
         owners = {

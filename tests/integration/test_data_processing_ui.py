@@ -104,12 +104,43 @@ def make_record(
 def test_recorded_names_in_viewer_and_numeric_csv(qtbot, tmp_path, service):
     context = make_record(tmp_path, names={"2": "参考光"})
     viewer = open_view(qtbot, service, context)
-    assert viewer.channels.item(1).text() == "参考光（CH2）"
+    assert viewer.channels.topLevelItem(1).text(0) == "参考光（CH2）"
     assert [row[0] for row in viewer.plot_data] == ["CH 1", "参考光（CH2）"]
     assert "CH2：参考光" in (context.folder / "记录说明.txt").read_text("utf-8-sig")
     csv = next(viewer.reader.folder.glob("数据_*.csv"))
     header = csv.read_text("utf-8-sig").splitlines()[0]
     assert "参考光" not in header and "CH2" in header
+
+
+def test_temperature_history_separates_channel_and_peak_columns(qtbot, service):
+    viewer = ProcessingViewer(service)
+    qtbot.addWidget(viewer)
+    viewer.info = {
+        "recording": {"channel_names": {"2": "长名称" * 16}},
+        "series": [{"id": str(ch), "channel": ch, "quantity": "temperature", "unit": "°C"} for ch in (1, 2)],
+        "temperature_statistics": {
+            "start_elapsed": 0,
+            "end_elapsed": 10,
+            "channels": [
+                {
+                    "series_id": str(ch),
+                    "count": 3,
+                    "minimum": 10,
+                    "maximum": 10 + ch,
+                    "peak_to_peak": ch,
+                    "unit": "°C",
+                }
+                for ch in (1, 2)
+            ],
+        },
+    }
+    viewer.group.addItem("温度", ("temperature", "°C", ""))
+    viewer._group_changed()
+    assert not viewer.channels.isColumnHidden(1)
+    assert [viewer.channels.topLevelItem(i).text(1) for i in (0, 1)] == ["1 °C", "2 °C"]
+    assert viewer.channels.topLevelItem(1).toolTip(0) == "长名称" * 16 + "（CH2）"
+    viewer.channels.topLevelItem(0).setCheckState(0, Qt.CheckState.Unchecked)
+    assert [s["channel"] for s in viewer.selected()] == [2]
 
 
 @pytest.fixture
@@ -145,7 +176,7 @@ def test_scalar_full_range_channels_watts_and_no_timeline(qtbot, service, tmp_pa
     assert viewer.plot_data[0][1][-1] == 14
     assert len(viewer.plot_data) == 2
     assert not viewer.timeline_row.isVisible()
-    viewer.channels.item(1).setCheckState(Qt.CheckState.Unchecked)
+    viewer.channels.topLevelItem(1).setCheckState(0, Qt.CheckState.Unchecked)
     viewer.watts.setChecked(True)
     qtbot.waitUntil(lambda: len(viewer.plot_data) == 1 and viewer.plot_data[0][2][0] > 0)
     assert viewer.plot_data[0][2][0] == pytest.approx(1e-4)
@@ -233,7 +264,7 @@ def test_history_classification_device_detail_process_and_corrupt_result(qtbot, 
     assert not any("导出" in button.text() for button in page.viewer.findChildren(QPushButton))
     page.process_button.click()
     qtbot.waitUntil(lambda: bool(page.viewer.plot_data), timeout=5000)
-    page.viewer.channels.item(1).setCheckState(Qt.CheckState.Unchecked)
+    page.viewer.channels.topLevelItem(1).setCheckState(0, Qt.CheckState.Unchecked)
     qtbot.waitUntil(
         lambda: (
             len(page.viewer.plot_data) == 1
@@ -243,7 +274,7 @@ def test_history_classification_device_detail_process_and_corrupt_result(qtbot, 
         )
     )
     qtbot.waitUntil(lambda: not page.operations and "PNG 图片已自动保存" in page.message.text())
-    assert page.viewer.channels.item(1).checkState() == Qt.CheckState.Unchecked
+    assert page.viewer.channels.topLevelItem(1).checkState(0) == Qt.CheckState.Unchecked
     result = current_result(result_home(entry.folder, entry.devices[0]))
     (result.parent / "current.json").write_text("invalid")
     page.update_states()  # A bad result index must not crash the timer.
@@ -389,7 +420,7 @@ def test_fit_recovers_microsecond_waveform_after_far_pan_and_channel_toggle(qtbo
         assert yr[0] < y.min() and yr[1] > y.max()
         assert yr[1] - yr[0] == pytest.approx(np.ptp(y) * 1.08)
     color = viewer.plot.listDataItems()[1].opts["pen"].color().name()
-    viewer.channels.item(0).setCheckState(Qt.CheckState.Unchecked)
+    viewer.channels.topLevelItem(0).setCheckState(0, Qt.CheckState.Unchecked)
     qtbot.waitUntil(lambda: len(viewer.plot_data) == 1 and settled(viewer))
     assert viewer.plot.listDataItems()[0].opts["pen"].color().name() == color == COLORS[1]
 

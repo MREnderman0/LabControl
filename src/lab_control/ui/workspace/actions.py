@@ -129,6 +129,13 @@ class WorkspaceActions:
                 ChannelNamesDialog(window.runtime, device_id, window.controller.mode, window).exec()
             elif key == "slot":
                 window.choose_slot(device_id)
+            elif key == "rename_slot":
+                from lab_control.ui.widgets.slot_picker import edit_slot_name
+
+                mode = window.controller.mode
+                slot = window.records[device_id].get("slots", {}).get(mode)
+                if slot:
+                    edit_slot_name(window, window.runtime, slot, mode)
         except Exception as exc:
             window._failed(str(exc))
         window.refresh()
@@ -140,7 +147,9 @@ class WorkspaceActions:
         record = next(r for r in records if r["id"] == device_id)
         category = instrument_category(record)
         slot, accepted = choose_slot(window, window.runtime, device_id, category, mode)
-        if not accepted:
+        if not accepted or (
+            slot == record.get("slots", {}).get(mode, "") and not record.get("slotMigrationConflict")
+        ):
             return
         records = window.runtime.inventory.all()
         owners = {r.get("slots", {}).get(mode): r for r in records if r.get("slots", {}).get(mode)}

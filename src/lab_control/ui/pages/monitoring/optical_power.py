@@ -299,6 +299,7 @@ class RollingPowerPlot(OpticalPowerPlot):
 
 
 class PowerMeterReadoutCard(QFrame):
+    check: QCheckBox
     # Two cards must fit in the compact readout pane, including the grid gap
     # and the scroll area's margins.
     display_unit = "W"
@@ -394,7 +395,7 @@ class OpticalPowerMonitoringPage(QWidget):
         self.device_id, self.mode = "", "general"
         self.transition = False
         self.generation = 0
-        self._names_key = None
+        self._names_key: tuple[str, str | None, int] | None = None
         self.channel_checks: dict[int, QCheckBox] = {}
         self.cards: dict[int, PowerMeterReadoutCard | PowerMeterReadoutRow] = {}
         stored_unit = controller.runtime.repository.load_workspace(
@@ -639,12 +640,9 @@ class OpticalPowerMonitoringPage(QWidget):
                     else self.card_type(channel, self.readout_body)
                 )
                 if isinstance(card, PowerMeterReadoutRow):
-                    check = card.check
                     card.update_window(None, self.display_unit)
                     card.value.clicked.connect(self.toggle_display_unit)
-                else:
-                    check = QCheckBox(f"CH {channel}")
-                    self.channel_row.addWidget(check)
+                check = card.check
                 check.setChecked(channel in selected)
                 check.toggled.connect(self.channels_changed)
                 self.channel_checks[channel] = check

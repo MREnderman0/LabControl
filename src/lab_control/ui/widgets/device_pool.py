@@ -421,6 +421,8 @@ class DeviceDetails(QFrame):
                 value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
                 cell_layout.addWidget(value)
                 if key == "slot":
+                    self.rename_slot = QPushButton("重命名槽位")
+                    cell_layout.addWidget(self.rename_slot)
                     self.edit_channel_names = QPushButton("编辑通道名")
                     self.edit_channel_names.hide()
                     cell_layout.addWidget(self.edit_channel_names)

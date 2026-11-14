@@ -12,12 +12,13 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
     QSlider,
     QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -77,9 +78,15 @@ class ProcessingViewer(QWidget):
         self.temperature_note.hide()
         layout.addWidget(self.temperature_note)
         split = QSplitter()
-        self.channels = QListWidget()
-        self.channels.setMaximumWidth(220)
-        self.channels.itemChanged.connect(lambda _item: self.request(fit=True))
+        self.channels = QTreeWidget()
+        self.channels.setRootIsDecorated(False)
+        self.channels.setHeaderLabels(["通道", "峰峰值"])
+        self.channels.header().setStretchLastSection(False)
+        self.channels.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.channels.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.channels.setColumnHidden(1, True)
+        self.channels.setHeaderHidden(True)
+        self.channels.itemChanged.connect(lambda _item, _column: self.request(fit=True))
         split.addWidget(self.channels)
         self.plot = pg.PlotWidget(background="#131c21")
         self.plot.disableAutoRange()
@@ -158,37 +165,43 @@ class ProcessingViewer(QWidget):
         self.temperature_note.setVisible(bool(group and group[0] == "temperature"))
         stats = self.info.get("temperature_statistics", {})
         by_series = {row["series_id"]: row for row in stats.get("channels", [])}
+        show_peaks = bool(group and group[0] == "temperature" and by_series)
+        self.channels.setColumnHidden(1, not show_peaks)
+        self.channels.setHeaderHidden(not show_peaks)
+        self.channels.setMaximumWidth(340 if show_peaks else 220)
         self.watts.blockSignals(True)
         self.watts.setChecked(bool(group and group[1] == "W"))
         self.watts.blockSignals(False)
         for series in self.info.get("series", []):
             if (series["quantity"], series.get("unit", ""), series.get("axis_unit", "")) != group:
                 continue
-            item = QListWidgetItem(self._channel_name(series))
+            name = self._channel_name(series)
+            item = QTreeWidgetItem([name])
+            item.setToolTip(0, name)
             if series["id"] in by_series:
                 row = by_series[series["id"]]
                 peak = row["peak_to_peak"]
-                item.setText(
-                    f"{self._channel_name(series)} · 峰峰值 "
-                    + ("—" if peak is None else f"{peak:.6g} {row['unit']}")
-                )
+                item.setText(1, "—" if peak is None else f"{peak:.6g} {row['unit']}")
+                item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setToolTip(
+                    1,
                     f"统计区间：{stats['start_elapsed']:g}–{stats['end_elapsed']:g} s（记录末尾 30 min）\n"
                     f"样本数：{row['count']}\n最小值：{row['minimum']} {row['unit']}\n"
-                    f"最大值：{row['maximum']} {row['unit']}\n峰峰值：{peak} {row['unit']}"
+                    f"最大值：{row['maximum']} {row['unit']}\n峰峰值：{peak} {row['unit']}",
                 )
-            item.setData(Qt.ItemDataRole.UserRole, series)
+            item.setData(0, Qt.ItemDataRole.UserRole, series)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked)
-            self.channels.addItem(item)
+            item.setCheckState(0, Qt.CheckState.Checked)
+            self.channels.addTopLevelItem(item)
         self.channels.blockSignals(False)
         self.request(fit=True)
 
     def selected(self) -> list[dict]:
+        items = (self.channels.topLevelItem(i) for i in range(self.channels.topLevelItemCount()))
         return [
-            self.channels.item(i).data(Qt.ItemDataRole.UserRole)
-            for i in range(self.channels.count())
-            if self.channels.item(i).checkState() == Qt.CheckState.Checked
+            item.data(0, Qt.ItemDataRole.UserRole)
+            for item in items
+            if item is not None and item.checkState(0) == Qt.CheckState.Checked
         ]
 
     def fit_all(self) -> None:

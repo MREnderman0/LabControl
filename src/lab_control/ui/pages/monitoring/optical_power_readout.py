@@ -3,29 +3,26 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QLabel, QPushButton, QSizePolicy, QWidget
+from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QWidget
 
 from lab_control.application.power_window import PowerChannelSnapshot
 from lab_control.domain.power import power_span, watts_to_dbm
 from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS
+from lab_control.ui.pages.monitoring.readout_columns import add_readout_column
 
 
-def row_layout(widget: QWidget) -> QGridLayout:
-    layout = QGridLayout(widget)
+def set_columns(widget: QWidget, fields: tuple[QWidget, ...]) -> None:
+    layout = QHBoxLayout(widget)
     layout.setContentsMargins(4, 0, 4, 0)
-    layout.setHorizontalSpacing(8)
-    layout.setVerticalSpacing(0)
-    layout.setColumnMinimumWidth(0, 28)
-    layout.setColumnMinimumWidth(1, 46)
-    layout.setColumnStretch(2, 1)
-    layout.setColumnStretch(3, 1)
-    return layout
+    layout.setSpacing(8)
+    for field, (width, stretch) in zip(fields, ((28, 0), (46, 2), (85, 1), (85, 1)), strict=True):
+        add_readout_column(layout, field, width, stretch)
 
 
 def readout_header(parent=None) -> QWidget:
     header = QWidget(parent)
     header.setObjectName("powerReadoutHeader")
-    layout = row_layout(header)
+    fields = []
     for column, text in enumerate(("监测", "通道", "功率", "峰峰值 · 30 min")):
         label = QLabel(text)
         label.setObjectName("powerReadoutHeading")
@@ -33,7 +30,8 @@ def readout_header(parent=None) -> QWidget:
             Qt.AlignmentFlag.AlignVCenter
             | (Qt.AlignmentFlag.AlignRight if column >= 2 else Qt.AlignmentFlag.AlignLeft)
         )
-        layout.addWidget(label, 0, column)
+        fields.append(label)
+    set_columns(header, tuple(fields))
     header.setFixedHeight(26)
     return header
 
@@ -48,27 +46,19 @@ class PowerMeterReadoutRow(QFrame):
         self.setObjectName("powerMeterReadoutRow")
         self.setFixedHeight(28)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout = row_layout(self)
         self.check = QCheckBox()
         self.check.setAccessibleName(f"CH {channel} 参与监测")
         self.check.setToolTip("参与此通道的监测与记录；取消后保留最近 30 分钟历史")
-        layout.addWidget(self.check, 0, 0)
         self.channel_label = QLabel(f"CH {channel}")
         self.channel_label.setObjectName("powerReadoutChannel")
-        layout.addWidget(self.channel_label, 0, 1)
         self.value = QPushButton("— W")
         self.value.setObjectName("powerReadoutValue")
         self.value.setCursor(Qt.CursorShape.PointingHandCursor)
         self.value.setAccessibleName(f"CH {channel} 功率；点击切换全部读数和曲线单位")
-        self.value.setMinimumWidth(0)
-        self.value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self.value, 0, 2)
         self.peak = QLabel("— W")
         self.peak.setObjectName("powerReadoutPeak")
         self.peak.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.peak.setMinimumWidth(0)
-        self.peak.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self.peak, 0, 3)
+        set_columns(self, (self.check, self.channel_label, self.value, self.peak))
         self.set_selected(True)
 
     def set_selected(self, selected: bool) -> None:

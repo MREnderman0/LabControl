@@ -232,6 +232,7 @@ class WorkspaceOverview:
         window.pool_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         list_layout.addWidget(window.pool_empty, 1)
         window.details = DeviceDetails()
+        window.details.rename_slot.clicked.connect(lambda: window.action("rename_slot"))
         window.details.edit_channel_names.clicked.connect(lambda: window.action("channel_names"))
         window.action_buttons = {}
         window.pool_more = QPushButton("更多  ···")
@@ -552,6 +553,9 @@ class WorkspaceOverview:
         window = self.window
         record = window.records.get(window.selected_id)
         definition = DEVICE_DEFINITIONS.get((record or {}).get("adapterId", ""))
+        window.details.rename_slot.setVisible(
+            bool((record or {}).get("slots", {}).get(window.controller.mode))
+        )
         window.details.edit_channel_names.setVisible(bool(definition and definition.nameable_channels))
         state = window.states.get(window.selected_id, {})
         busy = bool(state.get("pending")) or state.get("connectionState") in {"busy", "connecting"}
