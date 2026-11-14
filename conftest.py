@@ -1,6 +1,7 @@
 """Shared software-test setup for public and model-owned test trees."""
 
 import gc
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -18,6 +19,21 @@ def pytest_configure(config):
         root = Path(__file__).resolve().parent / ".temp"
         root.mkdir(exist_ok=True)
         config.option.basetemp = tempfile.mkdtemp(prefix="p", dir=root)
+
+
+@pytest.fixture
+def load_capability_contract():
+    """Read versioned model contracts using the original behavior for absent optional fields."""
+
+    def load(path):
+        contract = json.loads(path.read_text(encoding="utf-8"))
+        for operation in contract["capabilities"]["operations"]:
+            operation.setdefault("partial_update", "none")
+            for parameter in operation["parameters"].values():
+                parameter.setdefault("resolution", None)
+        return contract
+
+    return load
 
 
 @pytest.fixture

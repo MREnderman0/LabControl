@@ -17,7 +17,7 @@ ROOT = Path(__file__).parents[2]
 
 
 @pytest.mark.parametrize("definition", registry.DEVICE_DEFINITIONS.values(), ids=registry.DEVICE_DEFINITIONS)
-def test_declared_capabilities_units_ranges_and_wire_templates(definition):
+def test_declared_capabilities_units_ranges_and_wire_templates(definition, load_capability_contract):
     profile = definition.profile
     fixtures = definition.root / "tests/fixtures"
     # Keep the immutable migration evidence. Later model changes declare a new contract.
@@ -25,12 +25,7 @@ def test_declared_capabilities_units_ranges_and_wire_templates(definition):
     contract = fixtures / "capabilities-current.json"
     if not contract.exists():
         contract = fixtures / "capabilities-before.json"
-    before = json.loads(contract.read_text(encoding="utf-8"))
-    # Older capability snapshots omit the newly optional resolution field.
-    for operation in before["capabilities"]["operations"]:
-        operation.setdefault("partial_update", "none")
-        for parameter in operation["parameters"].values():
-            parameter.setdefault("resolution", None)
+    before = load_capability_contract(contract)
     assert (
         jsonable(registry.describe(ConnectionConfig("metadata://test", definition.adapter_id)))
         == before["capabilities"]
