@@ -6,7 +6,7 @@ from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation, DeviceModel
 
 from .adapter import ADAPTER_ID, RecorderAdapter, capability_schema
-from .protocol import SOURCE, create_transport, discovery_config
+from .protocol import SOURCE, Settings, create_transport, discovery_config
 
 
 def _verify(*args, **kwargs):
@@ -45,6 +45,7 @@ DEFINITION = DeviceDefinition(
     monitoring_only=True,
     acquisition_kinds=("scalar",),
     acquisition_initiate_editable=False,
+    nameable_channels=lambda config: Settings.from_config(config).channels,
     offline_processing=ProcessingProfile("scalar"),
     readonly_check=_verify,
 )

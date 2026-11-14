@@ -50,7 +50,11 @@ class FrameExportService:
             if owner.closing or device_id in owner.display_exports or device_id in owner.capture_saves:
                 raise DeviceError("当前帧正在保存，请等待完成", "task_busy")
             context = owner.repository.new_save_context(
-                mode, "single_frame", device_id=device_id, identity=frame.batch.identity
+                mode,
+                "single_frame",
+                device_id=device_id,
+                identity=frame.batch.identity,
+                channels=tuple(m.channel for m in frame.batch.measurements),
             )
             future = owner.writer.submit(owner.repository.export, frame.batch, mode, context=context)
             owner.display_exports[device_id] = future
@@ -100,7 +104,9 @@ class FrameExportService:
                 raise DeviceError("请等待当前设置完成", "task_busy")
             result: Future[Any] = Future()
             result.set_running_or_notify_cancel()
-            context = owner.repository.new_save_context(mode, "single_frame", device_id=device_id)
+            context = owner.repository.new_save_context(
+                mode, "single_frame", device_id=device_id, channels=request.channels
+            )
             read = owner.sessions.submit(
                 device_id, "observe" if request.kind == "status" else "acquire", request
             )

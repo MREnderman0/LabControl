@@ -16,7 +16,7 @@ from lab_control.application.runtime import ApplicationRuntime
 from lab_control.discovery.presence import LIVE_CONNECTIONS
 from lab_control.domain.instruments import DeviceCommand, DeviceError
 from lab_control.domain.workspace import GENERAL, WORKSPACE_MODES
-from lab_control.instruments.registry import describe
+from lab_control.instruments.registry import DEVICE_DEFINITIONS, describe
 
 Job = tuple[Future[Any], Callable[[Any], None] | None, Callable[[Exception], None] | None]
 
@@ -222,6 +222,15 @@ class WorkspaceController(QObject):
         """Model capabilities before applying the current session's options and limits."""
         config = config_from_record(self.records[device_id])
         return control_capabilities(config, channel, schema=describe(config))
+
+    def channel_names(self, device_id: str) -> dict[str, str]:
+        record = self.records.get(device_id, {})
+        definition = DEVICE_DEFINITIONS.get(record.get("adapterId", ""))
+        if not definition or definition.nameable_channels is None:
+            return {}
+        return self.runtime.repository.function_slots.channel_names(
+            record.get("slots", {}).get(self.mode, ""), self.mode
+        )
 
     def capabilities(self, device_id: str, channel: int = 1):
         snapshot = self.runtime.sessions.capability_snapshot(device_id)

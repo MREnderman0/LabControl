@@ -476,6 +476,10 @@ def write_description(folder: Path, status: str, *, error: str = "") -> None:
         f"设备：{identity.get('manufacturer', '')} {identity.get('model', '未知')}",
         f"序列号：{identity.get('serial', '') or '未提供'}",
         f"设备槽位：{metadata.get('slot_label') or metadata.get('slot') or '未绑定／历史未记录'}",
+        *(
+            f"CH{ch}：{name}"
+            for ch, name in sorted(metadata.get("channel_names", {}).items(), key=lambda item: int(item[0]))
+        ),
         f"记录类型：{metadata.get('kind', '未知')}；模式：{metadata.get('mode', '未知')}",
         f"开始／保存时间：{metadata.get('started_local', '未知')}",
         f"开始 UTC：{metadata.get('started_utc', '未知')}",

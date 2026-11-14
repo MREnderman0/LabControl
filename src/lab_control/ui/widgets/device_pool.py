@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLayout,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
@@ -419,6 +420,10 @@ class DeviceDetails(QFrame):
                 value.setMinimumWidth(0)
                 value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
                 cell_layout.addWidget(value)
+                if key == "slot":
+                    self.edit_channel_names = QPushButton("编辑通道名")
+                    self.edit_channel_names.hide()
+                    cell_layout.addWidget(self.edit_channel_names)
                 self.values[key] = value
                 grid.addWidget(cell, row, column, 1, 2 if full else 1)
                 if full or column == 1:

@@ -248,7 +248,7 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
             assert isinstance(card, ScanReadoutCard)
             card.channel_label.hide()
             check.setStyleSheet(card.channel_label.styleSheet())
-            check.setFixedWidth(ScanReadoutCard.CHANNEL_WIDTH)
+            check.setMinimumWidth(ScanReadoutCard.CHANNEL_WIDTH)
             check.setAccessibleName(f"CH {channel} 曲线显示")
             check.setToolTip("仅控制此通道曲线显示；监测与记录保留完整扫描列表")
             card.heading.insertWidget(0, check)

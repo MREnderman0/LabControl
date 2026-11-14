@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import replace
+from html import escape
 from typing import Any
 
 import numpy as np
@@ -31,6 +32,7 @@ from lab_control.application.power_window import PowerWindowSnapshot
 from lab_control.domain.instruments import AcquisitionRequest, DeviceError, Measurement
 from lab_control.domain.power import power_to_watts as power_to_watts
 from lab_control.domain.power import watts_to_dbm
+from lab_control.domain.workspace import channel_label
 from lab_control.ui.controller import WorkspaceController, state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.optical_power_readout import PowerMeterReadoutRow, readout_header
@@ -76,6 +78,11 @@ class OpticalPowerPlot(QWidget):
         self.plot.getPlotItem().hideButtons()
         self.plot.setXRange(0, 600, padding=0)
         layout.addWidget(self.plot, 1)
+        self.names: dict[str, str] = {}
+        self.legend = pg.LegendItem(offset=(8, 8), colCount=2)
+        self.legend.setParentItem(self.plot.getViewBox())
+        self.legend.hide()
+        self._legend_signature: tuple = ()
         self.history: dict[int, deque[tuple[float, float]]] = {}
         self.curves: dict[int, Any] = {}
         self.channels: tuple[int, ...] = ()
@@ -86,8 +93,22 @@ class OpticalPowerPlot(QWidget):
         self.latest_time = 0.0
         self.follow_range = (0.0, 600.0)
 
+    def refresh_legend(self) -> None:
+        visible = tuple((ch, channel_label(self.names, ch)) for ch in self.channels if ch in self.curves)
+        signature = visible if any(str(ch) in self.names for ch, _ in visible) else ()
+        if signature == self._legend_signature:
+            return
+        self._legend_signature = signature
+        self.legend.clear()
+        for ch, label in signature:
+            self.legend.addItem(self.curves[ch], escape(label))
+        self.legend.setVisible(bool(signature))
+
     def reset(self) -> None:
         self.plot.clear()
+        self._legend_signature = ()
+        self.legend.clear()
+        self.legend.hide()
         self.plot.setXRange(0, 600, padding=0)
         self.history.clear()
         self.curves.clear()
@@ -151,7 +172,7 @@ class OpticalPowerPlot(QWidget):
             if channel not in self.curves:
                 self.curves[channel] = self.plot.plot(
                     pen=pg.mkPen(CHANNEL_COLORS[(channel - 1) % len(CHANNEL_COLORS)], width=1.8),
-                    name=f"CH {channel}",
+                    name=channel_label(self.names, channel),
                 )
             if history:
                 x, y = np.asarray(history, dtype=float).T
@@ -239,7 +260,7 @@ class RollingPowerPlot(OpticalPowerPlot):
             if channel not in self.curves:
                 self.curves[channel] = self.plot.plot(
                     pen=pg.mkPen(CHANNEL_COLORS[(channel - 1) % len(CHANNEL_COLORS)], width=1.8),
-                    name=f"CH {channel}",
+                    name=channel_label(self.names, channel),
                 )
             x, y = [], []
             previous_segment = None
@@ -373,6 +394,7 @@ class OpticalPowerMonitoringPage(QWidget):
         self.device_id, self.mode = "", "general"
         self.transition = False
         self.generation = 0
+        self._names_key = None
         self.channel_checks: dict[int, QCheckBox] = {}
         self.cards: dict[int, PowerMeterReadoutCard | PowerMeterReadoutRow] = {}
         stored_unit = controller.runtime.repository.load_workspace(
@@ -586,6 +608,7 @@ class OpticalPowerMonitoringPage(QWidget):
         if self.transition:
             return
         self.device_id, self.mode = device_id, "general"
+        self._names_key = None
         self.controller.focus_settings(device_id)
         self.generation += 1
         self.latest_frame = None
@@ -759,8 +782,32 @@ class OpticalPowerMonitoringPage(QWidget):
             if channel in self.channels() and isinstance(card, PowerMeterReadoutCard):
                 card.update_measurement(measurements.get(channel), displayed_frame.batch.timestamp)
 
+    def refresh_channel_names(self) -> None:
+        slots = self.controller.runtime.repository.function_slots
+        record = self.controller.records.get(self.device_id, {})
+        key = (self.device_id, record.get("slots", {}).get(self.mode), slots.names_revision)
+        if key != self._names_key:
+            self._names_key = key
+            names = self.controller.channel_names(self.device_id)
+            self.plot.names = names
+            for ch, card in self.cards.items():
+                label = channel_label(names, ch)
+                card.channel_label.setTextFormat(Qt.TextFormat.PlainText)
+                card.channel_label.setText(label)
+                card.channel_label.setToolTip(label)
+                check = self.channel_checks[ch]
+                check.setAccessibleName(label)
+                if not self.rolling_power:
+                    check.setText(label.replace("&", "&&"))
+                    check.setToolTip(f"{label} · 仅控制曲线显示")
+                curve = self.plot.curves.get(ch)
+                if curve is not None:
+                    curve.opts["name"] = label
+        self.plot.refresh_legend()
+
     def refresh(self) -> None:
         device_id = self.device_id
+        self.refresh_channel_names()
         state = self.controller.states.get(device_id, {})
         task = self.controller.runtime.monitoring.snapshots().get(device_id, {})
         context_id = task.get("monitoring_context_id", "")

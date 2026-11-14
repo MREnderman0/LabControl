@@ -485,7 +485,7 @@ class Inventory:
                 for other in self.records.values():
                     if slot and other["id"] != device_id and other.get("slots", {}).get(mode) == slot:
                         raise DeviceError("Slot is already occupied", "slot_conflict")
-                record["slots"][mode] = slot
+                self._set_slot(record, mode, slot)
                 if mode == GENERAL:
                     record.pop("slotMigrationConflict", None)
             self.repository.save(record)
@@ -559,6 +559,13 @@ class Inventory:
             self.repository.save(record)
             self.records[device_id] = record
 
+    @staticmethod
+    def _set_slot(record: dict[str, Any], mode: str, slot: str) -> None:
+        slots = record.setdefault("slots", {})
+        if slots.get(mode, "") != slot:
+            record.setdefault("slotBindingRevision", {})[mode] = uuid4().hex
+        slots[mode] = slot
+
     def bind_slot(
         self, device_id: str, slot: str, mode: str, *, replace_device_id: str | None = None
     ) -> None:
@@ -577,13 +584,13 @@ class Inventory:
             elif owners:
                 raise DeviceError("该槽位已有设备绑定，请确认是否替换", "slot_conflict")
             record = deepcopy(self.records[device_id])
-            record.setdefault("slots", {})[mode] = slot
+            self._set_slot(record, mode, slot)
             if mode == GENERAL:
                 record.pop("slotMigrationConflict", None)
             changed = [record]
             for owner in owners:
                 previous = deepcopy(owner)
-                previous["slots"][mode] = ""
+                self._set_slot(previous, mode, "")
                 changed.append(previous)
             self.repository.save_many(tuple(changed))
             self.records.update((item["id"], item) for item in changed)

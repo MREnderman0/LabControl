@@ -36,7 +36,15 @@ from lab_control.ui.widgets.publication_figure import export_figure, prepare_pub
 
 
 def make_record(
-    root, *, array=False, batch=None, count=5, channels=(1, 2), spectrum=False, scope_adapter="rigol.dho924"
+    root,
+    *,
+    array=False,
+    batch=None,
+    count=5,
+    channels=(1, 2),
+    spectrum=False,
+    scope_adapter="rigol.dho924",
+    names=None,
 ):
     array |= spectrum
     scope_maker, scope_model, scope_quantity = {
@@ -57,6 +65,7 @@ def make_record(
         identity=identity,
         adapter_id="ceyear.6362d" if spectrum else scope_adapter if array else "joinwit.jw8105",
         batch=batch,
+        channel_names=names or {},
         started_at=datetime.fromisoformat("2026-10-31T10:00:00+08:00"),
     )
     context.prepare()
@@ -90,6 +99,17 @@ def make_record(
         {"committed": count, "binary_done": True, "analysis_state": "complete"},
     )
     return context
+
+
+def test_recorded_names_in_viewer_and_numeric_csv(qtbot, tmp_path, service):
+    context = make_record(tmp_path, names={"2": "参考光"})
+    viewer = open_view(qtbot, service, context)
+    assert viewer.channels.item(1).text() == "参考光（CH2）"
+    assert [row[0] for row in viewer.plot_data] == ["CH 1", "参考光（CH2）"]
+    assert "CH2：参考光" in (context.folder / "记录说明.txt").read_text("utf-8-sig")
+    csv = next(viewer.reader.folder.glob("数据_*.csv"))
+    header = csv.read_text("utf-8-sig").splitlines()[0]
+    assert "参考光" not in header and "CH2" in header
 
 
 @pytest.fixture

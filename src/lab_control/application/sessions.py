@@ -767,6 +767,7 @@ class SessionManager:
                 device_id=device_id,
                 identity=session.identity,
                 adapter_id=session.config.adapter,
+                channels=request.channels,
             )
             run_factory = None
             if request.kind in getattr(session.adapter, "recorded_run_kinds", ()):

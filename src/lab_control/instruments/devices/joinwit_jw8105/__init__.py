@@ -10,7 +10,7 @@ from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Jw8105Adapter
-from .profile import capability_schema, profile
+from .profile import capability_schema, configured_channels, profile
 from .transport import create_transport
 
 DEFINITION = DeviceDefinition(
@@ -27,6 +27,7 @@ DEFINITION = DeviceDefinition(
     transport_factory=create_transport,
     capability_schema=capability_schema,
     identity_requires_adapter=True,
+    nameable_channels=configured_channels,
     offline_processing=ProcessingProfile("scalar", power_units=True),
     multi_channel_sources=("reading",),
     metric_profiles=(OPTICAL_POWER_FLUCTUATION_PROFILE, OPTICAL_POWER_REFERENCE_DEVIATION_PROFILE),

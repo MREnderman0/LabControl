@@ -312,7 +312,11 @@ class MonitoringService:
         self.sessions.set_monitoring(device_id, True, True)
         try:
             context = self.repository.new_save_context(
-                next_mode, "continuous", device_id=device_id, batch=batch
+                next_mode,
+                "continuous",
+                device_id=device_id,
+                batch=batch,
+                channels=tuple(ch for request in task.requests for ch in request.channels),
             )
         except Exception:
             self._restore_recording_lock(device_id, previous_lock)

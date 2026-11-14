@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
+from html import escape
 from typing import Any
 
 import numpy as np
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.application.processing import ProcessingService
 from lab_control.domain.oscilloscope import COLORS, ScopeDisplay, engineering
+from lab_control.domain.workspace import channel_label
 from lab_control.storage.processing_results import ResultReader
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -144,6 +146,11 @@ class ProcessingViewer(QWidget):
         self.pending = (self.token, "info", self.reader, ())
         self._poll()
 
+    def _channel_name(self, series) -> str:
+        return channel_label(
+            self.info.get("recording", {}).get("channel_names", {}), series.get("channel", 1)
+        )
+
     def _group_changed(self) -> None:
         self.channels.blockSignals(True)
         self.channels.clear()
@@ -157,12 +164,12 @@ class ProcessingViewer(QWidget):
         for series in self.info.get("series", []):
             if (series["quantity"], series.get("unit", ""), series.get("axis_unit", "")) != group:
                 continue
-            item = QListWidgetItem(f"CH {series.get('channel', 1)}")
+            item = QListWidgetItem(self._channel_name(series))
             if series["id"] in by_series:
                 row = by_series[series["id"]]
                 peak = row["peak_to_peak"]
                 item.setText(
-                    f"CH {series.get('channel', 1)} · 峰峰值 "
+                    f"{self._channel_name(series)} · 峰峰值 "
                     + ("—" if peak is None else f"{peak:.6g} {row['unit']}")
                 )
                 item.setToolTip(
@@ -259,6 +266,7 @@ class ProcessingViewer(QWidget):
                 self._group_changed()
             return
         points = []
+        channel_numbers = []
         self.transfer_index = False
         self.scope_specs = {}
         selected = self.selected()
@@ -295,7 +303,8 @@ class ProcessingViewer(QWidget):
             elif power and not self.watts.isChecked() and series.get("unit") == "W":
                 with np.errstate(divide="ignore", invalid="ignore"):
                     y = np.where(np.asarray(y) > 0, 10 * np.log10(np.asarray(y) * 1e3), np.nan)
-            points.append((f"CH {series.get('channel', 1)}", x, y))
+            points.append((self._channel_name(series), x, y))
+            channel_numbers.append(series.get("channel", 1))
         available = bool(points) and len(self.scope_specs) == len(points)
         self.scope_view.setVisible(available)
         if not available:
@@ -304,7 +313,7 @@ class ProcessingViewer(QWidget):
         if signature != self._scope_signature:
             self._fit_pending = True
             self._scope_signature = signature
-        self._draw(points)
+        self._draw(points, channel_numbers)
         if kind == "frame":
             self.status.setText(
                 f"帧 {data['sequence']} / {self.info['frames']} · {data['timestamp']} · "
@@ -317,7 +326,7 @@ class ProcessingViewer(QWidget):
                 f"{self.info['range'][1]:.6g} s" + (f" · 原记录提示：{warning}" if warning else "")
             )
 
-    def _draw(self, points) -> None:
+    def _draw(self, points, channel_numbers=None) -> None:
         self._drawing = True
         try:
             self.plot.clear()
@@ -343,7 +352,7 @@ class ProcessingViewer(QWidget):
                     valid = np.isfinite(x) & np.isfinite(y)
                     order = np.argsort(x[valid], kind="stable")
                     self.cursor_data.append((name, x[valid][order], y[valid][order]))
-                channel = int(name.split()[-1]) - 1
+                channel = (channel_numbers[i] if channel_numbers is not None else int(name.split()[-1])) - 1
                 curve = self.plot.plot(
                     x,
                     displayed[i][2],
@@ -355,7 +364,7 @@ class ProcessingViewer(QWidget):
                     name=(
                         f"{name} · {engineering(self.scope_specs[name].units_per_div, self.scope_specs[name].unit)}/格"
                         if scope
-                        else name
+                        else escape(name)
                     ),
                     connect="finite",
                     symbol="o" if len(x) == 1 else None,

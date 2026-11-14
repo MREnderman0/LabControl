@@ -123,6 +123,10 @@ class WorkspaceActions:
                 value, accepted = QInputDialog.getText(window, "设备显示名", "名称")
                 if accepted:
                     window.runtime.inventory.edit(device_id, display_name=value)
+            elif key == "channel_names":
+                from lab_control.ui.widgets.channel_names import ChannelNamesDialog
+
+                ChannelNamesDialog(window.runtime, device_id, window.controller.mode, window).exec()
             elif key == "slot":
                 window.choose_slot(device_id)
         except Exception as exc:

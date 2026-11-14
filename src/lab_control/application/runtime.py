@@ -445,7 +445,7 @@ class ApplicationRuntime:
             if any(record.get("slots", {}).get(mode) == slot for record in self.inventory.all()):
                 raise DeviceError("该槽位已有设备绑定，请先解除绑定再删除", "slot_conflict")
             label = definitions.pop(slot)
-            self.repository.function_slots.save(category, mode, definitions)
+            self.repository.function_slots.delete(category, mode, slot, definitions)
             self.repository.audit("slot_deleted", slot=slot, label=label, mode=mode)
 
     def bind_slot(

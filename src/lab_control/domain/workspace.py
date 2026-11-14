@@ -22,6 +22,11 @@ CATEGORY_LABELS = {
 }
 
 
+def channel_label(names: dict[str, str], channel: int) -> str:
+    name = names.get(str(channel))
+    return f"{name}（CH{channel}）" if name else f"CH {channel}"
+
+
 def slot_label(slot: str) -> str:
     """Use the same logical slot names in the UI and saved measurement records."""
     category, _, index = slot.partition(":")

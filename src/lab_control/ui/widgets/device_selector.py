@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 from lab_control.application.bulk_connection import device_label
 from lab_control.application.catalog import surface_applicable
 from lab_control.application.controls import CATEGORY_LABELS
+from lab_control.domain.workspace import channel_label
 from lab_control.ui.controller import WorkspaceController, display_connection_state, state_label
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -26,6 +27,7 @@ class DeviceSelector(QWidget):
         super().__init__(parent)
         self.controller, self.category, self.surface = controller, category, surface
         self.device_id = ""
+        self._names_key = None
         self.signature: tuple[tuple[str, str], ...] | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -78,6 +80,13 @@ class DeviceSelector(QWidget):
         self.connect_button.setVisible(not bool(self.device_id))
         self.channel.setEnabled(bool(self.device_id))
         if record:
+            slots = self.controller.runtime.repository.function_slots
+            key = (self.device_id, record.get("slots", {}).get(self.controller.mode), slots.names_revision)
+            if key != self._names_key:
+                self._names_key = key
+                names = self.controller.channel_names(self.device_id)
+                for index in range(self.channel.count()):
+                    self.channel.setItemText(index, channel_label(names, self.channel.itemData(index)))
             identity = record["identity"]
             serial = identity.get("serial") or record["config"].get("expected_serial") or "未识别"
             serial_label = (
@@ -100,11 +109,13 @@ class DeviceSelector(QWidget):
         if device_id == self.device_id:
             return
         self.device_id = device_id
+        self._names_key = None
         self.channel.blockSignals(True)
         self.channel.clear()
         if device_id:
+            names = self.controller.channel_names(device_id)
             for channel in self.controller.capabilities(device_id).channels:
-                self.channel.addItem(f"CH {channel}", channel)
+                self.channel.addItem(channel_label(names, channel), channel)
         self.channel.blockSignals(False)
         self.selected.emit(device_id)
 

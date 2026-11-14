@@ -72,6 +72,7 @@ class SaveContext:
     layout_version: int = 2
     slot: str = ""
     slot_label: str = ""
+    channel_names: dict[str, str] = field(default_factory=dict, hash=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "root", self.root.absolute())
@@ -137,6 +138,7 @@ class SaveContext:
             "adapter_id": self.adapter_id,
             "slot": self.slot,
             "slot_label": self.slot_label,
+            "channel_names": self.channel_names,
             "identity": jsonable(self.identity),
         }
         with (self.raw_folder / "recording.json").open("x", encoding="utf-8") as stream:

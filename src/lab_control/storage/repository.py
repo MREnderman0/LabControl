@@ -152,6 +152,7 @@ class Repository:
         device_id: str = "",
         identity: DeviceIdentity | None = None,
         adapter_id: str = "",
+        channels: tuple[int, ...] | None = None,
         batch: BatchSaveContext | None = None,
     ) -> SaveContext:
         # Capture the binding and its label together, before an unbind/delete can intervene.
@@ -166,6 +167,18 @@ class Repository:
                 adapter_id = adapter_id or record.get("adapterId", "")
                 if identity is None and record.get("identity"):
                     identity = DeviceIdentity(**record["identity"])
+            from lab_control.instruments.registry import DEVICE_DEFINITIONS
+
+            definition = DEVICE_DEFINITIONS.get(adapter_id)
+            channel_names = (
+                self.function_slots.channel_names(slot, slot_mode)
+                if slot and definition and definition.nameable_channels is not None
+                else {}
+            )
+            if channels is not None:
+                channel_names = {
+                    str(ch): channel_names[str(ch)] for ch in channels if str(ch) in channel_names
+                }
             return SaveContext(
                 batch.root if batch else self.data_root,
                 mode,
@@ -175,6 +188,7 @@ class Repository:
                 adapter_id,
                 batch=batch,
                 slot=slot,
+                channel_names=channel_names,
                 slot_label=self.function_slots.label(slot, slot_mode) if slot else "",
             )
 
