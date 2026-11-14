@@ -157,6 +157,58 @@ def test_draft_is_not_overwritten_and_cancel_sends_nothing(qtbot, tmp_path, monk
         controller.close()
 
 
+@pytest.mark.parametrize("read_fails", [False, True])
+@pytest.mark.parametrize("write_fails", [False, True])
+def test_pending_write_owns_its_completion(qtbot, tmp_path, monkeypatch, read_fails, write_fails):
+    config = ConnectionConfig("mock://edit-order", "rs.fph", "mock")
+    with ApplicationRuntime((config,), root=tmp_path, hardware=False) as runtime:
+        key = runtime.add(config)
+        runtime.connect(key).result()
+        parent = QWidget()
+        qtbot.addWidget(parent)
+        controller = WorkspaceController(runtime, parent)
+        editor = OperationEditor(controller, key, controller.capabilities(key).get("center_frequency"), 1)
+        qtbot.addWidget(editor)
+        reads, writes = [], []
+        monkeypatch.setattr(controller, "watch", lambda future, done, fail: reads.append((done, fail)))
+        monkeypatch.setattr(
+            controller, "apply", lambda key, cmd, done, fail: writes.append((cmd, done, fail))
+        )
+        try:
+            editor.read()
+            editor.editors["value"].set_value(100e6)
+            editor.save_draft()
+            editor.apply()
+            pending_status = editor.status.text()
+            old = ParameterReading("center_frequency", 1, 1e6, "instrument")
+            if read_fails:
+                reads[0][1](DeviceError("old read failed"))
+            else:
+                reads[0][0]([old])
+            editor.show_reading(old)  # A background refresh may also deliver a cached frame.
+            assert editor.busy and editor.dirty and editor.status.text() == pending_status
+            assert editor.current_value is None and not editor.apply_button.isEnabled()
+            editor.apply_button.click()
+            editor.apply()
+            assert len(writes) == 1
+            cmd, done, fail = writes[0]
+            assert cmd.parameters == {"value": 100e6}
+
+            editor.editors["value"].set_value(110e6)
+            editor.save_draft()
+            if write_fails:
+                fail(DeviceError("mock write failed"))
+                assert editor.status.text() == "mock write failed"
+            else:
+                done(ApplyResult("success", cmd.operation, cmd.parameters, 100e6))
+                assert editor.current_value == 100e6
+            assert not editor.busy and editor.dirty and editor.apply_button.isEnabled()
+            assert editor.parameters() == {"value": 110e6}
+            assert runtime.repository.load_workspace(editor.key)
+        finally:
+            controller.close()
+
+
 def test_overview_scroll_reuses_stacked_category_rows(qtbot):
     grid = ResponsiveGrid()
     qtbot.addWidget(grid)

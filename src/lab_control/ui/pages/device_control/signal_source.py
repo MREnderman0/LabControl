@@ -352,8 +352,7 @@ class ParameterGroup(QFrame):
                     self.finish("范围或可用性已更新；请核对修正后的草稿，再次应用剩余参数")
                     return
             editor = self.editors[name]
-            editor._submitted_revision = editor._edit_revision
-            editor.busy = True
+            editor.begin_write()
             self.message("正在应用：" + OPERATION_LABELS.get(name, name))
             self.controller.apply(
                 self.device_id,
@@ -378,7 +377,7 @@ class ParameterGroup(QFrame):
     def finish(self, reason: str, *, failed: str | None = None) -> None:
         self.running = False
         for editor in self.editors.values():
-            editor.busy = False
+            editor.writing = False
         self.success_report = not failed and not self.pending
         self.controller.end_group(self.device_id)
         done = "、".join(OPERATION_LABELS.get(name, name) for name in self.completed)

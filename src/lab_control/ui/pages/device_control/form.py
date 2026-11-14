@@ -87,7 +87,8 @@ class OperationEditor(QFrame):
         self.workspace_mode = workspace_mode
         self.mode = controller.mode if workspace_mode is None else workspace_mode
         self.dirty = False
-        self.busy = False
+        self._read_request: object | None = None
+        self.writing = False
         self.current_value: Any = None
         self.auto_sync = False
         self.last_reading: ParameterReading | None = None
@@ -217,11 +218,21 @@ class OperationEditor(QFrame):
         controller.refreshed.connect(self.refresh_enabled)
         self.refresh_enabled()
 
+    @property
+    def busy(self) -> bool:
+        return self.writing or self._read_request is not None
+
+    def begin_write(self) -> None:
+        # A previously queued read describes the state before this write.
+        self._read_request = None
+        self.writing = True
+        self._submitted_revision = self._edit_revision
+
     def save_draft(self) -> None:
         self._edit_revision += 1
         if any(not editor.input_is_valid() for editor in self.editors.values()):
             return
-        self.dirty = not self.matches_current()
+        self.dirty = self.writing or not self.matches_current()
         self.status.setText("待应用" if self.dirty else "")
         if self.auto_sync:
             self.render_auto_reading()
@@ -387,25 +398,36 @@ class OperationEditor(QFrame):
         self.readback.setVisible(self.dirty or not self._reading_valid or not self.matches_current())
 
     def read(self) -> None:
-        if self.controller.states.get(self.device_id, {}).get("controlsLocked"):
+        if self.busy or self.controller.states.get(self.device_id, {}).get("controlsLocked"):
             return
+        request = self._read_request = object()
+
+        def received(values):
+            if shiboken6.isValid(self) and request is self._read_request:
+                self._read_request = None
+                self.show_reading(values[0])
+                self.refresh_enabled()
+
+        def read_failed(error):
+            if shiboken6.isValid(self) and request is self._read_request:
+                self._read_request = None
+                self.failed(error)
+
         try:
-            self.busy = True
             self.refresh_enabled()
             self.controller.watch(
                 self.controller.runtime.sessions.submit(
                     self.device_id, "read_settings", ((self.cap.name,), self.channel)
                 ),
-                lambda values: self.show_reading(values[0]),
-                self.failed,
+                received,
+                read_failed,
             )
         except Exception as exc:
-            self.failed(exc)
+            read_failed(exc)
 
     def show_reading(self, reading: ParameterReading) -> None:
-        if not shiboken6.isValid(self):
+        if not shiboken6.isValid(self) or self.writing:
             return
-        self.busy = False
         if self.auto_sync:
             self.last_reading = reading
             self._reading_valid = usable_reading(reading, self.cap.parameters)
@@ -463,7 +485,7 @@ class OperationEditor(QFrame):
         return self.cap.validate(values)
 
     def apply(self) -> None:
-        if self.status_only or not self.cap.writable:
+        if self.writing or self.status_only or not self.cap.writable:
             return
         try:
             values = self.parameters()
@@ -483,8 +505,7 @@ class OperationEditor(QFrame):
                 if answer != QMessageBox.StandardButton.Yes:
                     return
                 confirmed = True
-            self.busy = True
-            self._submitted_revision = self._edit_revision
+            self.begin_write()
             if not self.log_result:
                 self.status.setText("发送中…" if self.direct_action else "等待当前读取完成 / 正在应用…")
             self.refresh_enabled()
@@ -502,12 +523,12 @@ class OperationEditor(QFrame):
         if self.log_result:
             self.log_result(self.device_id, self.cap.name, result.user_message or "发送结果未知")
             if shiboken6.isValid(self):
-                self.busy = False
+                self.writing = False
                 self.refresh_enabled()
             return
         if not shiboken6.isValid(self):
             return
-        self.busy = False
+        self.writing = False
         self._apply_error = result.outcome != "success"
         acknowledged = getattr(result, "acknowledged", None)
         success_labels = {True: "板端已确认", False: "已发送", None: "已应用"}
@@ -537,7 +558,7 @@ class OperationEditor(QFrame):
         elif result.outcome == "success":
             self.readback.setText("本会话设置已受理；设备未提供该操作的即时读回\n" + result.timestamp)
         if result.outcome == "success":
-            if not self.auto_sync or self._submitted_revision == self._edit_revision:
+            if self._submitted_revision == self._edit_revision:
                 self.dirty = False
                 if self.follow_readback:
                     self.controller.runtime.repository.save_workspace(self.key, None)
@@ -557,12 +578,12 @@ class OperationEditor(QFrame):
             )
             self.log_result(self.device_id, self.cap.name, message)
             if shiboken6.isValid(self):
-                self.busy = False
+                self.writing = False
                 self.refresh_enabled()
             return
         if not shiboken6.isValid(self):
             return
-        self.busy = False
+        self.writing = False
         self._apply_error = True
         self.status.setText(str(error))
         self.refresh_enabled()
