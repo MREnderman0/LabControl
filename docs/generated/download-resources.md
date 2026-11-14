@@ -90,6 +90,16 @@ Keithley 2231A-001 的 Tek 官方支持页指向 Prolific PL2303。安装器 4.1
 
 验证策略：`authenticode`；分发依据：`pending`；安装验证：`pending`；目标环境验证：`pending`。
 
+**手动维护材料 · Prolific PL2303TA USB 转串口 3.8.31.0**
+
+供 PL2303TA 在 Windows 11 显示不支持提示时手工选用。安装前备份原驱动并核对芯片、端口和占用情况。
+
+[微软更新目录](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=2274ef6c-b682-4bb7-8f7a-f6f2dc67050b) · [驱动包](https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2019/08/8e9440f0-a252-49ae-ae65-e8fa36f55d47_c908f2dc24f5a7dcda9f567330e813a58087adb2.cab)
+
+大小 3286970 字节，SHA256 `412db2bf8e43abf6e0183b2cc9c68e6bcf578d3df7a2149648876e953d55c6da`。
+
+ser2pl.cat 由 Microsoft Windows Hardware Compatibility Publisher 签名，实机验证有效。 微软目录列为 Windows 10 驱动。Windows 11 x64 Build 26200 实测可绑定 PL2303TA，串口两次打开和关闭成功。仪器通信协议未验证。 Prolific 专有驱动，重新分发许可待核对。
+
 ## GPIB interface driver
 
 组件 ID：`gpib-interface`；版本：待核实。

@@ -485,7 +485,10 @@
       "dependencies": [],
       "download_sources": [],
       "archive_members": [],
-      "installer_entry": null
+      "installer_entry": null,
+      "maintenance_materials": [
+        "deployment/packages/installers/prolific-pl2303ta-3.8.31.0-x64.cab"
+      ]
     },
     {
       "id": "gpib-interface",

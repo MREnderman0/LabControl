@@ -396,6 +396,21 @@
       "validation": "2026-10-29 official archive hash/size and Prolific installer Authenticode Valid; documented /s returned 0; Windows 11 DriverStore readback PL2303G 5.2.12.0 and PL2303HXD 3.9.7.0. No adapter connected and no reboot requested."
     },
     {
+      "path": "deployment/packages/installers/prolific-pl2303ta-3.8.31.0-x64.cab",
+      "kind": "vendor-driver-archive",
+      "name": "Prolific PL2303TA USB 转串口",
+      "version": "3.8.31.0",
+      "purpose": "供 PL2303TA 在 Windows 11 显示不支持提示时手工选用。安装前备份原驱动并核对芯片、端口和占用情况。",
+      "size": 3286970,
+      "sha256": "412db2bf8e43abf6e0183b2cc9c68e6bcf578d3df7a2149648876e953d55c6da",
+      "source": "https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2019/08/8e9440f0-a252-49ae-ae65-e8fa36f55d47_c908f2dc24f5a7dcda9f567330e813a58087adb2.cab",
+      "source_page": "https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=2274ef6c-b682-4bb7-8f7a-f6f2dc67050b",
+      "publisher": "Prolific Technology Inc.",
+      "signature_status": "ser2pl.cat 由 Microsoft Windows Hardware Compatibility Publisher 签名，实机验证有效。",
+      "license": "Prolific 专有驱动，重新分发许可待核对。",
+      "validation": "微软目录列为 Windows 10 驱动。Windows 11 x64 Build 26200 实测可绑定 PL2303TA，串口两次打开和关闭成功。仪器通信协议未验证。"
+    },
+    {
       "path": "deployment/packages/installers/CP210x-11.5.0.417-amd64.cab",
       "kind": "vendor-driver-cab",
       "name": "Silicon Labs CP210x VCP",

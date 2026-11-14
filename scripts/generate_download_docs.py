@@ -27,6 +27,8 @@ def render() -> str:
         "待补的接口驱动继续待核对，不提供猜测下载地址。",
         "",
     ]
+    inventory = json.loads((ROOT / "deployment/packages/manifest.json").read_text(encoding="utf-8-sig"))
+    materials_by_path = {m["path"]: m for m in inventory["files"]}
     for c in load_manifest()["components"]:
         lines += [
             f"## {c['name']}",
@@ -56,7 +58,20 @@ def render() -> str:
         ]
         if c["signature"].get("policy") == "official-sha256":
             lines += ["该官方归档未签名，仅按固定哈希及指定解压成员验证，不标记为签名通过。", ""]
-    inventory = json.loads((ROOT / "deployment/packages/manifest.json").read_text(encoding="utf-8-sig"))
+        for path in c.get("maintenance_materials", []):
+            material = materials_by_path[path]
+            lines += [
+                f"**手动维护材料 · {material['name']} {material['version']}**",
+                "",
+                material["purpose"],
+                "",
+                f"[微软更新目录]({material['source_page']}) · [驱动包]({material['source']})",
+                "",
+                f"大小 {material['size']} 字节，SHA256 `{material['sha256']}`。",
+                "",
+                f"{material['signature_status']} {material['validation']} {material['license']}",
+                "",
+            ]
     python = next(f for f in inventory["files"] if f["path"].endswith("python-3.12.10-amd64.exe"))
     lines += [
         "## 开发环境材料",
