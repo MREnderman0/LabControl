@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Afg31252Adapter, afg31252
@@ -16,5 +17,6 @@ DEFINITION = DeviceDefinition(
         "可用的 64 位 VISA Runtime 和匹配的接口驱动；优先复用已验证的安装",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa",),
 )

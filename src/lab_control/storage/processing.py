@@ -258,7 +258,7 @@ class ProcessedWriter:
             axis = sample.get("axis")
             if (
                 not values.size
-                or values.dtype.kind not in "fiu"
+                or (values.dtype.kind not in "fiu" and not (axis is not None and values.dtype.kind == "c"))
                 or not np.isfinite(values).all()
                 or sample.get("quality", "good") not in {"good", "simulated"}
             ):

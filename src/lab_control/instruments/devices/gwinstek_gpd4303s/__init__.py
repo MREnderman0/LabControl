@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Gpd4303sAdapter, gpd4303s
@@ -16,6 +17,7 @@ DEFINITION = DeviceDefinition(
         "64 位 VISA Runtime 与 FTDI USB 驱动",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa", "ftdi-vcp"),
     serial_driver_managed=True,
 )

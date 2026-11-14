@@ -14,6 +14,23 @@ from lab_control.storage.processing_paths import filesystem_path, readonly_uri
 from lab_control.storage.recording_catalog import read_json
 
 
+def plot_series(samples):
+    """Project complex network data for display, keeping the stored arrays exact."""
+    for sample in samples:
+        values = sample.get("values")
+        dtype = np.asarray(values).dtype if values is not None else np.dtype(sample.get("dtype", "float64"))
+        if dtype.kind != "c":
+            yield sample
+            continue
+        for suffix, unit in (("magnitude", sample.get("unit", "")), ("phase", "°")):
+            curve = dict(sample, quantity=f"{sample['quantity']}_{suffix}", unit=unit)
+            if "id" in sample:
+                curve["id"] = f"{sample['id']}_{suffix}"
+            if values is not None:
+                curve["values"] = np.abs(values) if suffix == "magnitude" else np.angle(values, deg=True)
+            yield curve
+
+
 class ResultReader:
     def __init__(self, folder: Path) -> None:
         folder = filesystem_path(folder)

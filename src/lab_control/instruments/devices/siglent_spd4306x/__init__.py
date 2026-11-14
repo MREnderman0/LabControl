@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Spd4306xAdapter, spd
@@ -16,5 +17,6 @@ DEFINITION = DeviceDefinition(
         "64 位 VISA Runtime 或直接 TCP",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa",),
 )

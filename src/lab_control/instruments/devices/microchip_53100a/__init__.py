@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from lab_control.domain.phase_noise_metrics import PHASE_NOISE_AT_OFFSET_PROFILE
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Microchip53100AAdapter, create
@@ -19,6 +20,7 @@ DEFINITION = DeviceDefinition(
         "TimeLab 1.780A x64 / 53100A USB 驱动；不使用 VISA/SCPI",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("frames"),
     deployment_components=("tserve",),
     factory=create,
     capability_schema=capability_schema,

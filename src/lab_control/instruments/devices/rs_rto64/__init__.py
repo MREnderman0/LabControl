@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.domain.voltage_waveform_metrics import VOLTAGE_WAVEFORM_STATISTICS_PROFILE
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
@@ -19,6 +20,7 @@ DEFINITION = DeviceDefinition(
     Rto64Adapter,
     DeviceDocumentation("R&S RTO64", "oscilloscopes/rto64", "LAN / USB VISA", "64 位 VISA Runtime"),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("frames", separate_channel_pngs=True),
     readonly_check=_verify,
     deployment_components=("rs-visa",),
     multi_channel_sources=("waveform",),

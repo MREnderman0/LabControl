@@ -17,7 +17,7 @@ from lab_control.storage.layout import atomic_json
 from lab_control.storage.paths import filename_part
 from lab_control.storage.processing import check_cancel
 from lab_control.storage.processing_paths import filesystem_path
-from lab_control.storage.processing_results import ResultReader
+from lab_control.storage.processing_results import ResultReader, plot_series
 from lab_control.storage.recording_catalog import linked, read_json
 
 FIGURE_VERSION = 4
@@ -29,6 +29,8 @@ LABELS = {
     "spectrum": "Power",
     "voltage": "Voltage",
     "resistance": "Resistance",
+    "selected_s_parameter_magnitude": "S-parameter magnitude",
+    "selected_s_parameter_phase": "S-parameter phase",
 }
 NAMES = {
     "power": "功率",
@@ -38,6 +40,8 @@ NAMES = {
     "spectrum": "光谱",
     "voltage": "电压",
     "resistance": "电阻",
+    "selected_s_parameter_magnitude": "S参数幅值",
+    "selected_s_parameter_phase": "S参数相位",
 }
 
 
@@ -131,7 +135,7 @@ def generate_pngs(
         )
 
     groups: dict[tuple, list[dict]] = {}
-    for series in info["series"]:
+    for series in plot_series(info["series"]):
         groups.setdefault(group_key(series), []).append(series)
     names = {}
     used = set()
@@ -237,7 +241,7 @@ def generate_pngs(
                 check_cancel(cancel)
                 frame = reader.frame(sequence)
                 frames: dict[tuple, list[tuple[str, np.ndarray, np.ndarray]]] = {}
-                for sample in frame["measurements"]:
+                for sample in plot_series(frame["measurements"]):
                     key = group_key(sample)
                     y = sample["values"].reshape(-1)
                     x = np.arange(y.size) if sample["axis"] is None else sample["axis"].reshape(-1)

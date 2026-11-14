@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.domain.voltage_waveform_metrics import VOLTAGE_WAVEFORM_STATISTICS_PROFILE
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation, DeviceModel
 
@@ -21,6 +22,11 @@ def create_adapter(config):
     return PicoAdapter(config)
 
 
+def recording_channels(values):
+    inputs = values.get("configured_channels", {})
+    return tuple(sorted(int(ch) for ch, cfg in inputs.items() if cfg.get("enabled") is True))
+
+
 DEFINITION = DeviceDefinition(
     None,
     None,
@@ -31,6 +37,7 @@ DEFINITION = DeviceDefinition(
         "PicoSDK 64 位、ps6000a.dll 和 USB 驱动",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("frames", separate_channel_pngs=True),
     deployment_components=("pico-sdk",),
     model=DeviceModel(
         "pico.6404e",
@@ -51,6 +58,7 @@ DEFINITION = DeviceDefinition(
     acquisition_kinds=("waveform", "streaming"),
     acquisition_initiate_default=True,
     acquisition_initiate_editable=False,
+    recording_channels_from_status=recording_channels,
     multi_channel_sources=("waveform",),
     metric_profiles=(VOLTAGE_WAVEFORM_STATISTICS_PROFILE,),
 )

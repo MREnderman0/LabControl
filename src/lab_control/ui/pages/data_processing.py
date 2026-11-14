@@ -30,6 +30,17 @@ from lab_control.ui.pages.processing_viewer import ProcessingViewer
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 
+def processing_notice(results):
+    errors = [f"{row['device']}：{row['error']}" for row in results if row.get("error")]
+    empty = "、".join(row["device"] for row in results if row.get("frames") == 0 and not row.get("error"))
+    parts = []
+    if errors:
+        parts.append(("处理失败" if len(errors) == len(results) else "部分失败") + " · " + "；".join(errors))
+    if empty:
+        parts.append(f"{empty} 未采到数据（0 帧）" if errors else f"处理完成 · {empty} 未采到数据（0 帧）")
+    return "；".join(parts)
+
+
 class DataProcessingPage(QWidget):
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -247,8 +258,8 @@ class DataProcessingPage(QWidget):
                 )
             elif job.get("state") in {"failed", "cancelled"}:
                 status = job.get("error", "处理失败")
-            elif any(result.get("error") for result in job.get("results", [])):
-                status = "部分失败 · " + "；".join(r["error"] for r in job["results"] if r["error"])
+            elif notice := processing_notice(job.get("results", [])):
+                status = notice
             elif reason:
                 status = reason
             item.setText(3, status)
@@ -296,12 +307,13 @@ class DataProcessingPage(QWidget):
                 continue
             try:
                 result = task.result()
-                errors = [r["error"] for r in result if r.get("error")] if isinstance(result, list) else []
-                self.message.setText(
-                    "；".join(errors) if errors else "操作完成；原始时间和设备身份保持不变。"
-                )
-                if isinstance(result, list) and not errors:
-                    self.message.setText("处理完成，PNG 图片已自动保存，可点击“打开处理目录”查看。")
+                if isinstance(result, list):
+                    self.message.setText(
+                        processing_notice(result)
+                        or "处理完成，PNG 图片已自动保存，可点击“打开处理目录”查看。"
+                    )
+                else:
+                    self.message.setText("操作完成")
                 if isinstance(result, dict) and result.get("destination") and self.stack.currentIndex() == 1:
                     self.pending_destination = Path(result["destination"])
                 if isinstance(result, dict) and "trash" in result:

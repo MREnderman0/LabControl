@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.processing import ProcessingService
 from lab_control.domain.oscilloscope import COLORS, ScopeDisplay, engineering
 from lab_control.domain.workspace import channel_label
-from lab_control.storage.processing_results import ResultReader
+from lab_control.storage.processing_results import ResultReader, plot_series
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 CHANNEL_PALETTE = (*COLORS, "#86accf", "#d3a8b6", "#95c7af", "#beb5db")
@@ -241,6 +241,7 @@ class ProcessingViewer(QWidget):
 
     def _loaded(self, kind, data) -> None:
         if kind == "info":
+            data = {**data, "series": list(plot_series(data["series"]))}
             self.info = data
             self._fit_pending = True
             self.watts.setVisible(bool(data.get("power_units")))
@@ -260,6 +261,8 @@ class ProcessingViewer(QWidget):
                 "spectrum": "频谱",
                 "voltage": "电压",
                 "resistance": "电阻",
+                "selected_s_parameter_magnitude": "S 参数幅值",
+                "selected_s_parameter_phase": "S 参数相位",
             }
             for group in groups:
                 label = (
@@ -283,6 +286,7 @@ class ProcessingViewer(QWidget):
         self.transfer_index = False
         self.scope_specs = {}
         selected = self.selected()
+        samples = list(plot_series(data["measurements"])) if kind == "frame" else ()
         for series in selected:
             if kind == "scalar":
                 x, y = data.get(series["id"], (np.array([]), np.array([])))
@@ -290,7 +294,7 @@ class ProcessingViewer(QWidget):
                 sample = next(
                     (
                         sample
-                        for sample in data["measurements"]
+                        for sample in samples
                         if all(
                             sample.get(key, "") == series.get(key, "")
                             for key in ("channel", "quantity", "unit", "axis_unit")

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Sma100bAdapter, sma100b
@@ -16,5 +17,6 @@ DEFINITION = DeviceDefinition(
         "64 位 VISA Runtime",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa",),
 )

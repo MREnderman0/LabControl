@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Sdg6032xAdapter, sdg6032x
@@ -16,5 +17,6 @@ DEFINITION = DeviceDefinition(
         "VISA Runtime；直接 TCP 不需要 VISA",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa",),
 )

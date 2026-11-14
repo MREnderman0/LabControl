@@ -16,6 +16,7 @@ from uuid import uuid4
 from lab_control.domain.processing import RecordingEntry
 from lab_control.storage.layout import atomic_json, raw_folder
 from lab_control.storage.processing import ProcessingCancelled, image_home, process_device
+from lab_control.storage.processing_paths import filesystem_path
 from lab_control.storage.recording_catalog import RecordingCatalog, linked, read_device, read_json
 from lab_control.storage.repository import Repository
 
@@ -155,6 +156,7 @@ class ProcessingService:
                         lambda done, total: self._update(entry.key, done=done, total=total),
                         finalize=figures,
                     )
+                    frames = read_json(filesystem_path(result) / "result.json", {})["frames"]
                     self._update(entry.key, stage="整理图片目录")
                     images = image_home(entry.folder, device)
                     publish_pngs(result, images, cancel)
@@ -164,6 +166,7 @@ class ProcessingService:
                             "source": str(device.folder),
                             "result": str(result),
                             "images": str(images),
+                            "frames": frames,
                             "error": "",
                         }
                     )

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Znb3004Adapter, network
@@ -13,5 +14,6 @@ DEFINITION = DeviceDefinition(
         "R&S ZNB3004", "measurement-analyzers/rs-znb3004", "LAN / USB VISA", "64 位 VISA Runtime"
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("frames"),
     deployment_components=("rs-visa",),
 )

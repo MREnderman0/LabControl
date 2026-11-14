@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.domain.spectrum_metrics import SPECTRUM_PEAK_AND_SNR_PROFILE
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
@@ -15,6 +16,7 @@ DEFINITION = DeviceDefinition(
         "RIGOL DSA815", "spectrum-analyzers/rigol-dsa815", "LAN / USB；优先 PyVISA", "64 位 VISA Runtime"
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("frames"),
     deployment_components=("rs-visa",),
     socket_port=5555,
     metric_profiles=(SPECTRUM_PEAK_AND_SNR_PROFILE,),

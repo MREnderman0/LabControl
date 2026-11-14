@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Sps5000xAdapter, sps5000x
@@ -16,6 +17,7 @@ DEFINITION = DeviceDefinition(
         "64 位 VISA Runtime（USB / VXI-11）",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     socket_port=5025,
     deployment_components=("rs-visa",),
     supported_transports=("visa", "tcp"),

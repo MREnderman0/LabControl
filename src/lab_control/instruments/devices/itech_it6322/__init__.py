@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import It6322Adapter, it6322
@@ -16,5 +17,6 @@ DEFINITION = DeviceDefinition(
         "相应接口驱动；VISA 或 PySerial",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa", "serial-interface", "gpib-interface"),
 )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QPushButton,
     QScrollArea,
@@ -70,6 +72,7 @@ class ResponsiveGrid(QScrollArea):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.body = QWidget()
         self.grid = QGridLayout(self.body)
+        self.grid.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setSpacing(16)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -80,7 +83,7 @@ class ResponsiveGrid(QScrollArea):
 
     def eventFilter(self, obj, event):  # noqa: N802
         if obj is self.viewport() and event.type() == QEvent.Type.Resize:
-            QTimer.singleShot(0, self.reflow)
+            QTimer.singleShot(0, self, self.reflow)
         return super().eventFilter(obj, event)
 
     def set_items(self, items: Sequence[QWidget]) -> None:
@@ -88,7 +91,7 @@ class ResponsiveGrid(QScrollArea):
             return
         self.items = list(items)
         self.reflow(force=True)
-        QTimer.singleShot(0, self.reflow)
+        QTimer.singleShot(0, self, self.reflow)
 
     def reflow(self, force: bool = False) -> None:
         # Each category owns a full-width row; only its devices flow horizontally.
@@ -116,6 +119,7 @@ class RecordingDeviceCard(QFrame):
         super().__init__(parent)
         self.controller = controller
         self.spec = spec
+        self.start_error = ""
         self.setObjectName("monitorCard")
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(self)
@@ -232,10 +236,12 @@ class RecordingDeviceCard(QFrame):
             self.show()
         task = self.controller.runtime.monitoring.snapshots().get(device_id, {})
         phase = recording_phase(task)
-        self.setProperty("recordingPhase", phase)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        if task.get("error"):
+        if task.get("running"):
+            self.start_error = ""
+        if self.start_error:
+            detail = self.start_error
+            status = "未开始"
+        elif task.get("error"):
             detail = task["error"]
             status = "异常"
         elif task.get("recovering"):
@@ -249,7 +255,15 @@ class RecordingDeviceCard(QFrame):
             status = "收尾中"
         elif recording_save_notice(task):
             detail = recording_save_notice(task)
-            status = "记录中" if task.get("recording") else "待处理"
+            state = task.get("recording_state", {})
+            if state.get("error") or state.get("csv_error") or task.get("recording_failures"):
+                status = "保存异常"
+            elif task.get("recording"):
+                status = "记录中"
+            elif state.get("binary_done") and state.get("converted", 0) >= state.get("committed", 0):
+                status = "已保存" if state.get("committed") else "无有效帧"
+            else:
+                status = "转换中"
         elif task.get("recording"):
             detail = "正在连续记录有效采集帧"
             status = "记录中"
@@ -275,10 +289,12 @@ class DeviceCategoryGroup(QFrame):
         super().__init__(parent)
         self.setObjectName("monitorCategory")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 10)
+        layout.setContentsMargins(0, 0, 0, 6)
+        layout.setSpacing(6)
         self.heading = QLabel(title)
         self.heading.setObjectName("monitorCategoryTitle")
-        layout.addWidget(self.heading)
+        self.heading.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.heading, 0, Qt.AlignmentFlag.AlignTop)
         self.grid = CategoryGrid()
         layout.addWidget(self.grid)
 
@@ -292,8 +308,9 @@ class CategoryGrid(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.layout_grid = QGridLayout(self)
+        self.layout_grid.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         self.layout_grid.setContentsMargins(0, 0, 0, 0)
-        self.layout_grid.setSpacing(16)
+        self.layout_grid.setSpacing(12)
         self.layout_grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.items: list[QWidget] = []
         self.columns = 0
@@ -322,8 +339,15 @@ class CategoryGrid(QWidget):
         for index in range(max(old_columns, columns)):
             self.layout_grid.setColumnStretch(index, 1 if index < columns else 0)
             self.layout_grid.setColumnMinimumWidth(index, 0)
+        for row in range(self.layout_grid.rowCount()):
+            self.layout_grid.setRowMinimumHeight(row, 0)
         for index, item in enumerate(self.items):
-            self.layout_grid.addWidget(item, index // columns, index % columns, Qt.AlignmentFlag.AlignTop)
+            row, column = divmod(index, columns)
+            self.layout_grid.addWidget(item, row, column, Qt.AlignmentFlag.AlignTop)
+            self.layout_grid.setRowMinimumHeight(
+                row, max(self.layout_grid.rowMinimumHeight(row), item.sizeHint().height())
+            )
+        self.updateGeometry()
 
 
 class MonitoringDashboard(QWidget):
@@ -341,6 +365,8 @@ class MonitoringDashboard(QWidget):
         self._timed_stop_timer.setSingleShot(True)
         self._timed_stop_timer.timeout.connect(self._stop_timed_sampling)
         self._timed_task_refs: dict[str, Any] = {}
+        self._checking_inputs = False
+        self._preparation_generation = 0
         self._timed_duration = 0
         layout = QVBoxLayout(self)
         heading = QLabel("实时监测总览")
@@ -713,7 +739,9 @@ class MonitoringDashboard(QWidget):
                 continue
             seen_devices.add(spec["device_id"])
             channels = tuple(spec["channels"])
-            if (
+            if instrument_category(record) == "oscilloscope":
+                channels = tuple(self.controller.capabilities(spec["device_id"]).channels)
+            elif (
                 single_input(self.controller, spec["device_id"])
                 or instrument_scan_channels(self.controller, spec["device_id"]) is not None
             ):
@@ -737,6 +765,9 @@ class MonitoringDashboard(QWidget):
         return grouped
 
     def toggle_sampling(self) -> None:
+        if self._checking_inputs:
+            self.stop()
+            return
         active, stopping = self._sampling_state()
         if active:
             self._cancel_timed_stop()
@@ -763,6 +794,123 @@ class MonitoringDashboard(QWidget):
         except Exception as exc:
             self.controller.message.emit(f"创建采集批次失败：{exc}")
             return
+        self._preparation_generation += 1
+        generation = self._preparation_generation
+        scopes = {
+            key: self.controller.records[key]
+            for key, *_ in grouped
+            if instrument_category(self.controller.records[key]) == "oscilloscope"
+        }
+        if not scopes:
+            self._begin_recordings(grouped, batch, duration)
+            return
+        self._checking_inputs = True
+        self._update_button()
+        ready_channels = {}
+        pending = set(scopes)
+
+        def session_version(key):
+            state = self.controller.states.get(key, {})
+            return (state.get("sessionId"), state.get("configurationVersion"))
+
+        sessions = {key: session_version(key) for key in scopes}
+
+        def finish(key, channels=(), error=""):
+            if generation != self._preparation_generation:
+                return
+            ready_channels[key] = channels
+            pending.remove(key)
+            card = self.cards.get(key)
+            if card:
+                card.start_error = error
+                card.refresh()
+            if error:
+                self.controller.message.emit(error)
+            if pending:
+                return
+            self._checking_inputs = False
+            ready = []
+            for device_id, requests, interval, mode in grouped:
+                if device_id in ready_channels:
+                    if not ready_channels[device_id]:
+                        continue
+                    if session_version(device_id) != sessions[device_id]:
+                        card = self.cards.get(device_id)
+                        if card:
+                            card.start_error = "读取通道期间会话或配置已变更，请重新开始采样。"
+                            card.refresh()
+                        continue
+                    requests = tuple(
+                        replace(request, channels=ready_channels[device_id], allow_setup=False)
+                        for request in requests
+                    )
+                ready.append((device_id, requests, interval, mode))
+            self._begin_recordings(ready, batch, duration)
+
+        def checked(key, channels):
+            label = self.cards[key].spec["title"] if key in self.cards else ""
+            detail = "" if channels else f"{label} 当前会话没有已配置并启用的通道，请在设备页配置后重试。"
+            finish(key, channels, detail)
+
+        for key, record in scopes.items():
+            definition = DEVICE_DEFINITIONS.get(record["adapterId"])
+            selector = definition.recording_channels_from_status if definition else None
+            if selector:
+                try:
+                    future = self.controller.runtime.sessions.submit(key, "status")
+                    self.controller.watch(
+                        future,
+                        lambda status, k=key, fn=selector: checked(k, fn(status.values)),
+                        lambda exc, k=key: finish(k, error=f"采集通道检查失败：{exc}"),
+                    )
+                except Exception as exc:
+                    finish(key, error=f"采集通道检查失败：{exc}")
+            else:
+                self._read_enabled_inputs(
+                    key,
+                    lambda channels, k=key: checked(k, channels),
+                    lambda exc, k=key: finish(k, error=f"采集通道检查失败：{exc}"),
+                )
+
+    def _read_enabled_inputs(self, key, ready, failed):
+        """Read physical enable states on the existing per-device worker, without applying settings."""
+        channels = iter(self.controller.capabilities(key).channels)
+        enabled = []
+        generation = self._preparation_generation
+
+        def read_next():
+            if generation != self._preparation_generation:
+                return
+            channel = next(channels, None)
+            if channel is None:
+                ready(tuple(enabled))
+                return
+
+            def received(readings):
+                reading = readings[0] if readings else None
+                value = (
+                    boolean_value(reading.value)
+                    if reading and reading.quality in {"good", "simulated"}
+                    else None
+                )
+                if value is None:
+                    failed(DeviceError(f"无法确认 CH{channel} 是否启用"))
+                    return
+                if value:
+                    enabled.append(channel)
+                read_next()
+
+            try:
+                future = self.controller.runtime.sessions.submit(
+                    key, "read_settings", (("channel_enabled",), channel)
+                )
+                self.controller.watch(future, received, failed)
+            except Exception as exc:
+                failed(exc)
+
+        read_next()
+
+    def _begin_recordings(self, grouped, batch, duration):
         started_tasks: dict[str, Any] = {}
         for device_id, requests, interval, recording_mode in grouped:
             try:
@@ -797,6 +945,8 @@ class MonitoringDashboard(QWidget):
         self.toggle_sampling()
 
     def stop(self) -> None:
+        self._preparation_generation += 1
+        self._checking_inputs = False
         self._cancel_timed_stop()
         for device_id in tuple(self.cards):
             if self.controller.runtime.monitoring.snapshots().get(device_id, {}).get("running"):
@@ -842,6 +992,11 @@ class MonitoringDashboard(QWidget):
         self._update_button()
 
     def _update_button(self) -> None:
+        if self._checking_inputs:
+            self.sample_button.setText("取消通道检查")
+            self.sample_button.setEnabled(True)
+            self.sample_button.setToolTip("正在读取示波器当前会话的已配置通道")
+            return
         active, stopping = self._sampling_state()
         self.sample_button.setText(
             "停止采样" if active else f"正在停止（{len(stopping)} 台）…" if stopping else "一键开始采样"

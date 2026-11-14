@@ -96,6 +96,9 @@ class DeviceDefinition:
     multi_channel_sources: tuple[str, ...] = ()
     nameable_channels: Callable[[ConnectionConfig], tuple[int, ...]] | None = None
 
+    # Some SDKs know enabled inputs only after explicit configuration in this session.
+    recording_channels_from_status: Callable[[dict[str, Any]], tuple[int, ...]] | None = None
+
     def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
         return self.manual_usb_id is None or self.manual_usb_id == (
             descriptor.get("vid"),

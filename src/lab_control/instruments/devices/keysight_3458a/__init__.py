@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Keysight3458aAdapter, multimeter
@@ -17,6 +18,7 @@ DEFINITION = DeviceDefinition(
         "控制器驱动和 64 位 VISA Runtime",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa", "gpib-interface"),
     transport_factory=create_transport,
     acquisition_initiate_default=True,

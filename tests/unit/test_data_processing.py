@@ -95,6 +95,30 @@ def test_qualified_model_processing_profiles_are_registered():
         "rs.fph": "frames",
         "rigol.dho924": "frames",
         "rs.rtm3004": "frames",
+        "pico.6404e": "frames",
+        "rs.rto64": "frames",
+        "rigol.dsa815": "frames",
+        "keysight.e36313a": "scalar",
+        "custom.optical_comb_pump": "scalar",
+        "gwinstek.gpd4303s": "scalar",
+        "itech.it6322": "scalar",
+        "keithley.2231a": "scalar",
+        "keysight.3458a": "scalar",
+        "keysight.53220a": "scalar",
+        "lecroy.9254": "frames",
+        "lecroy.9404m": "frames",
+        "microchip.53100a": "frames",
+        "rigol.dg5504pro": "scalar",
+        "rigol.ds1202ze": "frames",
+        "rs.sma100b": "scalar",
+        "rs.znb3004": "frames",
+        "siglent.sdg2082x": "scalar",
+        "siglent.sdg6032x": "scalar",
+        "siglent.sdg6032xe": "scalar",
+        "siglent.spd4306x": "scalar",
+        "siglent.sps5000x": "scalar",
+        "tek.afg31252": "scalar",
+        "thorlabs.pm100d": "scalar",
     }
 
 
@@ -155,6 +179,11 @@ def test_legacy_scalar_index_is_readable_but_rebuilt_for_new_continuity_rules(tm
         ("ceyear.6362d", "spectrum", "dBm", "nm"),
         ("rigol.dho924", "waveform", "V", "s"),
         ("rs.rtm3004", "voltage", "V", "s"),
+        ("pico.6404e", "waveform", "V", "s"),
+        ("rs.rto64", "waveform", "V", "s"),
+        ("rigol.ds1202ze", "waveform", "V", "s"),
+        ("lecroy.9254", "waveform", "V", "s"),
+        ("lecroy.9404m", "waveform", "V", "s"),
     ],
 )
 def test_random_frames_across_segments_and_channels(tmp_path, adapter, quantity, unit, axis_unit):
@@ -542,3 +571,37 @@ def test_recycle_success_delegates_whole_directory_without_delete_fallback(
     monkeypatch.setattr(QFile, "moveToTrash", trash)
     assert service.trash(entry).result(10)["trash"] == (str(recycle) if tuple_result else "")
     assert (recycle / ".processing-cache").is_dir() and (recycle / "_raw").is_dir()
+
+
+def test_network_frame_preserves_iq_and_plots_both_components(tmp_path, qapp):
+    from lab_control.application.processing_figures import generate_pngs
+    from lab_control.storage.processing_results import plot_series
+
+    axis = np.array([1e6, 3e6, 8e6])
+    iq = np.array([3 + 4j, -1j, 1 + 0j], dtype=np.complex64)
+    sample = Measurement("selected_s_parameter", "ratio", iq, 1, axis, "Hz")
+    folder = processed(capture(tmp_path, [frame(measurements=[sample])], adapter="rs.znb3004"))
+    reader = ResultReader(folder)
+    (stored,) = reader.frame(1)["measurements"]
+    np.testing.assert_array_equal(stored["values"], iq)
+    assert stored["values"].dtype == iq.dtype
+    amplitude, phase = plot_series([stored])
+    np.testing.assert_array_equal(amplitude["axis"], axis)
+    np.testing.assert_allclose(amplitude["values"], [5, 1, 1])
+    np.testing.assert_allclose(phase["values"], [53.1301, -90, 0], rtol=1e-5)
+    assert (amplitude["unit"], phase["unit"]) == ("ratio", "°")
+    generate_pngs(folder, threading.Event(), lambda *_: None)
+    pngs = list((folder / "图片").rglob("*.png"))
+    assert len(pngs) == 2 and all(p.stat().st_size > 1000 for p in pngs)
+
+
+def test_all_overview_sources_can_be_processed_offline():
+    from lab_control.application.catalog import surface_applicable
+    from lab_control.application.controls import data_sources
+    from lab_control.domain.connections import ConnectionConfig
+
+    for key, definition in DEVICE_DEFINITIONS.items():
+        if surface_applicable({"adapterId": key}, "monitoring") and data_sources(
+            ConnectionConfig("mock://source", key, "mock")
+        ):
+            assert definition.offline_processing is not None, key

@@ -133,7 +133,7 @@ def test_record_button_card_outline_switching_and_real_binary_drain(
         window.controller.poll()
         card.refresh()
         assert "分析 CSV 已完成" in page.status.text()
-        assert card.state.text() == "待处理"
+        assert card.state.text() == "已保存"
         assert "分析 CSV 已完成" in card.detail_state.text()
         assert str(recorder.folder) in card.detail_path.text()
         assert "已保存帧数" in card.detail_frames.text()

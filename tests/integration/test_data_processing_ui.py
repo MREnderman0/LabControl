@@ -779,3 +779,15 @@ def test_radio_spectrum_history_uses_saved_axis(
     assert viewer.plot.getAxis("bottom").labelText == expected
     np.testing.assert_array_equal(viewer.plot_data[0][1], axis)
     np.testing.assert_array_equal(viewer.plot_data[0][2], values)
+
+
+def test_mixed_batch_notice_identifies_failed_and_empty_devices():
+    from lab_control.ui.pages.data_processing import processing_notice
+
+    results = [
+        {"device": "A", "frames": 3, "error": ""},
+        {"device": "B", "frames": 0, "error": ""},
+        {"device": "C", "error": "记录损坏"},
+    ]
+    assert processing_notice(results) == "部分失败 · C：记录损坏；B 未采到数据（0 帧）"
+    assert processing_notice(results[2:]) == "处理失败 · C：记录损坏"

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Keithley2231aAdapter, keithley
@@ -16,6 +17,7 @@ DEFINITION = DeviceDefinition(
         "专用 USB 适配器驱动；PySerial 或 VISA ASRL",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa", "keithley-usb"),
     serial_driver_managed=True,
 )

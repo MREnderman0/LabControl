@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.domain.voltage_waveform_metrics import VOLTAGE_WAVEFORM_STATISTICS_PROFILE
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
@@ -17,6 +18,7 @@ DEFINITION = DeviceDefinition(
         "64 位 VISA Runtime",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("frames", separate_channel_pngs=True),
     deployment_components=("rs-visa",),
     multi_channel_sources=("waveform",),
     metric_profiles=(VOLTAGE_WAVEFORM_STATISTICS_PROFILE,),

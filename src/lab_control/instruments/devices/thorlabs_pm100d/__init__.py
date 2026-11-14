@@ -6,6 +6,7 @@ from lab_control.domain.optical_power_metrics import (
     OPTICAL_POWER_FLUCTUATION_PROFILE,
     OPTICAL_POWER_REFERENCE_DEVIATION_PROFILE,
 )
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation, DeviceModel
 
 from .adapter import SOURCE, PowerMeterAdapter, enumerate_tlpmx
@@ -34,6 +35,7 @@ DEFINITION = DeviceDefinition(
         "Thorlabs OPM、匹配的 TLPMX 或旧版 PM100D 64 位 DLL/驱动",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar", power_units=True),
     deployment_components=("thorlabs-opm",),
     model=DeviceModel(
         "thorlabs.pm100d",

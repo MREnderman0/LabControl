@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Dg5504ProAdapter
@@ -14,5 +15,6 @@ DEFINITION = DeviceDefinition(
         "RIGOL DG5504 Pro", "signal-sources/dg5504-pro", "LAN / USB；优先 PyVISA", "64 位 VISA Runtime"
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa",),
 )

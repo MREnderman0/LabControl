@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation, DeviceModel
 
 from .adapter import ADAPTER_ID, MODEL, SOURCE, OpticalCombPumpAdapter, capability_schema
@@ -24,6 +25,7 @@ DEFINITION = DeviceDefinition(
         "现有 VISA 运行库与实际串口适配器驱动",
     ),
     Path(__file__).parent,
+    offline_processing=ProcessingProfile("scalar"),
     deployment_components=("rs-visa", "serial-interface"),
     transport_factory=create_transport,
     transport_adapter=OpticalCombPumpAdapter,
