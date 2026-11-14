@@ -1,5 +1,5 @@
 # 自制开关板只读验收
 
-以现场确认的 CP210x COM 口运行 `verify-readonly`，选择 `custom.dc_switch`、`visa` 和人工资产号下的独立批次。启动过程中占用正式设备锁。系统枚举、人工选口、解除绑定和重新绑定分别留档。连接及重连时打开串口，仅发送固件身份查询，逐次记录收发。审计导出 `results.json`、`summary.json` 和 `communication.jsonl`；原始 USB 标识保存在运行目录。
+以现场确认的 CP210x COM 口运行 `verify-readonly`，选择 `custom.dc_switch`、`serial` 和人工资产号下的独立批次（兼容原有 VISA ASRL 地址）。启动过程中占用正式设备锁。系统枚举、人工选口、解除绑定和重新绑定分别留档。连接及重连时打开串口，仅发送固件身份查询，逐次记录收发。审计导出 `results.json`、`summary.json` 和 `communication.jsonl`；原始 USB 标识保存在运行目录。
 
 固件提供身份查询、四个输出动作及中文执行回执。扫描只枚举，连接时核对完整身份行。主动验收从 `run.bat` 进入开关板管理页，逐次点击授权的按钮，核对实际发送字节、中文回执、界面结果和要求的最终选择。DC、RF 板端确认和外部负载或通路测量分别留档。遵循[实机记录规范](../../../../../../docs/testing/records.md)。

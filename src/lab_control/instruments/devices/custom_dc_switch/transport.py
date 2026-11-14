@@ -7,25 +7,38 @@ from lab_control.discovery.providers import SerialDiscoveryProvider
 from lab_control.domain.connections import ConnectionConfig
 from lab_control.domain.instruments import DeviceError, ValidationError
 from lab_control.transport.diagnostics import measured, synchronized
-from lab_control.transport.visa import RawSerialVisaTransport, VisaRuntime
+from lab_control.transport.streams import SerialTransport
+from lab_control.transport.visa import VisaRuntime
 
-# The installed ESP32 can reset when VISA opens the COM handle.
-# Its firmware has no ready banner; give setup() time to initialize Serial.
+# A freshly powered board has no ready banner.
 STARTUP_SETTLE_SECONDS = 1.5
 
 
-class SwitchTransport(RawSerialVisaTransport):
+class SwitchTransport(SerialTransport):
     """Open the selected bridge once for the identity handshake and subsequent commands."""
 
-    def __init__(self, config: ConnectionConfig, runtime: VisaRuntime) -> None:
-        super().__init__(runtime, config.resource, config.timeout, terminator="", baud_rate=115200)
-        self.port = "COM" + config.resource[4:].split("::", 1)[0]
+    def __init__(self, config: ConnectionConfig, port: str) -> None:
+        # The CP210x modem lines are wired to ESP32 reset/boot. SerialTransport
+        # preselects inactive DTR and RTS on a closed handle before opening it.
+        super().__init__(
+            port,
+            115200,
+            config.timeout,
+            bytesize=8,
+            parity="N",
+            stopbits=1,
+            xonxoff=False,
+            rtscts=False,
+            dsrdtr=False,
+        )
         self.usb_instance_id = config.usb_instance_id
         self.bound = False
 
+    @synchronized
     def open(self) -> None:
         self.bound = True
 
+    @synchronized
     def close(self) -> None:
         self.bound = False
         super().close()
@@ -44,7 +57,6 @@ class SwitchTransport(RawSerialVisaTransport):
             for port in SerialDiscoveryProvider().enumerate()
         ):
             raise DeviceError("已绑定的 USB 转接器不在所选串口，请重新核对接线", "manual_reconnect_required")
-        # Opening the handle can pulse DTR/RTS; allow setup to finish before the query.
         try:
             super().open()
             time.sleep(STARTUP_SETTLE_SECONDS)
@@ -56,15 +68,9 @@ class SwitchTransport(RawSerialVisaTransport):
             raise
 
     @synchronized
-    @measured("write")
     def send(self, payload: bytes) -> None:
-        try:
-            self._open_serial()
-            size = self.handle.write_raw(payload)
-            if size != len(payload):
-                raise DeviceError(f"串口写入不完整（{size}/{len(payload)} 字节）", "disconnected")
-        except Exception as exc:
-            raise self._error(exc) from exc
+        self._open_serial()
+        self.write(payload)
 
     @synchronized
     @measured("read")
@@ -76,24 +82,27 @@ class SwitchTransport(RawSerialVisaTransport):
         data = bytearray()
         try:
             while True:
-                available = min(4096 - len(data), self.handle.bytes_in_buffer)
+                available = min(4096 - len(data), self.handle.in_waiting)
                 if available:
-                    block = self.handle.read_bytes(available, break_on_termchar=False)
+                    block = self.handle.read(available)
                     if len(block) != available:
                         raise DeviceError("串口接收缓冲读取不完整", "disconnected")
                     data.extend(block)
                 if data.endswith(b"\n") or len(data) == 4096 or time.monotonic() >= end:
                     return bytes(data)
                 time.sleep(0.005)
-        except Exception as exc:
-            raise self._error(exc) from exc
+        except DeviceError:
+            raise
+        except OSError as exc:
+            raise DeviceError(str(exc), "disconnected") from exc
+
+
+def serial_port(config: ConnectionConfig) -> str:
+    match = re.fullmatch(r"(?:COM([1-9][0-9]*)|ASRL([1-9][0-9]*)::INSTR)", config.resource, re.I)
+    if config.transport not in {"serial", "visa"} or not match:
+        raise ValidationError("请选择开关板的 Windows COM 口")
+    return "COM" + (match[1] or match[2])
 
 
 def create_transport(config: ConnectionConfig, runtime: VisaRuntime) -> SwitchTransport:
-    if config.transport == "serial" and (port := re.fullmatch(r"COM([1-9][0-9]*)", config.resource, re.I)):
-        from dataclasses import replace
-
-        config = replace(config, resource=f"ASRL{port[1]}::INSTR", transport="visa")
-    if config.transport != "visa" or not re.fullmatch(r"ASRL[1-9][0-9]*::INSTR", config.resource):
-        raise ValidationError("请选择开关板的 Windows COM 口")
-    return SwitchTransport(config, runtime)
+    return SwitchTransport(config, serial_port(config))

@@ -35,7 +35,7 @@ def test_bulk_and_manual_board_gui_verify_identity_without_switching_outputs(qtb
         return items[0], True
 
     monkeypatch.setattr("lab_control.ui.workspace.dialogs.choose_item", select)
-    manager = Manager()
+    manager = Manager(monkeypatch)
     with ApplicationRuntime(root=tmp_path, visa=VisaRuntime(manager=manager)) as runtime:
         device_id = runtime.add(CONFIG)
         providers = (ConfiguredDiscoveryProvider((CONFIG,)), SerialDiscoveryProvider())
@@ -94,16 +94,23 @@ def test_bulk_and_manual_board_gui_verify_identity_without_switching_outputs(qtb
                 b"ch4_on\n",
                 b"ch3_on\n",
             ]
+            runtime.sessions.disconnect(device_id)
+            reopened, result = runtime.connect_manual_serial(ADAPTER_ID, PORT.config.resource)
+            assert reopened == device_id and result.result(5).key is None
+            assert len(manager.handles) == 3 and all(not h.is_open for h in manager.handles[:-1])
+            assert manager.handles[-1].writes == [b"*IDN?\n"]
         finally:
-            window.timer.stop()
-            window.controller.close()
-            window.closing = True
-            window.bridge.worker.shutdown()
-        runtime.sessions.disconnect(device_id)
-        reopened, result = runtime.connect_manual_serial(ADAPTER_ID, PORT.config.resource)
-        assert reopened == device_id and result.result(5).key is None
-        assert len(manager.handles) == 3 and all(h.closed for h in manager.handles[:-1])
-        assert manager.handles[-1].writes == [b"*IDN?\n"]
+            window.close()
+            qtbot.waitUntil(lambda: window.closing and not window.isVisible(), timeout=8000)
+        assert runtime.closed
+
+    for handle in manager.handles:
+        assert handle.events == [("open", "COM99", False, False), ("close", "COM99", False, False)]
+    assert [handle.writes for handle in manager.handles] == [
+        [b"*IDN?\n"],
+        [b"*IDN?\n", b"ch4_on\n", b"ch3_on\n"],
+        [b"*IDN?\n"],
+    ]
 
 
 @pytest.mark.parametrize("available", [False, True])
@@ -112,7 +119,7 @@ def test_readonly_batch_confirms_model_without_outputs(tmp_path, monkeypatch, av
     monkeypatch.setattr("lab_control.storage.repository.application_home", lambda: tmp_path / "home")
     monkeypatch.setattr(SerialDiscoveryProvider, "enumerate", lambda _: (PORT,) if available else ())
     folder = tmp_path / "hardware-tests" / "test-board" / "batch"
-    manager = Manager()
+    manager = Manager(monkeypatch)
     monkeypatch.setattr(
         "lab_control.instruments.devices.custom_dc_switch.hardware.readonly.VisaRuntime",
         lambda: VisaRuntime(manager=manager),
@@ -142,15 +149,8 @@ def test_new_unbound_bridge_model_is_verified_on_bulk_connect(tmp_path, monkeypa
     monkeypatch.setattr("lab_control.storage.repository.application_home", lambda: tmp_path / "home")
     bridge = replace(PORT, config=replace(PORT.config, usb_instance_id="test-bridge"))
     monkeypatch.setattr(SerialDiscoveryProvider, "enumerate", lambda _: (OTHER, bridge))
-    manager = Manager()
-    original = manager.open_resource
-
-    def open_resource(resource, **kwargs):
-        handle = original(resource, **kwargs)
-        handle.idn = idn
-        return handle
-
-    manager.open_resource = open_resource
+    manager = Manager(monkeypatch)
+    manager.next_idn = idn
     with ApplicationRuntime(root=tmp_path, visa=VisaRuntime(manager=manager)) as runtime:
         runtime.discovery.scan((SerialDiscoveryProvider(),)).result(8)
         assert not manager.handles
@@ -169,5 +169,6 @@ def test_new_unbound_bridge_model_is_verified_on_bulk_connect(tmp_path, monkeypa
             record = next(r for r in runtime.inventory.all() if r["id"] == item["device_id"])
             assert record["config"]["resource"] == "COM100" and len(manager.handles) == 1
         else:
-            assert item["error_code"] == "identity_mismatch" and manager.handles[0].closed
+            assert item["error_code"] == "identity_mismatch" and not manager.handles[0].is_open
             assert not record["identity"] and not runtime.leases.owner(PORT.config.resource)
+    assert manager.handles[0].events == [("open", "COM99", False, False), ("close", "COM99", False, False)]

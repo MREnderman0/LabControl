@@ -1,7 +1,6 @@
 """Verify a selected bridge and the normal session lifetime using only the firmware identity query."""
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +15,7 @@ from lab_control.transport.visa import VisaRuntime
 
 from .. import DEFINITION
 from ..adapter import ADAPTER_ID, MODEL, SwitchBoardAdapter, SwitchWire
+from ..transport import serial_port
 from .records import summarize
 
 
@@ -90,10 +90,9 @@ def verify(
     visa = VisaRuntime()
     stage = "enumeration"
     try:
-        port = re.fullmatch(r"(?:COM([1-9][0-9]*)|ASRL([1-9][0-9]*)::INSTR)", config.resource, re.I)
-        if config.adapter != ADAPTER_ID or config.transport != "visa" or port is None:
-            raise DeviceError("请选择一个 Windows COM 口及开关板适配器", "invalid_parameter")
-        selected = "COM" + (port[1] or port[2])
+        if config.adapter != ADAPTER_ID:
+            raise DeviceError("请选择开关板适配器", "invalid_parameter")
+        selected = serial_port(config)
         ports = [p for p in SerialDiscoveryProvider().enumerate() if p.config.resource == selected]
         atomic_json(folder / "enumeration.json", jsonable(ports))
         if len(ports) != 1 or not DEFINITION.matches_manual_port(ports[0].descriptor):

@@ -3,7 +3,7 @@ from collections import deque
 from pathlib import Path
 
 import pytest
-from pyvisa.constants import ControlFlow, Parity, SerialTermination, StopBits
+from serial.serialutil import SerialBase
 
 from lab_control.application.controls import data_sources
 from lab_control.discovery.providers import SerialDiscoveryProvider
@@ -22,49 +22,71 @@ FIXTURE = json.loads((Path(__file__).parent / "fixtures/control.json").read_text
 CONFIG = ConnectionConfig("ASRL99::INSTR", ADAPTER_ID)
 
 
-class Handle:
-    def __init__(self):
+class Handle(SerialBase):
+    """Exercise pySerial's real line-state setters with no operating-system handle."""
+
+    def __init__(self, **settings):
+        self.events = []
         self.writes = []
         self.rx = deque()
         self.reply = b""
         self.idn = b"ESP32-S32 Board!\r\n"
-        self.closed = False
+        super().__init__(**settings)
+
+    def _update_dtr_state(self):
+        self.events.append(("live_dtr", self.dtr))
+
+    def _update_rts_state(self):
+        self.events.append(("live_rts", self.rts))
+
+    def open(self):
+        self.events.append(("open", self.port, self.dtr, self.rts))
+        self.is_open = True
 
     @property
-    def bytes_in_buffer(self):
+    def in_waiting(self):
         return len(self.rx)
 
-    def write_raw(self, payload):
+    def write(self, payload):
+        assert self.is_open
         self.writes.append(payload)
         self.rx.extend(self.idn if payload == b"*IDN?\n" else self.reply)
         return len(payload)
 
-    def read_bytes(self, count, *, break_on_termchar):
-        assert not break_on_termchar
+    def read(self, count):
+        assert self.is_open
         return bytes(self.rx.popleft() for _ in range(count))
 
     def close(self):
-        self.closed = True
+        if self.is_open:
+            self.events.append(("close", self.port, self.dtr, self.rts))
+            self.is_open = False
 
 
 class Manager:
-    def __init__(self):
+    def __init__(self, monkeypatch):
         self.handles = []
         self.next_ack = b""
+        self.next_idn = b"ESP32-S32 Board!\r\n"
+        monkeypatch.setattr("serial.Serial", self.serial)
 
-    def open_resource(self, resource, **_kwargs):
-        assert resource == CONFIG.resource
-        handle = Handle()
+    def serial(self, **settings):
+        assert settings["port"] is None  # Configure control lines before native open.
+        handle = Handle(**settings)
         handle.reply = self.next_ack
+        handle.idn = self.next_idn
         self.handles.append(handle)
         return handle
 
+    def open_resource(self, *_args, **_kwargs):
+        pytest.fail("The switch board must never open a VISA serial handle")
+
     def close(self):
-        assert all(handle.closed for handle in self.handles)
+        assert all(not handle.is_open for handle in self.handles)
 
 
-def test_status_and_capabilities_do_not_write_before_connection():
-    manager = Manager()
+def test_status_and_capabilities_do_not_write_before_connection(monkeypatch):
+    manager = Manager(monkeypatch)
     visa = VisaRuntime(manager=manager)
     wire = create_transport(CONFIG, visa)
     wire.open()
@@ -89,7 +111,7 @@ def test_exact_commands_passive_receipts_and_mutual_exclusion_without_companion_
         ConnectionConfig("COM99", transport="serial"), "serial", {"vid": 0x10C4, "pid": 0xEA60}
     )
     monkeypatch.setattr(SerialDiscoveryProvider, "enumerate", lambda _: (port,))
-    manager = Manager()
+    manager = Manager(monkeypatch)
     visa = VisaRuntime(manager=manager)
     wire = create_transport(CONFIG, visa)
     wire.open()
@@ -113,13 +135,9 @@ def test_exact_commands_passive_receipts_and_mutual_exclusion_without_companion_
             assert manager.handles[0].writes[-1] == bytes.fromhex(expected)
         assert len(manager.handles) == 1
         h = manager.handles[0]
-        assert (h.baud_rate, h.data_bits, h.parity, h.stop_bits) == (115200, 8, Parity.none, StopBits.one)
-        assert (h.flow_control, h.end_input, h.end_output) == (
-            ControlFlow.none,
-            SerialTermination.none,
-            SerialTermination.none,
-        )
-        assert h.write_termination is None and h.read_termination is None
+        assert (h.baudrate, h.bytesize, h.parity, h.stopbits) == (115200, 8, "N", 1)
+        assert (h.xonxoff, h.rtscts, h.dsrdtr) == (False, False, False)
+        assert h.events == [("open", "COM99", False, False)]
         h.reply = b""
         last = board.apply(DeviceCommand("ch3_on", confirmed=True))
         assert last.readback["最近完整发送"] == "ch3_on" and last.readback["最近串口接收 HEX"] == "无"
@@ -135,7 +153,7 @@ def test_exact_commands_passive_receipts_and_mutual_exclusion_without_companion_
 
 
 def test_port_reused_between_binding_and_output_never_opens_handle(monkeypatch):
-    manager = Manager()
+    manager = Manager(monkeypatch)
     visa = VisaRuntime(manager=manager)
     config = ConnectionConfig(CONFIG.resource, ADAPTER_ID, usb_instance_id="original")
     wire = create_transport(config, visa)
@@ -210,7 +228,7 @@ def test_first_click_waits_for_firmware_then_writes_once(monkeypatch):
         ConnectionConfig("COM99", transport="serial"), "serial", {"vid": 0x10C4, "pid": 0xEA60}
     )
     monkeypatch.setattr(SerialDiscoveryProvider, "enumerate", lambda _: (port,))
-    manager = Manager()
+    manager = Manager(monkeypatch)
     events = []
 
     def startup(seconds):
