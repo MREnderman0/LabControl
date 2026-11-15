@@ -591,6 +591,14 @@ def convert_analysis(
         if paths:
             for path in paths:
                 for frame in read_frames(path, writer.state["sequence"]):
+                    if frame["configuration"].get("paired_curves"):
+                        from lab_control.instruments.registry import DEVICE_DEFINITIONS
+
+                        definition = DEVICE_DEFINITIONS.get(metadata.get("adapter_id", ""))
+                        if definition and definition.export_recorded_frame:
+                            definition.export_recorded_frame(folder, frame)
+                        else:
+                            raise ValueError("采集记录指定的曲线导出器不可用")
                     writer.append(frame)
                     try:
                         stamp = datetime.fromisoformat(frame["timestamp"])

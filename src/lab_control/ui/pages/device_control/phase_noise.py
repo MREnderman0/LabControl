@@ -27,6 +27,7 @@ from lab_control.instruments.devices.microchip_53100a.profile import (
 )
 from lab_control.storage.layout import raw_folder
 from lab_control.storage.recording import read_frames
+from lab_control.ui.pages.device_control.fspn import FspnPanel
 from lab_control.ui.pages.monitoring.recording_state import update_recording_frame
 from lab_control.ui.widgets.device_selector import DeviceSelector
 
@@ -104,8 +105,13 @@ class PhaseNoisePage(QWidget):
         header.addWidget(self.start_button)
         header.addWidget(self.stop_button)
         layout.addLayout(header)
-        body = QHBoxLayout()
-        layout.addLayout(body, 1)
+        self.legacy_body = QWidget()
+        body = QHBoxLayout(self.legacy_body)
+        body.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.legacy_body, 1)
+        self.fspn = FspnPanel(controller, self.plot, self.selector)
+        self.fspn.hide()
+        layout.addWidget(self.fspn, 1)
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("spectrumChart")
         charts = QVBoxLayout(self.chart_frame)
@@ -209,6 +215,23 @@ class PhaseNoisePage(QWidget):
         self.device_id, self.last_event = device_id, None
         self.supported = False
         self.passive = False
+        native = False
+        if device_id:
+            try:
+                native = any(
+                    op.name == "phase_noise_round" and op.available
+                    for op in self.controller.capabilities(device_id).operations
+                )
+            except DeviceError:
+                pass
+        self.native = native
+        for widget in (self.legacy_body, self.notice, self.start_button, self.stop_button):
+            widget.setVisible(not native)
+        self.fspn.setVisible(native)
+        self.fspn.select(device_id if native else "")
+        if native:
+            self.fspn.update_actions()
+            return
         if device_id:
             try:
                 caps = self.controller.capabilities(device_id)
@@ -330,6 +353,9 @@ class PhaseNoisePage(QWidget):
     def refresh(self):
         if not self.isVisible():
             return
+        if self.native:
+            self.fspn.update_actions()
+            return
         state = self.controller.states.get(self.device_id, {})
         active = state.get("activeTask") == "continuous_acquisition"
         if active:
@@ -364,7 +390,7 @@ class PhaseNoisePage(QWidget):
         self.refresh_frame(self.device_id)
 
     def refresh_frame(self, key):
-        if not self.isVisible() or key != self.device_id or self.passive:
+        if not self.isVisible() or key != self.device_id or self.passive or self.native:
             return
         event = self.controller.recorded_frame(key)
         if event is None or event is self.last_event:

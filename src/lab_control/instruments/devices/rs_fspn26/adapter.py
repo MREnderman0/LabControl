@@ -9,6 +9,8 @@ from lab_control.domain.instruments import Capability, DeviceError, Measurement,
 from lab_control.instruments.base import CommandSpec, Profile, ScpiAdapter, read_command
 from lab_control.transport.base import numeric_values
 
+from .settings import SETTINGS, apply_settings, snapshot
+
 SOURCE = "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html"
 MAX_POINTS = 4_000_000
 WINDOWS = range(1, 17)
@@ -28,6 +30,8 @@ def profile() -> Profile:
         ),
         "transfer_format": replace(read_command("transfer_format", "FORM?", scoped=False), decode=token),
     }
+    commands["phase_noise_settings"] = SETTINGS
+    commands["phase_noise_round"] = CommandSpec(Capability("phase_noise_round", section="11.5.3"))
     commands["phase_noise_trace"] = CommandSpec(Capability("phase_noise_trace", section="11.5.3 / 11.7.3"))
     return Profile(
         "rs.fspn26",
@@ -66,7 +70,36 @@ class Fspn26Adapter(ScpiAdapter):
     def query_token(self, command):
         return token(self.transport.query(command))
 
-    def trace_settings(self):
+    recorded_run_kinds = ("phase_noise_round", "phase_noise_display")
+
+    def read(self, operation, channel=1):
+        if operation == "phase_noise_settings":
+            self.check_pn()
+            return snapshot(self)
+        return super().read(operation, channel)
+
+    def apply(self, command):
+        if command.operation == "phase_noise_settings":
+            return apply_settings(self, command)
+        return super().apply(command)
+
+    def validate_recorded_run(self, request):
+        from .measurement import validate_request
+
+        validate_request(request)
+
+    def run_acquisition(self, request, stop):
+        from .measurement import measure
+
+        return measure(self, request, stop)
+
+    def check_pn(self):
+        if self.selected_application()[0] not in {"PNO", "PNOISE"} or self.query_token(
+            "CONF:PNO:MEAS?"
+        ) not in {"PNO", "PNOISE"}:
+            raise DeviceError("请在仪器选择载波相位噪声测量。", "acquisition_setup_blocked")
+
+    def selected_application(self):
         applications = self.read("applications")
         if len(applications) == 2:
             application = applications[0].upper()
@@ -77,6 +110,10 @@ class Fspn26Adapter(ScpiAdapter):
                 name.upper(): kind.upper() for kind, name in zip(applications[::2], applications[1::2])
             }
             application = by_name.get(selected, selected)
+        return application, selected
+
+    def trace_settings(self):
+        application, selected = self.selected_application()
         if application not in {"PNO", "PNOISE"}:
             raise DeviceError("请在面板选择相位噪声应用。", "acquisition_setup_blocked")
         empty = []

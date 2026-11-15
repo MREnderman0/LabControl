@@ -99,6 +99,8 @@ class DeviceDefinition:
     # Some SDKs know enabled inputs only after explicit configuration in this session.
     recording_channels_from_status: Callable[[dict[str, Any]], tuple[int, ...]] | None = None
 
+    export_recorded_frame: Callable[[Path, dict[str, Any]], None] | None = None
+
     def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
         return self.manual_usb_id is None or self.manual_usb_id == (
             descriptor.get("vid"),

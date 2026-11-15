@@ -7,6 +7,7 @@ from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import Fspn26Adapter, profile
+from .export import export_round
 
 
 def _verify(*args, **kwargs):
@@ -31,4 +32,5 @@ DEFINITION = DeviceDefinition(
     metric_profiles=(PHASE_NOISE_AT_OFFSET_PROFILE,),
     offline_processing=ProcessingProfile("frames"),
     readonly_check=_verify,
+    export_recorded_frame=export_round,
 )

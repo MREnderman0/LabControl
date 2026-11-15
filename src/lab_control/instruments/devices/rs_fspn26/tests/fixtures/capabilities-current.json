@@ -1,0 +1,204 @@
+{
+  "fixture_origin": "Native FSPN single-round measurement and partial RF settings (manual 1179.4363.02)",
+  "adapter": "rs.fspn26",
+  "capabilities": {
+    "category": "phase_noise_analyzer",
+    "channels": [
+      1
+    ],
+    "operations": [
+      {
+        "name": "applications",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+        "section": "INST:LIST?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "transfer_format",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+        "section": "FORM?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "phase_noise_settings",
+        "parameters": {
+          "start_hz": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "stop_hz": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "rbw_percent": {
+            "kind": "number",
+            "unit": "%",
+            "minimum": 0.1,
+            "maximum": 30,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "xcorr": {
+            "kind": "number",
+            "unit": "",
+            "minimum": 1,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "attenuation_db": {
+            "kind": "integer",
+            "unit": "dB",
+            "minimum": 0,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": 5
+          },
+          "attenuation_auto": {
+            "kind": "boolean",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+        "section": "11.6.5–11.6.6",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "native"
+      },
+      {
+        "name": "phase_noise_round",
+        "parameters": {},
+        "readable": false,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+        "section": "11.5.3",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "phase_noise_trace",
+        "parameters": {},
+        "readable": false,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+        "section": "11.5.3 / 11.7.3",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "rs.fspn26",
+    "manufacturer": [
+      "Rohde&Schwarz",
+      "Rohde & Schwarz"
+    ],
+    "models": [
+      "FSPN-26"
+    ],
+    "category": "phase_noise_analyzer",
+    "channels": [
+      1
+    ],
+    "source": "https://www.rohde-schwarz.com/us/manual/rs-fspn-user-manual_78701-1129408.html",
+    "revision": "1179.4363.02 v06",
+    "status": [
+      "applications",
+      "transfer_format"
+    ],
+    "identity_query": "*IDN?",
+    "error_query": "SYST:ERR?",
+    "acquisition": "trace",
+    "channel_limits": {}
+  },
+  "commands": {
+    "applications": {
+      "writes": [],
+      "query": "INST:LIST?",
+      "select": [],
+      "compare": false
+    },
+    "transfer_format": {
+      "writes": [],
+      "query": "FORM?",
+      "select": [],
+      "compare": false
+    },
+    "phase_noise_settings": {
+      "writes": [],
+      "query": "",
+      "select": [],
+      "compare": true
+    },
+    "phase_noise_round": {
+      "writes": [],
+      "query": "",
+      "select": [],
+      "compare": true
+    },
+    "phase_noise_trace": {
+      "writes": [],
+      "query": "",
+      "select": [],
+      "compare": true
+    }
+  }
+}
