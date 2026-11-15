@@ -1,9 +1,10 @@
 from concurrent.futures import Future
+from threading import Event
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
 
-from lab_control.domain.instruments import Parameter
+from lab_control.domain.instruments import ApplyResult, Parameter
 from lab_control.ui.pages.monitoring.oscilloscope_controls import ScopeSlider
 
 from .test_oscilloscope_workspace import scope as scope
@@ -88,3 +89,99 @@ def test_normal_groove_press_waits_for_release_once(qtbot):
     assert changes == []
     qtbot.mouseRelease(field.slider, Qt.MouseButton.LeftButton, pos=position)
     assert len(changes) == 1
+
+
+def test_real_groove_drag_previews_without_frame_and_writes_only_last_value(scope, qtbot, monkeypatch):
+    _, page, _, _, adapter = scope
+    field = page.controls.sliders[1, "offset"]
+    slider = field.slider
+    assert field.isEnabled() and page.plot.displayed_frame is None
+    writes = []
+    apply = adapter.apply
+    monkeypatch.setattr(adapter, "apply", lambda cmd: writes.append(cmd) or apply(cmd))
+    start = QPoint(slider.width() // 4, slider.height() // 2)
+    end = QPoint(slider.width() * 3 // 4, start.y())
+    qtbot.mousePress(slider, Qt.MouseButton.LeftButton, pos=start)
+    first = field.value()
+    qtbot.mouseMove(slider, pos=end)
+    qtbot.waitUntil(lambda: field.value() != first)
+    last = field.value()
+    assert page.plot.preview_hint.isVisible() and "预计CH1 偏移" in page.plot.preview_hint.text()
+    assert "等待首帧" in page.plot.preview_hint.text() and "预计" in field.value_label.text()
+    assert not writes
+    qtbot.mouseRelease(slider, Qt.MouseButton.LeftButton, pos=end)
+    qtbot.waitUntil(lambda: bool(writes) and not page.controls.running)
+    assert [c.parameters["value"] for c in writes] == [last]
+    assert not page.plot.preview_hint.isVisible()
+
+
+def test_click_on_custom_readback_does_not_select_nearest_step(qtbot):
+    field = ScopeSlider("档位", "V", coarse=True)
+    qtbot.addWidget(field)
+    field.configure(0.037, Parameter("number", "V/div", 0.001, 1), 0.037)
+    writes = []
+    field.committed.connect(writes.append)
+    field.slider.setSliderDown(True)
+    field.slider.setSliderDown(False)
+    assert not writes and "37 mV" in field.value_label.text()
+
+
+def test_escape_and_release_restore_actual_value_without_writing(scope, qtbot, monkeypatch):
+    _, page, _, _, adapter = scope
+    field = page.controls.sliders[1, "offset"]
+    original = field.value_label.text()
+    monkeypatch.setattr(adapter, "apply", lambda cmd: pytest.fail(f"Cancelled slider wrote {cmd}"))
+    slider = field.slider
+    point = QPoint(slider.width() // 4, slider.height() // 2)
+    qtbot.mousePress(slider, Qt.MouseButton.LeftButton, pos=point)
+    assert field.dirty and page.plot.preview_hint.isVisible()
+    qtbot.keyClick(slider, Qt.Key.Key_Escape)
+    qtbot.mouseRelease(slider, Qt.MouseButton.LeftButton, pos=point)
+    qtbot.wait(250)
+    assert not field.dirty and field.value_label.text() == original
+    assert not page.plot.preview_hint.isVisible() and not page.controls.running
+
+
+@pytest.mark.parametrize("reject_first", [False, True])
+def test_rapid_drag_while_waiting_does_not_queue_another_write(scope, qtbot, monkeypatch, reject_first):
+    _, page, _, _, adapter = scope
+    field = page.controls.sliders[1, "offset"]
+    initial = field.actual
+    slider = field.slider
+    apply = adapter.apply
+    release = Event()
+    writes = []
+
+    def slow_apply(cmd):
+        writes.append(cmd)
+        if len(writes) == 1:
+            assert release.wait(5)
+            if reject_first:
+                return ApplyResult("rejected", cmd.operation, cmd.parameters, initial, error="test rejection")
+        return apply(cmd)
+
+    monkeypatch.setattr(adapter, "apply", slow_apply)
+
+    def point(percent):
+        return QPoint(round((slider.width() - 1) * percent / 100), slider.height() // 2)
+
+    qtbot.mousePress(slider, Qt.MouseButton.LeftButton, pos=point(18))
+    for percent in [70, 38, 85, 25, 78, 47, 82]:
+        qtbot.mouseMove(slider, point(percent))
+    target = field.value()
+    assert not writes
+    qtbot.mouseRelease(slider, Qt.MouseButton.LeftButton, pos=point(82))
+    try:
+        qtbot.waitUntil(lambda: bool(writes) and not slider.isEnabled())
+        qtbot.mouseClick(slider, Qt.MouseButton.LeftButton, pos=point(20))
+        qtbot.wait(220)
+        assert len(writes) == 1 and page.controls.running and not slider.isEnabled()
+    finally:
+        release.set()
+    qtbot.waitUntil(lambda: not page.controls.running and slider.isEnabled())
+    assert field.actual == (initial if reject_first else target)
+    assert not page.plot.preview_hint.isVisible() and not field.dirty
+    qtbot.mouseClick(slider, Qt.MouseButton.LeftButton, pos=point(20))
+    qtbot.waitUntil(lambda: len(writes) == 2 and not page.controls.running)
+    assert writes[0].parameters["value"] == target
+    assert writes[1].parameters["value"] == field.actual != target

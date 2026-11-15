@@ -36,6 +36,7 @@ class ScopeDisplay:
     horizontal_position_sign: int | None = None
     horizontal_divisions: int = 10
     vertical_position_divisions: float = 0.0
+    horizontal_reference_percent: float = 50.0
 
     def __post_init__(self) -> None:
         numbers = (
@@ -51,6 +52,7 @@ class ScopeDisplay:
             or not 2 <= self.horizontal_divisions <= 32
             or self.vertical_offset_sign not in {None, -1, 1}
             or self.horizontal_position_sign not in {None, -1, 1}
+            or not 0 <= self.horizontal_reference_percent <= 100
             or not self.unit
             or not all(math.isfinite(v) for v in numbers)
             or self.units_per_div <= 0

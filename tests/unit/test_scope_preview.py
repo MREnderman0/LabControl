@@ -113,3 +113,36 @@ def test_scale_preview_preserves_instrument_vertical_position_and_twelve_divisio
     assert mapped.y() == pytest.approx(0.5)  # (0 - 0.3) / 0.2 + 2 divisions.
     assert plot.grid_range == pytest.approx((-12e-6, 12e-6))
     assert plot.displayed_frame is saved
+
+
+def test_estimates_use_offset_position_and_time_reference_together(plot, qtbot):
+    sample = signed_frame()
+    m = sample.batch.measurements[0]
+    display = ScopeDisplay(
+        0.1,
+        0.1,
+        1e-6,
+        3e-6,
+        vertical_offset_sign=1,
+        horizontal_position_sign=1,
+        vertical_position_divisions=2,
+        horizontal_divisions=12,
+        horizontal_reference_percent=25,
+    )
+    m = replace(m, metadata={"scope_display": display.metadata()})
+    sample = replace(sample, batch=replace(sample.batch, measurements=(m,)))
+    plot.show_frame(sample, SOURCE, (1,))
+    actual = plot.displayed_frame
+    plot.preview_parameter(1, "offset", 0.5)
+    plot.preview_parameter(1, "scale", 0.2)
+    plot.preview_parameter(1, "timebase", 2e-6)
+    plot.preview_parameter(1, "time_position", 1e-6)
+    plot.preview_parameter(1, "trigger_level", 0.3)
+    qtbot.waitUntil(lambda: plot.trigger_preview is not None and plot.trigger_preview.isVisible())
+    assert plot.grid_range == pytest.approx((-5e-6, 19e-6))
+    # Target center is 0.5 - 2 * 0.2 V = 0.1 V; trigger 0.3 V is one division higher.
+    assert plot.trigger_preview.value() == pytest.approx(1.0)
+    assert plot.curves[1, "waveform"].transform().map(QPointF(0, 2)).y() == pytest.approx(1)
+    assert plot.displayed_frame is actual
+    plot.clear_preview()
+    assert not plot.trigger_preview.isVisible() and plot.grid_range == pytest.approx((-3e-6, 9e-6))

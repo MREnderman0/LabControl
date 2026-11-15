@@ -133,6 +133,20 @@ class Rtm3004Adapter(ScpiAdapter):
         ):
             raise Unsupported("仅验证模拟边沿触发")
 
+    def adapted_readback(self, command, parameters, readback):
+        if command.operation != "offset":
+            return {}
+        requested = parameters["value"]
+        # FW 01.400 has rounded a requested -0.7975 V to -0.7976 V.
+        # Bound acceptance by both that observed difference and the current scale.
+        difference = abs(readback - requested)
+        if difference > 0.0001 + 1e-12 or readback == self._settings.get(f"{command.channel}.offset"):
+            return {}
+        scale = self.read("scale", command.channel)
+        if difference > scale * 0.01 + 1e-12 or self.read("offset", command.channel) != readback:
+            return {}
+        return {"source": "instrument_readback", "requested": requested, "adapted": readback}
+
     def complete_setting(self, command):
         if command.operation not in {"single", "run", "stop"}:
             if number(self.transport.query("*OPC?")) != 1:
@@ -375,6 +389,9 @@ class Rtm3004Adapter(ScpiAdapter):
                             before[f"{ch}.offset"] - position * scale,
                             before["1.timebase"],
                             center,
+                            vertical_offset_sign=1,
+                            horizontal_position_sign=1,
+                            horizontal_reference_percent=before["1.time_reference"],
                             horizontal_divisions=divisions,
                             vertical_position_divisions=position,
                         ).metadata(),

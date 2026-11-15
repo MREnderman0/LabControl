@@ -6,6 +6,7 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QTransform
+from PySide6.QtWidgets import QLabel, QVBoxLayout
 
 from lab_control.application.acquisition_pipeline import validate_displayed_batch
 from lab_control.domain.instruments import DeviceError
@@ -16,6 +17,12 @@ from lab_control.ui.pages.monitoring.plot import LivePlot
 class OscilloscopePlot(LivePlot):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.preview_hint = QLabel()
+        self.preview_hint.setObjectName("scopeSampleRate")
+        self.preview_hint.hide()
+        layout = self.layout()
+        assert isinstance(layout, QVBoxLayout)
+        layout.insertWidget(0, self.preview_hint)
         self.grid_lines: list = []
         self.grid_range: tuple | None = None
         self.instrument_view = False
@@ -28,15 +35,18 @@ class OscilloscopePlot(LivePlot):
         self.preview_timer.setInterval(16)
         self.preview_timer.timeout.connect(self.render_preview)
         self.actual_meta = ""
+        self.trigger_preview: pg.InfiniteLine | None = None
         self.plot.getViewBox().sigStateChanged.connect(self._keep_instrument_view)
 
     def reset(self) -> None:
+        self.preview_hint.hide()
         self.preview_timer.stop()
         self.preview_targets.clear()
         self.instrument_view = False
         self.grid_range = None
         super().reset()
         self.grid_lines.clear()
+        self.trigger_preview = None
         self.grid_range = None
         self.instrument_view = False
         self.legend_signature = None
@@ -179,16 +189,31 @@ class OscilloscopePlot(LivePlot):
         )
         self.displayed_frame = candidate
         self.actual_meta = self.meta.text()
+        if self.trigger_preview is not None:
+            self.trigger_preview.hide()
         if self.preview_targets:
             self.render_preview()
 
     def preview_parameter(self, channel: int, operation: str, value: float) -> None:
         """Estimated viewport only: never replace the immutable exported frame."""
-        if not self.instrument_view or self.displayed_frame is None or not np.isfinite(value):
-            return
-        if operation not in {"scale", "offset", "timebase", "time_position"}:
+        labels = {
+            "timebase": ("时基", "s", "/格"),
+            "time_position": ("水平偏移", "s", ""),
+            "scale": (f"CH{channel} 档位", "V", "/格"),
+            "offset": (f"CH{channel} 偏移", "V", ""),
+            "trigger_level": (f"CH{channel} 触发电平", "V", ""),
+        }
+        if operation not in labels or not np.isfinite(value):
             return
         if operation in {"scale", "timebase"} and value <= 0:
+            return
+        label, unit, suffix = labels[operation]
+        target = engineering(value, unit) + suffix
+        self.preview_hint.setText(
+            f"预计{label}  {target}" + (" · 等待首帧" if self.displayed_frame is None else "")
+        )
+        self.preview_hint.show()
+        if not self.instrument_view or self.displayed_frame is None:
             return
         self.preview_session = self.displayed_frame.session_id
         self.preview_targets[channel, operation] = (value, None)
@@ -196,6 +221,7 @@ class OscilloscopePlot(LivePlot):
             self.preview_timer.start()
 
     def commit_preview(self, version: int) -> None:
+        self.preview_hint.hide()
         self.preview_targets = {
             key: (value, version if pending is None else pending)
             for key, (value, pending) in self.preview_targets.items()
@@ -203,6 +229,7 @@ class OscilloscopePlot(LivePlot):
         self.render_preview()
 
     def clear_preview(self) -> None:
+        self.preview_hint.hide()
         if not self.preview_targets:
             self.fit_current()
             return
@@ -215,34 +242,55 @@ class OscilloscopePlot(LivePlot):
             return
         specs = []
         used = False
+        if self.trigger_preview is not None:
+            self.trigger_preview.hide()
         for measurement in self.displayed_frame.batch.measurements:
             original = ScopeDisplay.parse(measurement.metadata["scope_display"])
-            values = {}
-            for (ch, operation), (value, _version) in self.preview_targets.items():
-                if operation == "scale" and ch == measurement.channel:
-                    values["units_per_div"] = value
-                    values["reference_value"] = (
-                        original.reference_value
-                        + original.vertical_position_divisions * (original.units_per_div - value)
-                    )
-                elif operation == "offset" and ch == measurement.channel and original.vertical_offset_sign:
-                    values["reference_value"] = original.vertical_offset_sign * value
-                elif operation == "timebase":
-                    values["seconds_per_div"] = value
-                elif operation == "time_position" and original.horizontal_position_sign:
-                    values["time_center"] = original.horizontal_position_sign * value
-            used |= bool(values)
+            ch = measurement.channel
+            targets = self.preview_targets
+            scale = targets.get((ch, "scale"), (original.units_per_div, None))[0]
+            timebase = targets.get((1, "timebase"), (original.seconds_per_div, None))[0]
+            reference = original.reference_value + original.vertical_position_divisions * (
+                original.units_per_div - scale
+            )
+            if (ch, "offset") in targets and original.vertical_offset_sign:
+                reference = original.vertical_offset_sign * targets[ch, "offset"][0] - (
+                    original.vertical_position_divisions * scale
+                )
+                used = True
+            reference_divs = (
+                (50 - original.horizontal_reference_percent) / 100 * original.horizontal_divisions
+            )
+            center = original.time_center + reference_divs * (timebase - original.seconds_per_div)
+            if (1, "time_position") in targets and original.horizontal_position_sign:
+                center = (
+                    original.horizontal_position_sign * targets[1, "time_position"][0]
+                    + reference_divs * timebase
+                )
+                used = True
+            used |= (ch, "scale") in targets or (1, "timebase") in targets
             try:
                 spec = replace(
                     original,
-                    units_per_div=values.get("units_per_div", original.units_per_div),
-                    reference_value=values.get("reference_value", original.reference_value),
-                    seconds_per_div=values.get("seconds_per_div", original.seconds_per_div),
-                    time_center=values.get("time_center", original.time_center),
+                    units_per_div=scale,
+                    reference_value=reference,
+                    seconds_per_div=timebase,
+                    time_center=center,
                 )
             except ValueError:
                 return
             specs.append((measurement, spec))
+            if (ch, "trigger_level") in targets:
+                level = targets[ch, "trigger_level"][0]
+                if self.trigger_preview is None:
+                    self.trigger_preview = pg.InfiniteLine(
+                        angle=0, movable=False, pen=pg.mkPen("#e3a252", style=Qt.PenStyle.DashLine)
+                    )
+                    self.trigger_preview.setZValue(5)
+                    self.plot.addItem(self.trigger_preview, ignoreBounds=True)
+                self.trigger_preview.setPos((level - reference) / scale)
+                self.trigger_preview.show()
+                used = True
             curve = self.curves.get((measurement.channel, measurement.quantity))
             if curve is not None:
                 # Affine scene transform reuses the existing curve/decimation;

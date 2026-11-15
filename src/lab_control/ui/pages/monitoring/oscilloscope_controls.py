@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QStyle,
+    QStyleOptionSlider,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -56,15 +58,21 @@ class GestureSlider(QSlider):
     mouse_started = Signal()
     mouse_finished = Signal()
     key_finished = Signal()
+    gesture_cancelled = Signal()
     fine_step = Signal(int)
     fine_moved = Signal(float)
     fine_drag = False
     drag_origin: float | None = None
+    groove_drag = False
     linear = False
     key_active = False
     mouse_active = False
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape:
+            self.gesture_cancelled.emit()
+            event.accept()
+            return
         self.key_active = True
         self.key_started.emit()
         directions = {
@@ -91,6 +99,17 @@ class GestureSlider(QSlider):
         if event.button() == Qt.MouseButton.LeftButton:
             self.mouse_active = True
             self.mouse_started.emit()
+        if event.button() == Qt.MouseButton.LeftButton and not self.fine_drag:
+            option = QStyleOptionSlider()
+            self.initStyleOption(option)
+            handle = self.style().subControlRect(
+                QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderHandle, self
+            )
+            if not handle.contains(event.position().toPoint()):
+                self.groove_drag = True
+                self.setSliderDown(True)
+                self.move_to_pointer(event)
+                return
         if self.fine_drag and event.button() == Qt.MouseButton.LeftButton:
             self.drag_origin = event.position().x()
             self.setSliderDown(True)
@@ -98,15 +117,34 @@ class GestureSlider(QSlider):
         else:
             super().mousePressEvent(event)
 
+    def move_to_pointer(self, event) -> None:
+        option = QStyleOptionSlider()
+        self.initStyleOption(option)
+        cc = QStyle.ComplexControl.CC_Slider
+        groove = self.style().subControlRect(cc, option, QStyle.SubControl.SC_SliderGroove, self)
+        handle = self.style().subControlRect(cc, option, QStyle.SubControl.SC_SliderHandle, self)
+        span = max(1, groove.width() - handle.width())
+        pos = round(event.position().x() - groove.left() - handle.width() / 2)
+        self.setValue(
+            QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), pos, span, option.upsideDown)
+        )
+        event.accept()
+
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
-        if self.drag_origin is not None:
+        if self.groove_drag:
+            self.move_to_pointer(event)
+        elif self.drag_origin is not None:
             self.fine_moved.emit(event.position().x() - self.drag_origin)
             event.accept()
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        if self.drag_origin is not None and event.button() == Qt.MouseButton.LeftButton:
+        if self.groove_drag and event.button() == Qt.MouseButton.LeftButton:
+            self.move_to_pointer(event)
+            self.groove_drag = False
+            self.setSliderDown(False)
+        elif self.drag_origin is not None and event.button() == Qt.MouseButton.LeftButton:
             self.drag_origin = None
             self.setSliderDown(False)
             event.accept()
@@ -175,6 +213,7 @@ class ScopeSlider(QWidget):
         self.slider.key_started.connect(self.timer.stop)
         self.slider.mouse_started.connect(self.begin_gesture)
         self.slider.mouse_finished.connect(self.commit)
+        self.slider.gesture_cancelled.connect(self.restore_actual)
         self.slider.fine_step.connect(self.keyboard_step)
         self.slider.fine_moved.connect(self.fine_move)
 
@@ -184,13 +223,9 @@ class ScopeSlider(QWidget):
         # The existing instrument value may now lie beyond a changed endpoint.
         # An explicit press/release can select that endpoint even without travel;
         # simply refreshing the range must never write it to the instrument.
-        if (
-            not self.fine
-            and self.actual is not None
-            and not math.isclose(self.value(), self.actual, rel_tol=1e-9, abs_tol=0)
-        ):
+        if not self.fine and self.actual is not None and not self.low <= self.actual <= self.high:
             self.dirty = True
-            self.value_label.setText("→ " + self.text(self.value()))
+            self.preview()
 
     def set_fine(self, enabled: bool) -> None:
         if self.coarse:
@@ -215,7 +250,7 @@ class ScopeSlider(QWidget):
         self.slider.setValue(round((self.target - self.low) / (self.high - self.low) * self.slider.maximum()))
         self.slider.blockSignals(False)
         self.dirty = self.target != self.actual
-        self.value_label.setText(("→ " if self.dirty else "") + self.text(self.target))
+        self.value_label.setText(("预计 " if self.dirty else "") + self.text(self.target))
         if self.dirty:
             self.preview_changed.emit(self.target)
         else:
@@ -242,14 +277,21 @@ class ScopeSlider(QWidget):
 
     def preview(self) -> None:
         self.target = None
-        self.dirty = True
-        self.value_label.setText("→ " + self.text(self.value()))
-        self.preview_changed.emit(self.value())
+        value = self.value()
+        self.dirty = value != self.actual
+        self.value_label.setText(("预计 " if self.dirty else "") + self.text(value))
+        if self.dirty:
+            self.preview_changed.emit(value)
+        else:
+            self.preview_reset.emit()
         if not self.slider.isSliderDown() and not self.slider.key_active and not self.slider.mouse_active:
             self.timer.start()
 
     def text(self, value: float) -> str:
-        return engineering(value, self.unit, custom_scale=self.coarse) + ("/格" if self.coarse else "")
+        text = engineering(value, self.unit) + ("/格" if self.coarse else "")
+        if self.coarse and value not in self.steps:
+            return text + "（自定义）"
+        return text
 
     def commit(self) -> None:
         self.timer.stop()
@@ -268,11 +310,20 @@ class ScopeSlider(QWidget):
         self.slider.key_active = False
         self.slider.mouse_active = False
         self.slider.drag_origin = None
+        self.slider.groove_drag = False
         self.slider.blockSignals(True)
         self.slider.setSliderDown(False)
         self.slider.blockSignals(False)
         self.signature = None
         self.target = None
+
+    def restore_actual(self) -> None:
+        signature = self.signature
+        self.cancel()
+        if signature is not None:
+            actual, spec, division, _fine = signature
+            self.configure(actual, spec, division)
+        self.preview_reset.emit()
 
     def configure(self, actual: float, spec: Parameter, division: float) -> bool:
         if self.dirty or self.slider.isSliderDown():
@@ -288,7 +339,11 @@ class ScopeSlider(QWidget):
         self.division = abs(division)
         self.slider.blockSignals(True)
         if self.coarse:
-            self.steps = coarse_steps(self.low, self.high)
+            self.steps = (
+                tuple(sorted({float(v) for v in spec.choices if self.low <= float(v) <= self.high}))
+                if spec.choices
+                else coarse_steps(self.low, self.high)
+            )
             if not self.steps:
                 self.slider.blockSignals(False)
                 return False
@@ -304,7 +359,8 @@ class ScopeSlider(QWidget):
             )
             ticks = min(2_000_000_000, max(1, math.ceil((self.high - self.low) / self.step)))
             self.slider.setRange(0, ticks)
-            self.slider.setValue(round((actual - self.low) / (self.high - self.low) * ticks))
+            fraction = min(1.0, max(0.0, (actual - self.low) / (self.high - self.low)))
+            self.slider.setValue(round(fraction * ticks))
             self.slider.setPageStep(10)
         self.slider.blockSignals(False)
         self.value_label.setText(self.text(actual))
@@ -441,6 +497,8 @@ class OscilloscopeControls(QFrame):
         if any(name == "trigger_level" for _, name in self.model_writes):
             self.trigger_slider = ScopeSlider("电平", "V")
             self.trigger_slider.committed.connect(self.set_trigger_level)
+            self.trigger_slider.preview_changed.connect(self.preview_trigger_level)
+            self.trigger_slider.preview_reset.connect(self.preview_cancelled.emit)
             trigger.addWidget(self.trigger_slider)
         stack.addStretch()
         self.scroller.setWidget(body)
@@ -539,6 +597,8 @@ class OscilloscopeControls(QFrame):
         self.refresh_sample_rate(state)
         context = (state.get("sessionId"), state.get("configurationVersion"))
         if context != self.last_context:
+            if any(field.dirty or field.slider.isSliderDown() for field in self.slider_fields()):
+                self.preview_cancelled.emit()
             self.values.clear()
             for field in self.slider_fields():
                 field.cancel()
@@ -697,6 +757,11 @@ class OscilloscopeControls(QFrame):
                 self.submit([DeviceCommand("record_length", {"value": value})])
         except (ValueError, DeviceError) as exc:
             self.status.setText(f"采集点数未写入：{exc}")
+
+    def preview_trigger_level(self, value: float) -> None:
+        ch = self.trigger_channel()
+        if ch is not None:
+            self.preview_requested.emit(ch, "trigger_level", value)
 
     def set_trigger_level(self, value: float) -> None:
         ch = self.trigger_channel()
@@ -869,6 +934,8 @@ class OscilloscopeControls(QFrame):
 
     def failed(self, exc) -> None:
         self.status.setText(f"未完成：{exc} · 未重发设置，请刷新核对")
+        for field in self.slider_fields():
+            field.cancel()
         if self.running:
             self.controller.watch(self.controller.runtime.monitoring.stop(self.device_id))
             self.finish(success=False)

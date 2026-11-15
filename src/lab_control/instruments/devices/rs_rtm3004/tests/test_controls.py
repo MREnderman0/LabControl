@@ -134,3 +134,31 @@ def test_deprecated_profile_imports_still_resolve():
 
     assert BOOL.kind == "boolean" and RTM_SOURCE.startswith("https://")
     assert rs_scope().adapter_id == "rs.rtm3004"
+
+
+@pytest.mark.parametrize(
+    "returned,again,error,accepted",
+    [
+        (-0.7976, -0.7976, '0,"No error"', True),
+        (-0.8000, None, '0,"No error"', False),
+        (-0.7976, -0.7974, '0,"No error"', False),
+        (-0.7976, None, '-222,"Out of range"', False),
+    ],
+)
+def test_small_offset_rounding_requires_clean_status_and_stable_readback(returned, again, error, accepted):
+    exchanges = [
+        ("CHAN1:OFFS? MIN", b"-1.945"),
+        ("CHAN1:OFFS? MAX", b"1.945"),
+        ("CHAN1:OFFS -0.7975", b""),
+        ("*OPC?", b"1"),
+        ("CHAN1:OFFS?", str(returned).encode()),
+        ("SYST:ERR?", error.encode()),
+    ]
+    if again is not None:
+        exchanges += [("CHAN1:SCAL?", b"0.011"), ("CHAN1:OFFS?", str(again).encode())]
+    adapter, wire = device(exchanges)
+    result = adapter.apply(DeviceCommand("offset", {"value": -0.7975}))
+    assert (result.outcome == "success") is accepted
+    if accepted:
+        assert result.adaptation["adapted"] == adapter.configuration["1.offset"]["value"] == returned
+    assert wire.history.count("CHAN1:OFFS -0.7975") == 1 and not wire.exchanges

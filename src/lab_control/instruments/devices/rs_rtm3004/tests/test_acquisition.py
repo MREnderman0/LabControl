@@ -68,7 +68,10 @@ def test_full_binary_frame_and_twelve_division_metadata(monkeypatch):
     assert batch.validation == "full" and batch.settings_timestamps
     assert batch.performance["instrument_running"] is False
     assert measured.metadata["scope_display"]["horizontal_divisions"] == 12
-    assert measured.metadata["scope_display"]["reference_value"] == pytest.approx(0.1)
+    spec = measured.metadata["scope_display"]
+    assert spec["reference_value"] == pytest.approx(0.1)
+    assert spec["vertical_offset_sign"] == spec["horizontal_position_sign"] == 1
+    assert spec["horizontal_reference_percent"] == 50
     assert all("?" in command for command in wire.history)
     assert not wire.exchanges
 
