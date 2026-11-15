@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import DeviceCommand, DeviceError, Parameter
 from lab_control.domain.oscilloscope import COLORS, CONTROL_NAMES, coarse_steps, engineering
 from lab_control.domain.readback import boolean_value, normalized_value, usable_reading
-from lab_control.ui.pages.monitoring.scope_acquisition_window import AcquisitionWindow
+from lab_control.ui.pages.monitoring.scope_depth import ScopeDepth
 from lab_control.ui.pages.monitoring.scope_points import ScopePoints
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -379,9 +379,9 @@ class OscilloscopeControls(QFrame):
             return box
 
         self.capture_settings = None
-        if {(1, "timebase"), (1, "record_length"), (1, "record_length_auto")} <= self.model_writes:
-            self.capture_settings = AcquisitionWindow()
-            self.capture_settings.requested.connect(lambda commands: self.submit(commands, channels=True))
+        if {(1, "record_length"), (1, "record_length_auto")} <= self.model_writes:
+            self.capture_settings = ScopeDepth()
+            self.capture_settings.requested.connect(lambda cmd: self.submit([cmd], channels=True))
             section("采集设置").addWidget(self.capture_settings)
 
         horizontal = section("水平")
@@ -519,7 +519,7 @@ class OscilloscopeControls(QFrame):
                 and (
                     cap.name in (*CONTROL_NAMES, "record_length", "coupling", "probe_attenuation")
                     or self.capture_settings is not None
-                    and cap.name in ("record_length_auto", "horizontal_divisions")
+                    and cap.name == "record_length_auto"
                 )
             )
         )

@@ -2,7 +2,7 @@ import threading
 
 import pytest
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication, QDialogButtonBox
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QLineEdit
 
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.domain.connections import ConnectionConfig
@@ -181,24 +181,25 @@ def test_empty_record_does_not_commit_or_reconnect(workspace, qtbot):
     assert app.monitoring.tasks[key].recovery is None and not peer.closed
 
 
-def test_capture_window_and_depth_share_one_explicit_apply(workspace, qtbot):
+def test_depth_applies_only_memory_controls(workspace, qtbot):
     _, page, _, _, peer = workspace
     panel = page.controls.capture_settings
     qtbot.waitUntil(lambda: panel.isEnabled() and panel.depth_choice.count() > 1)
     peer.history.clear()
     assert panel.depth_choice.currentData() == "auto" and not panel.apply.isEnabled()
-    panel.duration.setText("invalid")
-    assert not panel.apply.isEnabled()
-    panel.duration.setText("6")
-    assert panel.unit.currentData() == 0.001
+    assert not panel.findChildren(QLineEdit)
+    assert all("时间窗口" not in label.text() for label in panel.findChildren(QLabel))
+    assert panel.findChildren(WorkspaceComboBox) == [panel.depth_choice]
+    timebase = peer.values[1, "timebase"]
     panel.depth_choice.setCurrentIndex(panel.depth_choice.findData(20000))
     page.controls.refresh()
-    assert panel.duration.text() == "6" and not peer.history
+    assert panel.depth_choice.currentData() == 20000 and not peer.history
     panel.apply.click()
     qtbot.waitUntil(lambda: not page.controls.running and "20" in panel.actual.text())
-    assert peer.values[1, "timebase"] == 0.0005 and peer.values[1, "record_length"] == 20000
+    assert peer.values[1, "timebase"] == timebase and peer.values[1, "record_length"] == 20000
     assert peer.history.count("ACQ:POIN 20000") == 1 and not panel.apply.isEnabled()
     panel.depth_choice.setCurrentIndex(panel.depth_choice.findData("auto"))
     panel.apply.click()
     qtbot.waitUntil(lambda: not page.controls.running and panel.depth_choice.currentData() == "auto")
     assert peer.history.count("ACQ:POIN:AUT ON") == 1 and peer.values[1, "record_length_auto"]
+    assert not any(cmd.startswith(("TIM:SCAL ", "TIM:RANG ")) for cmd in peer.history)
