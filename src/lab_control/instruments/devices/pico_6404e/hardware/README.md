@@ -2,7 +2,13 @@
 
 ## 目标与授权范围
 
-本次仅迁移软件结构，未运行实机测试。只访问用户明确选定的完整型号、序列号及接口；USB 3.x + ps6000a SDK。不得由文档授权写入或输出。
+从正式项目目录执行以下命令，将 `SERIAL` 换成 PicoSDK 枚举到的完整序列号。
+
+```bat
+.venv-dev\Scripts\python.exe -m lab_control.instruments.devices.pico_6404e.hardware.readonly --serial SERIAL
+```
+
+入口使用项目的实机进程锁和设备会话。通过 SDK 枚举指定资产，打开固定 8 位的 6404E，读取完整型号、序列号和固件，关闭后重新连接并逐项核验。批次保存每次 SDK 调用、返回身份、阶段结果及索引。已有正式窗口占用锁时，批次记录为受阻。
 
 ## 前置条件与备份
 

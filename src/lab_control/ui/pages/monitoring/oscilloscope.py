@@ -20,6 +20,7 @@ from lab_control.ui.controller import state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.oscilloscope_controls import OscilloscopeControls
 from lab_control.ui.pages.monitoring.oscilloscope_plot import OscilloscopePlot
+from lab_control.ui.pages.monitoring.pico_scope_controls import PicoScopeControls
 from lab_control.ui.pages.monitoring.recording_state import (
     RecordingButton,
     recording_phase,
@@ -35,7 +36,8 @@ class OscilloscopeMonitoringPage(QWidget):
         super().__init__(parent)
         self.controller, self.add_card = controller, add_card
         self.device_id, self.mode = "", controller.mode
-        self.controls: OscilloscopeControls | None = None
+        self.pico_drafts: dict[tuple[str, str], dict] = {}
+        self.controls: OscilloscopeControls | PicoScopeControls | None = None
         self.source: DataSource | None = None
         self.memory_busy = False
         self.plot: OscilloscopePlot
@@ -48,6 +50,10 @@ class OscilloscopeMonitoringPage(QWidget):
         self.connection = QLabel()
         self.connection.setObjectName("sourceConnectionState")
         header.addWidget(self.connection)
+        self.once_button = QPushButton("单次采集")
+        self.once_button.clicked.connect(lambda: self.start(once=True))
+        self.once_button.hide()
+        header.addWidget(self.once_button)
         self.start_button = QPushButton("开始监测")
         self.start_button.clicked.connect(self.toggle_monitoring)
         header.addWidget(self.start_button)
@@ -121,6 +127,8 @@ class OscilloscopeMonitoringPage(QWidget):
             return
         if (self.device_id, self.mode) == (device_id, self.controller.mode) and self.controls:
             return
+        if isinstance(self.controls, PicoScopeControls):
+            self.pico_drafts[self.mode, self.device_id] = self.controls.draft()
         self.device_id, self.mode = device_id, self.controller.mode
         self.timing.bind(device_id, self.mode)
         self.plot.reset()
@@ -132,32 +140,48 @@ class OscilloscopeMonitoringPage(QWidget):
         self.source = None
         self.splitter.setVisible(bool(device_id))
         self.empty.setVisible(not device_id)
+        self.once_button.hide()
+        self.refresh_action.setVisible(True)
         if device_id:
-            self.source = next(
-                (
-                    s
-                    for s in data_sources(config_from_record(self.controller.records[device_id]))
-                    if s.kind == "waveform"
-                ),
-                None,
-            )
-            self.controls = OscilloscopeControls(self.controller, device_id, self.start, self.right)
+            config = config_from_record(self.controller.records[device_id])
+            self.source = next((s for s in data_sources(config) if s.kind == "waveform"), None)
+            if config.adapter == "pico.6404e":
+                self.controls = PicoScopeControls(
+                    self.controller, device_id, self.pico_drafts.get((self.mode, device_id)), self.right
+                )
+                self.controls.source_changed.connect(self.select_pico_source)
+                self.select_pico_source()
+                self.once_button.show()
+                self.refresh_action.setVisible(False)
+            else:
+                self.controls = OscilloscopeControls(self.controller, device_id, self.start, self.right)
+                self.controls.preview_requested.connect(self.plot.preview_parameter)
+                self.controls.preview_cancelled.connect(self.plot.clear_preview)
+                self.controls.control_finished.connect(self.preview_finished)
             self.right_layout.addWidget(self.controls)
-            self.controls.busy_changed.connect(lambda busy: self.selector.setEnabled(not busy))
+            self.controls.busy_changed.connect(self.control_busy_changed)
             self.controls.channels_changed.connect(self.channels_changed)
-            self.controls.preview_requested.connect(self.plot.preview_parameter)
-            self.controls.preview_cancelled.connect(self.plot.clear_preview)
-            self.controls.control_finished.connect(self.preview_finished)
         if self.isVisible():
             self.focus_settings()
         self.refresh()
         self.refresh_frame(device_id)
 
+    def control_busy_changed(self, busy):
+        self.selector.setEnabled(not busy)
+        self.refresh()
+
+    def select_pico_source(self):
+        if isinstance(self.controls, PicoScopeControls):
+            kind = self.controls.capture_mode.currentData()
+            config = config_from_record(self.controller.records[self.device_id])
+            self.source = next(s for s in data_sources(config) if s.kind == kind)
+            self.plot.reset()
+
     def focus_settings(self) -> None:
         self.controller.focus_settings(self.device_id, self.controls.keys() if self.controls else ())
 
     def refresh_parameters(self) -> None:
-        if self.controls:
+        if isinstance(self.controls, OscilloscopeControls):
             self.controls.refresh_parameters()
 
     def showEvent(self, event) -> None:  # noqa: N802
@@ -173,6 +197,7 @@ class OscilloscopeMonitoringPage(QWidget):
 
     def focus_card(self, spec: dict) -> None:
         self.selector.select(spec["device_id"])
+
         if self.controls and spec.get("channels"):
             check = self.controls.checks.get(spec["channels"][0])
             if check:
@@ -192,23 +217,37 @@ class OscilloscopeMonitoringPage(QWidget):
             channels = self.controls.channels()
             self.plot.restrict_channels(channels)
             self.plot.last_token = None
-            self.plot.meta.setText("通道已更新 · 等待新波形" if channels else "所有通道已关闭 · 监测暂停")
+            self.plot.meta.setText("通道已更新 · 等待新波形" if channels else "未选择采集通道")
+            self.refresh()
 
-    def start(self) -> None:
+    def start(self, *, once=False) -> None:
         if not self.source or not self.controls or not self.controls.channels():
             return
         try:
             self.controller.ensure_applicable(self.device_id)
             self.timing.commit()
-            self.controller.start_monitoring(
-                self.device_id,
-                (self.source.request(self.controls.channels()),),
-                **self.timing.options(),
-                mode=self.mode,
-            )
-            self.refresh()
+            if isinstance(self.controls, PicoScopeControls):
+                request = self.source.request(
+                    self.controls.channels(), self.controls.points.value(), initiate=True, confirmed=True
+                )
+                device_id, session = self.device_id, self.controller.states[self.device_id]["sessionId"]
+
+                def ready():
+                    state = self.controller.states.get(device_id, {})
+                    if self.device_id == device_id and state.get("sessionId") == session:
+                        self.start_request(request, once)
+
+                self.controls.prepare(ready)
+            else:
+                self.start_request(self.source.request(self.controls.channels()), once)
         except Exception as exc:
             self.controller.message.emit(str(exc))
+
+    def start_request(self, request, once):
+        self.controller.start_monitoring(
+            self.device_id, (request,), **self.timing.options(), mode=self.mode, once=once
+        )
+        self.refresh()
 
     def toggle_monitoring(self) -> None:
         if self.controller.reconnect_if_needed(self.device_id):
@@ -291,6 +330,16 @@ class OscilloscopeMonitoringPage(QWidget):
         snapshot = self.controller.runtime.sessions.capability_snapshot(self.device_id)
         memory_supported = bool(snapshot and snapshot.details.get("memory_waveform"))
         connected = state.get("connectionState") in {"connected", "busy"}
+        if isinstance(self.controls, PicoScopeControls):
+            self.controls.update_available(task, connected, bool(state.get("controlsLocked")))
+            self.once_button.setEnabled(
+                bool(
+                    connected
+                    and self.controls.channels()
+                    and not busy
+                    and not (task.get("running") or task.get("pending") or state.get("controlsLocked"))
+                )
+            )
         self.memory_action.setVisible(memory_supported)
         self.memory_action.setEnabled(
             connected

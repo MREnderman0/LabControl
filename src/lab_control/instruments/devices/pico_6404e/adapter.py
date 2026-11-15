@@ -29,6 +29,7 @@ from lab_control.transport.sdk import VendorLibrary
 SOURCE = "https://www.picotech.com/helpfiles/6000a-api/"
 I16, I32, U32, U64, F64, PTR = ct.c_int16, ct.c_int32, ct.c_uint32, ct.c_uint64, ct.c_double, ct.c_void_p
 RAW = 0x80000000
+WAITING_FOR_DATA_BUFFERS = 0x197
 # 6404E input ranges, not every range in the shared Pico SDK enum.
 # 6000E data sheet, Vertical (analog channels), p. 31.
 RANGES = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20)
@@ -83,11 +84,13 @@ class PicoAdapter:
             self.sdk.close()
             raise
 
-    def call(self, name: str, types: list[Any], *args: Any, session: bool = True) -> None:
+    def call(
+        self, name: str, types: list[Any], *args: Any, session: bool = True, accepted: tuple[int, ...] = ()
+    ) -> None:
         if session:
             types, args = [I16, *types], (self.handle, *args)
         result = self.sdk.function("ps6000a" + name, types, U32)(*args)
-        if result:
+        if result and result not in accepted:
             raise DeviceError(f"ps6000a{name} returned status {result:#x}", "sdk_error")
 
     def info(self, code: int) -> str:
@@ -294,6 +297,9 @@ class PicoAdapter:
                     ct.byref(maximum),
                     0,
                 )
+                dt = interval.value * 1e-9
+                if not np.isfinite(dt) or dt <= 0:
+                    raise DeviceError("Invalid block sample interval", "parse_error")
                 if request.points > maximum.value:
                     raise ValidationError("Capture exceeds available memory")
                 self.call(
@@ -317,13 +323,9 @@ class PicoAdapter:
                 self.call(
                     "GetValues", [U64, PTR, U64, U32, U64, PTR], 0, ct.byref(count), 1, RAW, 0, ct.byref(over)
                 )
-                total, dt, overflow = count.value, interval.value * 1e-9, over.value
-                if not 0 < total <= request.points or dt <= 0:
-                    raise DeviceError("Invalid block sample count/interval", "parse_error")
-                data = {
-                    channel: np.ctypeslib.as_array(buffer)[:total].copy()
-                    for channel, buffer in self.buffers.items()
-                }
+                total, overflow = count.value, over.value
+                if not 0 < total <= request.points:
+                    raise DeviceError("Invalid block sample count", "parse_error")
             else:
                 interval = F64(self.sample_interval)
                 self.call(
@@ -337,7 +339,9 @@ class PicoAdapter:
                     1,
                     RAW,
                 )
-                data = {channel: np.empty(request.points, dtype=np.int16) for channel in request.channels}
+                dt = interval.value
+                if not np.isfinite(dt) or dt <= 0:
+                    raise DeviceError("Invalid streaming sample interval", "parse_error")
                 counts = dict.fromkeys(request.channels, 0)
                 infos = (StreamingInfo * len(request.channels))()
                 trigger = TriggerInfo()
@@ -346,41 +350,42 @@ class PicoAdapter:
                         infos[index].channel, infos[index].mode, infos[index].type = channel - 1, RAW, 1
                         infos[index].count = 0
                     self.call(
-                        "GetStreamingLatestValues", [PTR, U64, PTR], infos, len(infos), ct.byref(trigger)
+                        "GetStreamingLatestValues",
+                        [PTR, U64, PTR],
+                        infos,
+                        len(infos),
+                        ct.byref(trigger),
+                        accepted=(WAITING_FOR_DATA_BUFFERS,),
                     )
                     for info in infos:
                         channel = info.channel + 1
                         count = info.count
-                        if (
-                            channel not in data
-                            or count < 0
-                            or info.start < 0
-                            or info.start + count > request.points
-                        ):
-                            raise DeviceError("Invalid SDK streaming buffer range", "parse_error")
-                        count = min(count, request.points - counts[channel])
-                        data[channel][counts[channel] : counts[channel] + count] = np.ctypeslib.as_array(
-                            self.buffers[channel]
-                        )[info.start : info.start + count]
+                        if channel not in counts or not 0 <= count <= request.points - counts[channel]:
+                            raise DeviceError("Invalid SDK streaming sample count", "parse_error")
                         counts[channel] += count
                         if info.overflow:
                             overflow |= 1 << (channel - 1)
+                    if min(counts.values()) == request.points:
+                        break
                     if time.monotonic() > deadline:
                         raise DeviceError("Pico streaming batch timed out", "timeout")
                     time.sleep(0.002)
-                total, dt = request.points, interval.value
+                total = request.points
+            # Each channel owns one full-length buffer until this finite acquisition is stopped.
             measurements = tuple(
                 Measurement(
                     "voltage",
                     "V",
-                    values.astype(float) * float(self.settings[channel]["range"]) / high.value
+                    np.ctypeslib.as_array(buffer)[:total].astype(float)
+                    * float(self.settings[channel]["range"])
+                    / high.value
                     - self.settings[channel]["offset"],
                     channel,
                     np.arange(total) * dt,
                     "s",
                     quality=Quality.OVERLOAD if overflow & (1 << (channel - 1)) else Quality.GOOD,
                 )
-                for channel, values in data.items()
+                for channel, buffer in self.buffers.items()
             )
             return MeasurementBatch(
                 self.identity,
@@ -404,7 +409,8 @@ class PicoAdapter:
         try:
             if self.opened:
                 try:
-                    self.call("Stop", [])
+                    if self.buffers:
+                        self.call("Stop", [])
                 finally:
                     self.call("CloseUnit", [])
                     self.opened = False

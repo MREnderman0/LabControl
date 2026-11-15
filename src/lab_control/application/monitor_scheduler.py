@@ -86,9 +86,12 @@ class MonitorScheduler:
             invalid = [m for m in batch.measurements if m.quality not in {Quality.GOOD, Quality.SIMULATED}]
             raise DeviceError(
                 "; ".join(
-                    m.metadata.get("error", m.quality.value)
-                    for m in batch.measurements
-                    if m.quality not in {Quality.GOOD, Quality.SIMULATED}
+                    f"CH {m.channel} 输入过载，请调大量程后重新采集"
+                    if m.quality == Quality.OVERLOAD
+                    and m.unit == "V"
+                    and request.kind in {"waveform", "streaming"}
+                    else m.metadata.get("error", m.quality.value)
+                    for m in invalid
                 ),
                 invalid[0].quality.value,
             )
