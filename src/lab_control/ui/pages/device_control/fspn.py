@@ -8,7 +8,6 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QComboBox,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -28,6 +27,7 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand
 from lab_control.instruments.devices.rs_fspn26.settings import LABELS
 from lab_control.storage.recording import read_frames
+from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 COLORS = ("#edb25b", "#72d2dd", "#b19cf1", "#99cf8e", "#e88e92", "#89acdc")
 METRICS = (
@@ -134,7 +134,7 @@ class FspnPanel(QWidget):
             self.fields[name] = field
             if name == "attenuation_db":
                 row = QHBoxLayout()
-                self.att_mode = QComboBox()
+                self.att_mode = WorkspaceComboBox()
                 self.att_mode.addItems(["自动", "手动"])
                 self.att_mode.currentIndexChanged.connect(self.update_actions)
                 row.addWidget(self.att_mode)
