@@ -889,16 +889,31 @@
             "value": {
               "kind": "integer",
               "unit": "",
-              "minimum": 1,
+              "minimum": 5000,
               "maximum": 80000000,
-              "choices": [],
+              "choices": [
+                "5000",
+                "10000",
+                "20000",
+                "50000",
+                "100000",
+                "200000",
+                "500000",
+                "1000000",
+                "2000000",
+                "5000000",
+                "10000000",
+                "20000000",
+                "40000000",
+                "80000000"
+              ],
               "required": true,
               "range_source": "model",
               "resolution": null
             }
           },
           "readable": true,
-          "writable": false,
+          "writable": true,
           "requires_confirmation": false,
           "channel_scoped": false,
           "source": "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1335_9090_01/RTM3000_UserManual_en_12.pdf",
@@ -906,7 +921,7 @@
           "verification": "documented_pending_hardware",
           "option": "",
           "available": true,
-          "reason": "当前固件的存储深度设置未通过读回验证；暂仅显示实测点数",
+          "reason": "",
           "partial_update": "none",
           "implementation": "implemented",
           "schema_tested": true,
@@ -1270,6 +1285,46 @@
           }
         },
         {
+          "name": "record_length_auto",
+          "parameters": {
+            "value": {
+              "kind": "boolean",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": true,
+          "writable": true,
+          "requires_confirmation": false,
+          "channel_scoped": false,
+          "source": "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1335_9090_01/RTM3000_UserManual_en_12.pdf",
+          "section": "ACQ:POIN:AUT",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "自动采集点数",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [
+              "ACQ:POIN:AUT {value}"
+            ],
+            "query": "ACQ:POIN:AUT?",
+            "custom_encoder": false
+          }
+        },
+        {
           "name": "vertical_position",
           "parameters": {},
           "readable": true,
@@ -1347,33 +1402,6 @@
             "select": [],
             "writes": [],
             "query": "ACQ:SRAT?",
-            "custom_encoder": false
-          }
-        },
-        {
-          "name": "record_length_auto",
-          "parameters": {},
-          "readable": true,
-          "writable": false,
-          "requires_confirmation": false,
-          "channel_scoped": false,
-          "source": "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1335_9090_01/RTM3000_UserManual_en_12.pdf",
-          "section": "ACQ:POIN:AUT?",
-          "verification": "documented_pending_hardware",
-          "option": "",
-          "available": true,
-          "reason": "",
-          "partial_update": "none",
-          "implementation": "implemented",
-          "schema_tested": true,
-          "protocol_fixture_tested": false,
-          "hardware_passed": false,
-          "ui_label": "自动采集点数",
-          "ui_location": "",
-          "wire_templates": {
-            "select": [],
-            "writes": [],
-            "query": "ACQ:POIN:AUT?",
             "custom_encoder": false
           }
         },

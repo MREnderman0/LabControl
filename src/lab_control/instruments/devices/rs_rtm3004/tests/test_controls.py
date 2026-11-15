@@ -66,14 +66,52 @@ def test_initialization_mismatch_is_not_replayed():
     assert adapter.acquisition_preparation["after"]["format"] == "ASC,0"
 
 
-def test_unqualified_memory_write_is_disabled_before_io():
-    from lab_control.domain.instruments import Unsupported
-
+def test_depth_rejects_non_native_values_before_io():
     adapter, wire = device([])
-    assert not adapter.capabilities().get("record_length").writable
-    with pytest.raises(Unsupported):
-        adapter.apply(DeviceCommand("record_length", {"value": 5000}))
+    with pytest.raises(ValidationError):
+        adapter.apply(DeviceCommand("record_length", {"value": 12345}))
     assert wire.history == []
+
+
+def test_depth_waits_for_manual_mode_and_delayed_readback_without_replay():
+    adapter, wire = device(
+        [
+            ("ACQ:POIN? MIN", b"5000"),
+            ("ACQ:POIN? MAX", b"40000000"),
+            ("ACQ:POIN 10000", b""),
+            ("*OPC?", b"1"),
+            ("ACQ:POIN?", b"20000"),
+            ("ACQ:POIN:AUT?", b"1"),
+            ("ACQ:POIN?", b"10000"),
+            ("ACQ:POIN:AUT?", b"0"),
+            ("ACQ:POIN?", b"10000"),
+            ("SYST:ERR?", b'0,"No error"'),
+        ]
+    )
+    result = adapter.apply(DeviceCommand("record_length", {"value": 10000}))
+    assert result.outcome == "success" and result.readback == 10000
+    assert wire.history.count("ACQ:POIN 10000") == 1
+    assert not wire.exchanges
+
+
+def test_unconfirmed_depth_times_out_without_resending(monkeypatch):
+    from lab_control.instruments.devices.rs_rtm3004 import adapter as module
+
+    ticks = iter((0.0, 3.1))
+    monkeypatch.setattr(module, "monotonic", lambda: next(ticks))
+    adapter, wire = device(
+        [
+            ("ACQ:POIN? MIN", b"5000"),
+            ("ACQ:POIN? MAX", b"40000000"),
+            ("ACQ:POIN 20000", b""),
+            ("*OPC?", b"1"),
+            ("ACQ:POIN?", b"10000"),
+            ("ACQ:POIN:AUT?", b"0"),
+        ]
+    )
+    result = adapter.apply(DeviceCommand("record_length", {"value": 20000}))
+    assert result.outcome == "partial" and result.completed_steps == 1
+    assert wire.history.count("ACQ:POIN 20000") == 1 and not wire.exchanges
 
 
 def test_run_mode_requires_a_running_state_not_only_sweep_readback():

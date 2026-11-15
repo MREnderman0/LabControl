@@ -7,6 +7,22 @@ from lab_control.instruments.base import Profile, command, enum, number, paramet
 
 SOURCE = "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1335_9090_01/RTM3000_UserManual_en_12.pdf"
 BOOL = Parameter("boolean")
+RECORD_LENGTHS = (
+    "5000",
+    "10000",
+    "20000",
+    "50000",
+    "100000",
+    "200000",
+    "500000",
+    "1000000",
+    "2000000",
+    "5000000",
+    "10000000",
+    "20000000",
+    "40000000",
+    "80000000",
+)
 CHANNEL_SETTINGS = (
     "channel_enabled",
     "scale",
@@ -60,7 +76,12 @@ def rtm3004():
         ("trigger_level", "TRIG:A:LEV{ch}", parameter("V", -1e9, 1e9), True),
         ("timebase", "TIM:SCAL", parameter("s/div", 1e-12, 500), False),
         ("time_position", "TIM:POS", parameter("s", -1e9, 1e9), False),
-        ("record_length", "ACQ:POIN", Parameter("integer", minimum=1, maximum=80000000), False),
+        (
+            "record_length",
+            "ACQ:POIN",
+            Parameter("integer", minimum=5000, maximum=80000000, choices=RECORD_LENGTHS),
+            False,
+        ),
         ("trigger_source", "TRIG:A:SOUR", enum("CH1", "CH2", "CH3", "CH4", "EXT"), False),
         ("trigger_slope", "TRIG:A:EDGE:SLOP", enum("POS", "NEG", "EITH"), False),
         ("trigger_mode", "TRIG:A:MODE", enum("AUTO", "NORM", "STOP", "SINGLE"), False),
@@ -72,19 +93,13 @@ def rtm3004():
     ):
         decode = boolean if spec.kind == "boolean" else token if spec.kind == "enum" else number
         commands[name] = replace(command(name, path, spec, scoped=scoped), decode=decode)
-    commands["record_length"] = replace(
-        commands["record_length"],
-        capability=replace(
-            commands["record_length"].capability,
-            writable=False,
-            reason="当前固件的存储深度设置未通过读回验证；暂仅显示实测点数",
-        ),
+    commands["record_length_auto"] = replace(
+        command("record_length_auto", "ACQ:POIN:AUT", BOOL, scoped=False), decode=boolean
     )
     for name, path, decode, scoped in (
         ("vertical_position", "CHAN{ch}:POS?", number, True),
         ("polarity", "CHAN{ch}:POL?", token, True),
         ("sample_rate", "ACQ:SRAT?", number, False),
-        ("record_length_auto", "ACQ:POIN:AUT?", boolean, False),
         ("time_reference", "TIM:REF?", number, False),
         ("horizontal_divisions", "TIM:DIV?", number, False),
         ("trigger_type", "TRIG:A:TYPE?", token, False),

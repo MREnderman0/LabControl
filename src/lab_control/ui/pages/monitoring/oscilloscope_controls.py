@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import DeviceCommand, DeviceError, Parameter
 from lab_control.domain.oscilloscope import COLORS, CONTROL_NAMES, coarse_steps, engineering
 from lab_control.domain.readback import boolean_value, normalized_value, usable_reading
+from lab_control.ui.pages.monitoring.scope_acquisition_window import AcquisitionWindow
 from lab_control.ui.pages.monitoring.scope_points import ScopePoints
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -377,11 +378,17 @@ class OscilloscopeControls(QFrame):
             stack.addWidget(frame)
             return box
 
+        self.capture_settings = None
+        if {(1, "timebase"), (1, "record_length"), (1, "record_length_auto")} <= self.model_writes:
+            self.capture_settings = AcquisitionWindow()
+            self.capture_settings.requested.connect(lambda commands: self.submit(commands, channels=True))
+            section("采集设置").addWidget(self.capture_settings)
+
         horizontal = section("水平")
         self.add_slider(horizontal, 1, "timebase", "时基", "s", coarse=True)
         self.add_slider(horizontal, 1, "time_position", "偏移", "s")
         self.points: ScopePoints | None = None
-        if (1, "record_length") in self.model_writes:
+        if self.capture_settings is None and (1, "record_length") in self.model_writes:
             point_row = QHBoxLayout()
             point_row.addWidget(QLabel("采集点数"))
             self.points = ScopePoints()
@@ -509,7 +516,11 @@ class OscilloscopeControls(QFrame):
                 for cap in self.capabilities(ch).values()
                 if cap.readable
                 and cap.available
-                and cap.name in (*CONTROL_NAMES, "record_length", "coupling", "probe_attenuation")
+                and (
+                    cap.name in (*CONTROL_NAMES, "record_length", "coupling", "probe_attenuation")
+                    or self.capture_settings is not None
+                    and cap.name in ("record_length_auto", "horizontal_divisions")
+                )
             )
         )
 
@@ -551,6 +562,8 @@ class OscilloscopeControls(QFrame):
             and self.device_id not in self.controller.group_devices
         )
         point_cap = self.capabilities().get("record_length")
+        if self.capture_settings is not None:
+            self.capture_settings.sync(context, self.values, self.capabilities(), available)
         point_value = self.values.get((1, "record_length"))
         if self.points is not None:
             if point_value is not None and point_cap and "value" in point_cap.parameters:

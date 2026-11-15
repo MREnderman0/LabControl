@@ -179,3 +179,26 @@ def test_empty_record_does_not_commit_or_reconnect(workspace, qtbot):
     assert not list(recorder.folder.glob("segment-*"))
     assert app.sessions.sessions[key].state == "connected"
     assert app.monitoring.tasks[key].recovery is None and not peer.closed
+
+
+def test_capture_window_and_depth_share_one_explicit_apply(workspace, qtbot):
+    _, page, _, _, peer = workspace
+    panel = page.controls.capture_settings
+    qtbot.waitUntil(lambda: panel.isEnabled() and panel.depth_choice.count() > 1)
+    peer.history.clear()
+    assert panel.depth_choice.currentData() == "auto" and not panel.apply.isEnabled()
+    panel.duration.setText("invalid")
+    assert not panel.apply.isEnabled()
+    panel.duration.setText("6")
+    assert panel.unit.currentData() == 0.001
+    panel.depth_choice.setCurrentIndex(panel.depth_choice.findData(20000))
+    page.controls.refresh()
+    assert panel.duration.text() == "6" and not peer.history
+    panel.apply.click()
+    qtbot.waitUntil(lambda: not page.controls.running and "20" in panel.actual.text())
+    assert peer.values[1, "timebase"] == 0.0005 and peer.values[1, "record_length"] == 20000
+    assert peer.history.count("ACQ:POIN 20000") == 1 and not panel.apply.isEnabled()
+    panel.depth_choice.setCurrentIndex(panel.depth_choice.findData("auto"))
+    panel.apply.click()
+    qtbot.waitUntil(lambda: not page.controls.running and panel.depth_choice.currentData() == "auto")
+    assert peer.history.count("ACQ:POIN:AUT ON") == 1 and peer.values[1, "record_length_auto"]

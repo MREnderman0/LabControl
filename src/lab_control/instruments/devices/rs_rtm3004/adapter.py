@@ -3,6 +3,7 @@
 from copy import deepcopy
 from dataclasses import replace
 from math import isclose
+from time import monotonic, sleep
 
 from lab_control.domain.instruments import (
     ApplyResult,
@@ -136,6 +137,20 @@ class Rtm3004Adapter(ScpiAdapter):
         if command.operation not in {"single", "run", "stop"}:
             if number(self.transport.query("*OPC?")) != 1:
                 raise DeviceError("Setting completion unconfirmed; not replayed", "configuration_uncertain")
+
+        if command.operation in {"record_length", "record_length_auto"}:
+            # FW 01.400 can return the preceding depth even after *OPC? has completed.
+            deadline = monotonic() + 3
+            while True:
+                actual = self.read(command.operation)
+                manual = command.operation != "record_length" or not self.read("record_length_auto")
+                if actual == command.parameters["value"] and manual:
+                    break
+                if monotonic() >= deadline:
+                    raise DeviceError(
+                        f"采集深度读回未确认，最近读数 {actual}；请刷新核对", "readback_mismatch"
+                    )
+                sleep(0.08)
 
     def apply(self, command):
         self.invalidate_acquisition_context("apply")

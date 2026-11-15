@@ -221,16 +221,31 @@
           "value": {
             "kind": "integer",
             "unit": "",
-            "minimum": 1,
+            "minimum": 5000,
             "maximum": 80000000,
-            "choices": [],
+            "choices": [
+              "5000",
+              "10000",
+              "20000",
+              "50000",
+              "100000",
+              "200000",
+              "500000",
+              "1000000",
+              "2000000",
+              "5000000",
+              "10000000",
+              "20000000",
+              "40000000",
+              "80000000"
+            ],
             "required": true,
             "range_source": "model",
             "resolution": null
           }
         },
         "readable": true,
-        "writable": false,
+        "writable": true,
         "requires_confirmation": false,
         "channel_scoped": false,
         "source": "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1335_9090_01/RTM3000_UserManual_en_12.pdf",
@@ -238,7 +253,7 @@
         "verification": "documented_pending_hardware",
         "option": "",
         "available": true,
-        "reason": "当前固件的存储深度设置未通过读回验证；暂仅显示实测点数"
+        "reason": ""
       },
       {
         "name": "trigger_source",
@@ -467,6 +482,31 @@
         "reason": ""
       },
       {
+        "name": "record_length_auto",
+        "parameters": {
+          "value": {
+            "kind": "boolean",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1335_9090_01/RTM3000_UserManual_en_12.pdf",
+        "section": "ACQ:POIN:AUT",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": ""
+      },
+      {
         "name": "vertical_position",
         "parameters": {},
         "readable": true,
@@ -503,20 +543,6 @@
         "channel_scoped": false,
         "source": "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1335_9090_01/RTM3000_UserManual_en_12.pdf",
         "section": "ACQ:SRAT?",
-        "verification": "documented_pending_hardware",
-        "option": "",
-        "available": true,
-        "reason": ""
-      },
-      {
-        "name": "record_length_auto",
-        "parameters": {},
-        "readable": true,
-        "writable": false,
-        "requires_confirmation": false,
-        "channel_scoped": false,
-        "source": "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1335_9090_01/RTM3000_UserManual_en_12.pdf",
-        "section": "ACQ:POIN:AUT?",
         "verification": "documented_pending_hardware",
         "option": "",
         "available": true,
@@ -903,10 +929,12 @@
       "compare": false
     },
     "record_length_auto": {
-      "writes": [],
+      "writes": [
+        "ACQ:POIN:AUT {value}"
+      ],
       "query": "ACQ:POIN:AUT?",
       "select": [],
-      "compare": false
+      "compare": true
     },
     "time_reference": {
       "writes": [],

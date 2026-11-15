@@ -90,6 +90,13 @@ class Peer:
                 self.values[ch, "vertical_position"] = ch - 2
                 self.values[ch, "channel_enabled"] = ch in self.auto_channels
             self.error = self.auto_error
+        elif command.startswith("TIM:SCAL "):
+            self.values[1, "timebase"] = float(command.split()[1])
+        elif command.startswith("ACQ:POIN:AUT "):
+            self.values[1, "record_length_auto"] = command.endswith("ON")
+        elif command.startswith("ACQ:POIN "):
+            self.values[1, "record_length"] = int(command.split()[1])
+            self.values[1, "record_length_auto"] = False
         elif command.startswith("FORM:BORD "):
             self.values[1, "byte_order"] = command.split(" ", 1)[1]
         elif command.startswith("FORM "):
