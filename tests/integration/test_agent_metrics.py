@@ -66,7 +66,7 @@ def metrics(tmp_path, monkeypatch):
     grant = service.policy.create_grant(
         client,
         [device],
-        ["view", "connect", "acquire", "record", "stop", "results", "process"],
+        ["view", "connect", "acquire", "record", "stop", "results", "process", "output_trigger"],
         channels=[1, 2],
         operations=[],
         limits={},
@@ -215,7 +215,7 @@ def test_per_channel_metrics_use_saved_optical_power_channels(metrics, adapter, 
         "pico.6404e",
     ],
 )
-def test_voltage_metrics_use_full_saved_waveform(tmp_path, adapter):
+def test_voltage_metrics_use_full_saved_waveform(tmp_path, adapter, monkeypatch):
     with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
         device = runtime.add(ConnectionConfig("mock://metrics/voltage", adapter, "mock"))
         runtime.connect(device).result()
@@ -228,7 +228,21 @@ def test_voltage_metrics_use_full_saved_waveform(tmp_path, adapter):
             operations=[],
             limits={},
         )
-        record_id = capture_record((runtime, service, client, grant, device), (1, 2))
+        sessions = runtime.sessions
+        submit = sessions.submit_single
+        captures = []
+
+        def single(device_id, job, **kwargs):
+            captures.append((device_id, job.request.channels))
+            return submit(device_id, job, **kwargs)
+
+        monkeypatch.setattr(sessions, "submit_single", single)
+        task = service.acquire_once(
+            client, grant, device, {"kind": "waveform", "points": 32, "channels": [1, 2]}, uuid4().hex
+        )
+        completed = settle(service, client, grant, task)
+        assert completed["result"]["single_completed"] is True
+        record_id = completed["recording_id"]
         task = service.start_processing(
             client, grant, device, "voltage-statistics", record_id, VOLTAGE_WAVEFORM_STATISTICS_PROFILE.id
         )
@@ -239,6 +253,7 @@ def test_voltage_metrics_use_full_saved_waveform(tmp_path, adapter):
         frame = next(iter_source_frames(record.device))
         assert result["channels"] == [1, 2]
         assert result["profile_version"] == "2"
+        assert captures == [(device, (1, 2))]
         for measurement in frame["measurements"]:
             channel = measurement["channel"]
             values = measurement["values"].astype(np.float64)

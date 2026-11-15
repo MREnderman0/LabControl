@@ -22,6 +22,7 @@ from lab_control.domain.instruments import (
 )
 from lab_control.domain.oscilloscope import ScopeDisplay
 from lab_control.instruments.base import ScpiAdapter
+from lab_control.instruments.scpi_single import LecroySingle
 from lab_control.transport.diagnostics import parsing
 
 from .context import AcquisitionContext, fingerprint
@@ -74,7 +75,7 @@ def equivalent(expected: Any, actual: Any) -> bool:
     return expected == actual
 
 
-class WaveRunner9404MAdapter(ScpiAdapter):
+class WaveRunner9404MAdapter(LecroySingle, ScpiAdapter):
     supports_control_updates = True
     _selective_control = False
     acquisition_revision = "waverunner9404m-context-v2"

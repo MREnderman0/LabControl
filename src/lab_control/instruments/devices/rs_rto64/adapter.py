@@ -4,6 +4,7 @@ import re
 
 from lab_control.domain.instruments import DeviceIdentity, Parameter
 from lab_control.instruments.base import Profile, ScpiAdapter, command, enum, parameter, read_command
+from lab_control.instruments.scpi_single import RohdeSingle
 
 BOOL = Parameter("boolean")
 RTO_SOURCE = "https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1801_6687_01/RTO6_UserManual_en_14.pdf"
@@ -71,7 +72,19 @@ def rto64() -> Profile:
     )
 
 
-class Rto64Adapter(ScpiAdapter):
+class Rto64Adapter(RohdeSingle, ScpiAdapter):
+    def single_count(self, channels):
+        count = super().single_count(channels)
+        return max(count, self.read("averages")) if self.read("acquisition_mode") == "AVER" else count
+
+    def single_initial(self):
+        return bool(int(self.transport.query("STAT:OPER:COND?")) & 16)
+
+    def single_finished(self):
+        return not self.single_initial() and int(self.transport.query("ACQ:CURR?")) >= self.read(
+            "acquisition_count"
+        )
+
     def acquire_measurements(self, request):
         from .protocol import acquire
 

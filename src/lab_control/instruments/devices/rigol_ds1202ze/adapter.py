@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lab_control.domain.instruments import Parameter
 from lab_control.instruments.base import Profile, ScpiAdapter, command, enum, parameter, read_command
+from lab_control.instruments.scpi_single import RigolSingle
 
 BOOL = Parameter("boolean")
 DS_SOURCE = "https://www.rigol.com/dam/global/downloads/brochures/en/program-guide/oscilloscopes/DS1000ZE_ProgrammingGuide_EN.pdf"
@@ -48,7 +49,9 @@ def rigol() -> Profile:
     )
 
 
-class Ds1202zeAdapter(ScpiAdapter):
+class Ds1202zeAdapter(RigolSingle, ScpiAdapter):
+    single_divisions = 12
+
     def acquire_measurements(self, request):
         from .protocol import acquire
 

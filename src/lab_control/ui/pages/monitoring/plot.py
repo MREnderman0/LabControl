@@ -16,6 +16,7 @@ from lab_control.application.monitoring import MonitorFrame
 from lab_control.domain.instruments import DeviceError
 from lab_control.ui.pages.monitoring.scalar_readouts import ScalarReadouts
 from lab_control.ui.pages.monitoring.trace_view import TraceView
+from lab_control.ui.widgets.plot_export import PublicationPlotWidget, PublicationViewBox
 
 
 class MonitoringPlotItem(pg.PlotItem):
@@ -38,9 +39,9 @@ class LivePlot(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.value = ScalarReadouts()
         layout.addWidget(self.value)
-        self.plot_item = MonitoringPlotItem()
+        self.plot_item = MonitoringPlotItem(viewBox=PublicationViewBox())
         self.plot_item.fit_requested.connect(self.fit_current)
-        self.plot = pg.PlotWidget(background="#131c21", plotItem=self.plot_item)
+        self.plot = PublicationPlotWidget(background="#131c21", plotItem=self.plot_item)
         self.plot.showGrid(x=True, y=True, alpha=0.16)
         self.plot.addLegend(offset=(8, 8))
         self.plot.setMinimumSize(150, 170)

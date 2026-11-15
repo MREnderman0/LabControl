@@ -182,8 +182,22 @@ def test_sdk_http_without_token_enforces_origin_and_grants(experiment):
     asyncio.run(run())
 
 
-def test_request_conflict_channels_and_result_authority(experiment):
-    _runtime, service, client, grant, device = experiment
+@pytest.fixture
+def single_experiment(experiment):
+    runtime, service, client, _grant, device = experiment
+    grant = service.policy.create_grant(
+        client,
+        [device],
+        ["view", "acquire", "output_trigger", "results", "stop"],
+        channels=[1],
+        operations=[],
+        limits={},
+    )
+    return runtime, service, client, grant, device
+
+
+def test_request_conflict_channels_and_result_authority(single_experiment):
+    _runtime, service, client, grant, device = single_experiment
     task = service.acquire_once(client, grant, device, {"kind": "waveform", "points": 16}, "once")
     assert wait_task(service, client, grant, task)["state"] == "completed"
     with pytest.raises(DeviceError, match="request_id"):
@@ -315,13 +329,13 @@ def test_stdio_connector_has_only_protocol_stdout(experiment, tmp_path):
     asyncio.run(run())
 
 
-def test_https_certificate_validation_and_download(experiment, tmp_path):
+def test_https_certificate_validation_and_download(single_experiment, tmp_path):
     import ssl
 
     from lab_control.agent.certificates import prepare_certificate
     from lab_control.agent.connector import connection, download
 
-    _runtime, service, client, grant, device = experiment
+    _runtime, service, client, grant, device = single_experiment
     ports = []
     for _ in range(2):
         with socket.socket() as sock:
@@ -371,7 +385,7 @@ def test_cross_model_capabilities_and_output_authority(tmp_path, adapter):
         capabilities = runtime.sessions.capability_snapshot(device).channels[1]
         operations = [c.name for c in capabilities.operations if c.writable]
         actions = ["view", "apply", "acquire"]
-        if adapter == "keysight.3458a":
+        if adapter in {"keysight.3458a", "rs.rtm3004"}:
             actions.append("output_trigger")
         grant = service.policy.create_grant(
             client, [device], actions, channels=[1], operations=operations, limits={}

@@ -16,6 +16,7 @@ from lab_control.domain.instruments import (
 )
 from lab_control.domain.oscilloscope import ScopeDisplay
 from lab_control.instruments.base import ScpiAdapter, number
+from lab_control.instruments.scpi_single import RohdeSingle
 
 from .autoset import apply_auto
 from .profile import BOOL as BOOL
@@ -34,7 +35,20 @@ from .protocol import (
 RTM_SOURCE = SOURCE  # Retained for the deprecated public profile import.
 
 
-class Rtm3004Adapter(ScpiAdapter):
+class Rtm3004Adapter(RohdeSingle, ScpiAdapter):
+    def single_span(self):
+        return self.read("timebase") * self.read("horizontal_divisions")
+
+    def single_initial(self):
+        return self.read("acquisition_state") == "RUN"
+
+    def single_finished(self):
+        return self.read("acquisition_state") == "COMP"
+
+    def single_count(self, channels):
+        count = super().single_count(channels)
+        return max(count, self.read("averages")) if self.read("acquisition_mode") == "AVER" else count
+
     supports_live_acquisition = True
     supports_stream_acquisition = True
     acquisition_revision = "rtm3004-real32-v1"

@@ -27,6 +27,7 @@ from lab_control.application.processing import ProcessingService
 from lab_control.domain.oscilloscope import COLORS, ScopeDisplay, engineering
 from lab_control.domain.workspace import channel_label
 from lab_control.storage.processing_results import ResultReader, plot_series
+from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 CHANNEL_PALETTE = (*COLORS, "#86accf", "#d3a8b6", "#95c7af", "#beb5db")
@@ -88,7 +89,7 @@ class ProcessingViewer(QWidget):
         self.channels.setHeaderHidden(True)
         self.channels.itemChanged.connect(lambda _item, _column: self.request(fit=True))
         split.addWidget(self.channels)
-        self.plot = pg.PlotWidget(background="#131c21")
+        self.plot = PublicationPlotWidget(background="#131c21")
         self.plot.disableAutoRange()
         self.plot.showGrid(x=True, y=True, alpha=0.15)
         self.plot.addLegend(offset=(8, 8), brush=pg.mkBrush("#131c21"), pen=pg.mkPen("#334148"))

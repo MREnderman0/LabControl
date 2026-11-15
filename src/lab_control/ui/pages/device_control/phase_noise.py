@@ -30,6 +30,7 @@ from lab_control.storage.recording import read_frames
 from lab_control.ui.pages.device_control.fspn import FspnPanel
 from lab_control.ui.pages.monitoring.recording_state import update_recording_frame
 from lab_control.ui.widgets.device_selector import DeviceSelector
+from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 
 SAMPLE_RATE = PHASE_NOISE_SAMPLE_RATE
 DURATION = PHASE_NOISE_DURATION
@@ -198,7 +199,7 @@ class PhaseNoisePage(QWidget):
         axes = {"bottom": LogAxis(orientation="bottom")} if log_x else {}
         if log_y:
             axes["left"] = LogAxis(orientation="left")
-        chart = pg.PlotWidget(background="#131c21", axisItems=axes)
+        chart = PublicationPlotWidget(background="#131c21", axisItems=axes)
         chart.setTitle(title, color="#edf0ee", size="12pt")
         chart.setLabel("bottom", xlabel, units=xunit)
         chart.setLabel("left", ylabel, units=yunit)

@@ -1,12 +1,13 @@
 """Oscilloscope workspace: passive monitoring and explicit instrument gestures."""
 
+from dataclasses import replace
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QMenu,
-    QPushButton,
     QSplitter,
     QToolButton,
     QVBoxLayout,
@@ -15,7 +16,11 @@ from PySide6.QtWidgets import (
 
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import DataSource, data_sources
+from lab_control.application.monitoring_state import MonitorFrame
+from lab_control.domain.frames import immutable_batch
 from lab_control.domain.instruments import AcquisitionRequest
+from lab_control.domain.waveform_coverage import mark_coverage
+from lab_control.instruments.scope_single import SingleCapture
 from lab_control.ui.controller import state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.oscilloscope_controls import OscilloscopeControls
@@ -29,6 +34,7 @@ from lab_control.ui.pages.monitoring.recording_state import (
 )
 from lab_control.ui.pages.monitoring.timing import MonitoringTiming
 from lab_control.ui.widgets.device_selector import DeviceSelector
+from lab_control.ui.widgets.plot_export import PlotExport
 
 
 class OscilloscopeMonitoringPage(QWidget):
@@ -50,11 +56,17 @@ class OscilloscopeMonitoringPage(QWidget):
         self.connection = QLabel()
         self.connection.setObjectName("sourceConnectionState")
         header.addWidget(self.connection)
-        self.once_button = QPushButton("单次采集")
-        self.once_button.clicked.connect(lambda: self.start(once=True))
-        self.once_button.hide()
-        header.addWidget(self.once_button)
-        self.start_button = QPushButton("开始监测")
+        self.single_job = None
+        self.single_notice = ""
+        self.pausing_for_single = None
+        self.frozen_at = 0.0
+        self.start_button = QToolButton()
+        self.start_button.setText("开始监测")
+        self.start_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        actions = QMenu(self.start_button)
+        self.single_action = actions.addAction("Single · 单次采集", self.request_single)
+        self.cancel_action = actions.addAction("取消本次采集", self.cancel_single)
+        self.start_button.setMenu(actions)
         self.start_button.clicked.connect(self.toggle_monitoring)
         header.addWidget(self.start_button)
         layout.addLayout(header)
@@ -97,6 +109,7 @@ class OscilloscopeMonitoringPage(QWidget):
         self.timing_action.toggled.connect(self.timing.setVisible)
         chart_layout.addWidget(self.timing)
         self.plot = OscilloscopePlot()
+        self.plot.plot.snapshot_provider = self.export_snapshot
         chart_layout.addWidget(self.plot, 1)
         footer = QHBoxLayout()
         self.status = QLabel("监测未开始")
@@ -123,12 +136,20 @@ class OscilloscopeMonitoringPage(QWidget):
         self.select_device(self.selector.device_id)
 
     def select_device(self, device_id: str) -> None:
-        if self.memory_busy or self.controls and self.controls.running:
+        if (
+            self.single_job
+            or self.pausing_for_single
+            or self.memory_busy
+            or self.controls
+            and self.controls.running
+        ):
             return
         if (self.device_id, self.mode) == (device_id, self.controller.mode) and self.controls:
             return
         if isinstance(self.controls, PicoScopeControls):
             self.pico_drafts[self.mode, self.device_id] = self.controls.draft()
+        self.single_notice = ""
+        self.frozen_at = 0.0
         self.device_id, self.mode = device_id, self.controller.mode
         self.timing.bind(device_id, self.mode)
         self.plot.reset()
@@ -140,7 +161,8 @@ class OscilloscopeMonitoringPage(QWidget):
         self.source = None
         self.splitter.setVisible(bool(device_id))
         self.empty.setVisible(not device_id)
-        self.once_button.hide()
+        self.frozen_at = 0.0
+        self.single_notice = ""
         self.refresh_action.setVisible(True)
         if device_id:
             config = config_from_record(self.controller.records[device_id])
@@ -151,7 +173,6 @@ class OscilloscopeMonitoringPage(QWidget):
                 )
                 self.controls.source_changed.connect(self.select_pico_source)
                 self.select_pico_source()
-                self.once_button.show()
                 self.refresh_action.setVisible(False)
             else:
                 self.controls = OscilloscopeControls(self.controller, device_id, self.start, self.right)
@@ -167,7 +188,7 @@ class OscilloscopeMonitoringPage(QWidget):
         self.refresh_frame(device_id)
 
     def control_busy_changed(self, busy):
-        self.selector.setEnabled(not busy)
+        self.selector.setEnabled(not (busy or self.single_job or self.pausing_for_single))
         self.refresh()
 
     def select_pico_source(self):
@@ -227,6 +248,10 @@ class OscilloscopeMonitoringPage(QWidget):
             self.controller.ensure_applicable(self.device_id)
             self.timing.commit()
             if isinstance(self.controls, PicoScopeControls):
+                if once and self.controls.capture_mode.currentData() != "waveform":
+                    self.controls.capture_mode.setCurrentIndex(
+                        self.controls.capture_mode.findData("waveform")
+                    )
                 request = self.source.request(
                     self.controls.channels(), self.controls.points.value(), initiate=True, confirmed=True
                 )
@@ -243,13 +268,83 @@ class OscilloscopeMonitoringPage(QWidget):
         except Exception as exc:
             self.controller.message.emit(str(exc))
 
+    def request_single(self):
+        if self.single_job or self.pausing_for_single or not self.single_action.isEnabled():
+            return
+        service = self.controller.runtime.monitoring
+        task = service.snapshots().get(self.device_id, {})
+        device = self.device_id
+        if recording_phase(task) != "idle" or task.get("stopping"):
+            return
+        if task.get("running"):
+            token = object()
+            self.pausing_for_single = token
+            self.refresh()
+
+            def paused(_result=None, error=None):
+                if self.pausing_for_single is not token:
+                    return
+                self.pausing_for_single = None
+                if error:
+                    self.single_notice = str(error)
+                elif self.device_id == device:
+                    self.start(once=True)
+                self.refresh()
+
+            self.controller.watch(service.stop(device), paused, lambda exc: paused(error=exc))
+        else:
+            self.start(once=True)
+
+    def cancel_single(self):
+        if self.pausing_for_single:
+            self.pausing_for_single = None
+            self.single_notice = "已取消本次采集"
+            self.refresh()
+        if self.single_job:
+            self.single_job.cancel.set()
+
     def start_request(self, request, once):
+        if once and request.kind == "waveform":
+            if self.single_job:
+                return
+            device = self.device_id
+            session = self.controller.states[device]["sessionId"]
+            job = SingleCapture(replace(request, confirmed=True), restore=False)
+            future = self.controller.runtime.sessions.submit_single(device, job)
+            self.single_job = job
+            self.selector.setEnabled(False)
+            self.refresh()
+
+            def finished(batch=None, error=None):
+                self.single_job = None
+                self.selector.setEnabled(True)
+                state = self.controller.states.get(device, {})
+                if self.device_id == device and state.get("sessionId") == session:
+                    self.single_notice = str(error) if error else "单次采集完成"
+                    if batch is not None:
+                        frame = MonitorFrame(
+                            1,
+                            batch.configuration.get("_session_configuration_version", 0),
+                            request,
+                            immutable_batch(batch),
+                            session_id=session,
+                        )
+                        self.frozen_at = frame.received_at
+                        self.plot.show_frame(frame, self.source, request.channels)
+                self.refresh()
+
+            self.controller.watch(future, finished, lambda exc: finished(error=exc))
+            return
+        self.single_notice = ""
+        self.frozen_at = 0.0
         self.controller.start_monitoring(
             self.device_id, (request,), **self.timing.options(), mode=self.mode, once=once
         )
         self.refresh()
 
     def toggle_monitoring(self) -> None:
+        if self.single_job or self.pausing_for_single:
+            return
         if self.controller.reconnect_if_needed(self.device_id):
             return
         service = self.controller.runtime.monitoring
@@ -275,18 +370,38 @@ class OscilloscopeMonitoringPage(QWidget):
         except Exception as exc:
             self.controller.message.emit(str(exc))
 
-    def save(self) -> None:
+    def export_snapshot(self):
+        frame = self.plot.displayed_frame
+        device, mode = self.device_id, self.mode
+        if frame is None:
+            return PlotExport([], "时间 (s)", "电压 (V)", save_raw=lambda: None)
+        batch = mark_coverage(frame.batch)
+        if any(m.metadata["coverage"]["partial"] for m in batch.measurements):
+            frame = replace(frame, batch=batch)
+        curves, partial = [], []
+        for m in batch.measurements:
+            info = m.metadata["coverage"]
+            curves.append((f"CH{m.channel}", m.axis, m.values))
+            if info["partial"]:
+                partial.append(f"CH{m.channel} {info['first_s']:.6g} 至 {info['last_s']:.6g} s")
+        unit = batch.measurements[0].unit
+        axis = "时间 (s)" + (" · 部分波形 " + " / ".join(partial) if partial else "")
+        return PlotExport(
+            curves, axis, f"幅值 ({unit})", save_raw=lambda: self.save_frame(device, mode, frame)
+        )
+
+    def save(self):
         if self.plot.displayed_frame is not None:
-            try:
-                self.controller.watch(
-                    self.controller.runtime.monitoring.export_displayed_frame(
-                        self.device_id, self.plot.displayed_frame, self.mode
-                    ),
-                    lambda path: self.controller.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}"),
-                )
-                self.refresh()
-            except Exception as exc:
-                self.controller.message.emit(str(exc))
+            self.export_snapshot().save_raw()
+
+    def save_frame(self, device, mode, frame):
+        try:
+            self.controller.watch(
+                self.controller.runtime.monitoring.export_displayed_frame(device, frame, mode),
+                lambda path: self.controller.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}"),
+            )
+        except Exception as exc:
+            self.controller.message.emit(str(exc))
 
     def read_memory(self) -> None:
         if not self.controls or self.memory_busy:
@@ -332,14 +447,20 @@ class OscilloscopeMonitoringPage(QWidget):
         connected = state.get("connectionState") in {"connected", "busy"}
         if isinstance(self.controls, PicoScopeControls):
             self.controls.update_available(task, connected, bool(state.get("controlsLocked")))
-            self.once_button.setEnabled(
-                bool(
-                    connected
-                    and self.controls.channels()
-                    and not busy
-                    and not (task.get("running") or task.get("pending") or state.get("controlsLocked"))
-                )
+        self.single_action.setEnabled(
+            bool(
+                connected
+                and self.controls
+                and self.controls.channels()
+                and not busy
+                and not self.single_job
+                and not self.pausing_for_single
+                and not state.get("controlsLocked")
+                and not task.get("stopping")
+                and recording_phase(task) == "idle"
             )
+        )
+        self.cancel_action.setVisible(self.single_job is not None or self.pausing_for_single is not None)
         self.memory_action.setVisible(memory_supported)
         self.memory_action.setEnabled(
             connected
@@ -370,6 +491,9 @@ class OscilloscopeMonitoringPage(QWidget):
             busy=busy,
             can_cancel=bool(self.controls and self.controls.running and self.controls.restart),
         )
+        if self.single_job:
+            self.start_button.setEnabled(True)
+            self.start_button.setText(self.single_job.phase)
         self.record_button.refresh(
             task, connected=connected, busy=busy, locked=bool(state.get("controlsLocked"))
         )
@@ -389,7 +513,8 @@ class OscilloscopeMonitoringPage(QWidget):
             or old.configuration_version != state.get("configurationVersion")
         )
         self.status.setText(
-            task.get("error")
+            (self.single_job.phase if self.single_job else self.single_notice)
+            or task.get("error")
             or task.get("notice")
             or task.get("recording_notice")
             or recording_save_notice(task)
@@ -419,6 +544,6 @@ class OscilloscopeMonitoringPage(QWidget):
             return
         service = self.controller.runtime.monitoring
         frame = service.latest(device_id, self.source.kind, self.source.quantity)
-        if frame:
+        if frame and not self.single_job and frame.received_at > self.frozen_at:
             self.plot.show_frame(frame, self.source, self.controls.channels())
             service.displayed(device_id, frame)

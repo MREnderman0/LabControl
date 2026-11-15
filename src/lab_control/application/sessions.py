@@ -87,6 +87,7 @@ class DeviceSession:
     recording: bool = False
     configuration_version: int = 0
     control_pending: int = 0
+    single_capture: Any = None
     settings: dict[tuple[int, str], ParameterReading] = field(default_factory=dict)
     frames: dict[tuple[int, str], SettingsFrame] = field(default_factory=dict)
     read_sequence: int = 0
@@ -225,7 +226,7 @@ class SessionManager:
         with self.lock:
             session = self.sessions.get(device_id)
             if session:
-                if active and session.controls_locked:
+                if active and (session.controls_locked or session.single_capture):
                     raise DeviceError("采集中参数已锁定，请先停止采集或记录", "task_busy")
                 if active and (
                     self._closing or session.closing or session.state not in {"connected", "busy"}
@@ -500,11 +501,38 @@ class SessionManager:
     def _controls_instrument(operation: str, argument: Any) -> bool:
         # Explicit memory reads may stop/run the instrument. Keep their queued
         # and active lifetime under the same recording guard as parameter writes.
-        return operation == "apply" or (
+        return operation in {"apply", "single"} or (
             operation == "acquire"
             and isinstance(argument, AcquisitionRequest)
             and argument.waveform_extent == "memory"
         )
+
+    def submit_single(self, device_id, job, *, before_io=None):
+        with self.lock:
+            session = self.sessions[device_id]
+            if (
+                session.single_capture
+                or session.control_group
+                or session.control_pending
+                or session.controls_locked
+            ):
+                raise DeviceError("已有采集、记录或参数操作正在进行", "task_busy")
+            if not callable(getattr(session.adapter, "single_acquisition", None)):
+                raise DeviceError("当前设备未提供 Single", "unsupported")
+            session.single_capture = job
+            try:
+                future = self.submit(device_id, "single", job, before_io=before_io)
+            except BaseException:
+                session.single_capture = None
+                raise
+
+            def release(_):
+                with self.lock:
+                    if session.single_capture is job:
+                        session.single_capture = None
+
+            future.add_done_callback(release)
+            return future
 
     def submit(
         self,
@@ -529,7 +557,14 @@ class SessionManager:
                 or operation in {"read_settings", "refresh_capabilities"}
             ):
                 raise DeviceError("采集中参数已锁定，请先停止采集或记录", "task_busy")
+            if (
+                session.single_capture
+                and operation != "single"
+                and self._controls_instrument(operation, argument)
+            ):
+                raise DeviceError("单次采集尚未结束", "task_busy")
             if operation not in {
+                "single",
                 "identify",
                 "status",
                 "capabilities",
@@ -565,6 +600,7 @@ class SessionManager:
                     and not (session.state in {"recovering", "degraded"} and session.monitoring)
                 )
                 or (session.stream_future and not session.stream_future.done())
+                or session.single_capture is not None
                 or (recording and (session.control_group or session.control_pending))
             ):
                 raise DeviceError("Session cannot start monitoring", "task_busy")
@@ -932,6 +968,9 @@ class SessionManager:
             return
         with self.lock:
             self._closing = True
+            for session in self.sessions.values():
+                if session.single_capture is not None:
+                    session.single_capture.cancel.set()
         errors = []
         for session in tuple(self.sessions.values()):
             session.stop.set()

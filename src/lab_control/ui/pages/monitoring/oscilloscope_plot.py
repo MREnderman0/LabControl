@@ -119,7 +119,7 @@ class OscilloscopePlot(LivePlot):
         self.plot.setLabel("bottom", "时间", units="s")
         self.plot.showGrid(x=False, y=False)
         self.plot.setMouseEnabled(x=False, y=False)
-        self.plot.setMenuEnabled(False)
+        self.plot.setMenuEnabled(True)
         self.value.hide()
         horizontal_lines = first.horizontal_divisions + 1
         if self.grid_lines and len(self.grid_lines) != horizontal_lines + 9:

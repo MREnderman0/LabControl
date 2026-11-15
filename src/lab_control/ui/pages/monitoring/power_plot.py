@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 from lab_control.application.acquisition_pipeline import validate_displayed_batch
 from lab_control.application.monitoring import MonitorFrame
 from lab_control.domain.instruments import DeviceError
+from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 
 CHANNEL_COLORS = ("#e3a252", "#69c9d4", "#b5d979", "#cda8e8", "#86accf", "#e18e85", "#81c8ab", "#ead172")
 
@@ -32,7 +33,7 @@ class PowerPlot(QWidget):
         layout.setSpacing(8)
         self.plots: dict[str, Any] = {}
         for quantity, title, unit in (("voltage", "电压", "V"), ("current", "电流", "A")):
-            plot = pg.PlotWidget(background="#101719", axisItems={"bottom": _TimeAxis()})
+            plot = PublicationPlotWidget(background="#101719", axisItems={"bottom": _TimeAxis()})
             plot.setMinimumSize(180, 130)
             plot.showGrid(x=True, y=True, alpha=0.16)
             plot.setLabel("left", title, units=unit)

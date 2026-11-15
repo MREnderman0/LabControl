@@ -80,6 +80,12 @@ def _ticks(lo: float, hi: float) -> np.ndarray:
     return np.arange(math.ceil(lo / step), math.floor(hi / step) + 1) * step
 
 
+def axis_ticks(lo, hi, log):
+    if log and hi - lo >= 1:
+        return range(math.ceil(lo), math.floor(hi) + 1, max(1, math.ceil((hi - lo) / 7)))
+    return _ticks(lo, hi)
+
+
 def _limits(lo: float, hi: float) -> tuple[float, float]:
     pad = (hi - lo) * 0.04 if hi > lo else max(abs(lo) * 1e-6, 1e-9)
     return lo - pad, hi + pad
@@ -92,6 +98,8 @@ def export_figure(
     y_label: str,
     *,
     width_mm: int = 183,
+    log_x: bool = False,
+    log_y: bool = False,
     check_cancel: Callable[[], None] = lambda: None,
 ) -> None:
     """Write a 600-dpi PNG or vector PDF/SVG with 8-pt Arial and 0.65-pt lines."""
@@ -100,7 +108,15 @@ def export_figure(
     if path.exists():
         raise FileExistsError("图片已存在，不覆盖已有文件")
     family = prepare_publication_font()
-    compact = [(label, *_envelope(np.asarray(x), np.asarray(y))) for label, x, y in curves]
+
+    def coordinates(values, logarithmic):
+        values = np.asarray(values)
+        if not logarithmic:
+            return values
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(values > 0, np.log10(values), np.nan)
+
+    compact = [(label, *_envelope(coordinates(x, log_x), coordinates(y, log_y))) for label, x, y in curves]
     finite = [(label, x, y) for label, x, y in compact if np.any(np.isfinite(x) & np.isfinite(y))]
     if not finite:
         raise ValueError("当前没有可导出的曲线")
@@ -147,7 +163,7 @@ def export_figure(
         xlo, xhi = _limits(min(float(x.min()) for x, _ in valid), max(float(x.max()) for x, _ in valid))
         ylo, yhi = _limits(min(float(y.min()) for _, y in valid), max(float(y.max()) for _, y in valid))
         # Large carrier frequencies retain readable variation without duplicate tick labels.
-        offset = float(valid[0][1][0]) if max(abs(ylo), abs(yhi)) > (yhi - ylo) * 1e4 else 0.0
+        offset = float(valid[0][1][0]) if not log_y and max(abs(ylo), abs(yhi)) > (yhi - ylo) * 1e4 else 0.0
         if offset:
             y_label += f"; offset {offset:.12g}"
 
@@ -160,16 +176,22 @@ def export_figure(
         painter.setPen(QPen(QColor("#222222"), 0.65))
         painter.drawLine(chart.bottomLeft(), chart.bottomRight())
         painter.drawLine(chart.bottomLeft(), chart.topLeft())
-        for value in _ticks(xlo, xhi):
+        for value in axis_ticks(xlo, xhi, log_x):
             x = xp(value)
             painter.drawLine(QPointF(x, chart.bottom()), QPointF(x, chart.bottom() + 3))
             painter.drawText(
-                QRectF(x - 28, chart.bottom() + 5, 56, 12), Qt.AlignmentFlag.AlignHCenter, f"{value:.5g}"
+                QRectF(x - 28, chart.bottom() + 5, 56, 12),
+                Qt.AlignmentFlag.AlignHCenter,
+                f"{10.0**value if log_x else value:.5g}",
             )
-        for delta in _ticks(ylo - offset, yhi - offset):
+        for delta in axis_ticks(ylo - offset, yhi - offset, log_y):
             y = yp(delta + offset)
             painter.drawLine(QPointF(chart.left() - 3, y), QPointF(chart.left(), y))
-            painter.drawText(QRectF(13, y - 6, 41, 12), Qt.AlignmentFlag.AlignRight, f"{delta:.5g}")
+            painter.drawText(
+                QRectF(13, y - 6, 41, 12),
+                Qt.AlignmentFlag.AlignRight,
+                f"{10.0**delta if log_y else delta:.5g}",
+            )
         painter.drawText(
             QRectF(chart.left(), height - 17, chart.width(), 14), Qt.AlignmentFlag.AlignHCenter, x_label
         )

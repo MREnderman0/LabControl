@@ -738,11 +738,26 @@ class AgentService:
             guard(current)
             authorize()
 
-        read = self.runtime.sessions.submit(device, "acquire", acquisition, before_io=before_io)
+        if kind == "waveform":
+            # The queued operation and the renderer still have bounded deadlines.
+            # During acquisition the native Single worker owns the physical timeout.
+            def arm(current):
+                before_io(current)
+                job.deadline = float("inf")
+
+            read = self._single_read(client, grant, device, acquisition, job.cancel, arm)
+        else:
+            read = self.runtime.sessions.submit(device, "acquire", acquisition, before_io=before_io)
 
         def save():
             try:
-                batch = read.result(timeout=max(0, job.deadline - time.monotonic()))
+                batch = (
+                    read.result()
+                    if kind == "waveform"
+                    else read.result(timeout=max(0, job.deadline - time.monotonic()))
+                )
+                if kind == "waveform":
+                    job.deadline = time.monotonic() + frame_image.TIME_BUDGET
             except TimeoutError:
                 if not read.done():
                     raise frame_image.timeout_error() from None
@@ -799,6 +814,27 @@ class AgentService:
             self._check(client, grant, device, "output_trigger")
         return replace(request, allow_setup="acquisition_setup" in scope["actions"])
 
+    def _single_read(self, client, grant, device, acquisition, cancel, guard):
+        from lab_control.instruments.scope_single import SingleCapture
+
+        def before_io(session):
+            guard(session)
+            self._check(client, grant, device, "output_trigger")
+
+        self._check(client, grant, device, "output_trigger")
+        return self.runtime.sessions.submit_single(
+            device, SingleCapture(acquisition, cancel=cancel), before_io=before_io
+        )
+
+    def _scope_waveform(self, device, request):
+        from lab_control.instruments.registry import DEVICE_DEFINITIONS
+
+        return (
+            request.kind == "waveform"
+            and DEVICE_DEFINITIONS[self.runtime.sessions.sessions[device].config.adapter].category
+            == "oscilloscope"
+        )
+
     def acquire_once(self, client, grant_id, device_id, request, request_id):
         def start(ctx):
             acquisition = self._request(client, grant_id, device_id, "acquire", request)
@@ -817,12 +853,16 @@ class AgentService:
                 self._request(client, grant_id, device_id, "acquire", request)
                 self.repository.audit("agent_acquisition_started", task_id=ctx["task"]["id"])
 
-            read = self.runtime.sessions.submit(
-                device_id,
-                "observe" if acquisition.kind == "status" else "acquire",
-                acquisition,
-                before_io=guard,
-            )
+            if self._scope_waveform(device_id, acquisition):
+                ctx["cancel"] = threading.Event()
+                read = self._single_read(client, grant_id, device_id, acquisition, ctx["cancel"], guard)
+            else:
+                read = self.runtime.sessions.submit(
+                    device_id,
+                    "observe" if acquisition.kind == "status" else "acquire",
+                    acquisition,
+                    before_io=guard,
+                )
 
             def save():
                 batch = read.result()
@@ -963,6 +1003,7 @@ class AgentService:
             "timestamp": batch.timestamp,
             "time_basis": batch.time_basis,
             "validation": batch.validation,
+            "single_completed": batch.performance.get("single_completed") is True,
             "measurements": [
                 {
                     "quantity": m.quantity,
@@ -1123,7 +1164,7 @@ class AgentService:
             task.update(state="failed", error=str(exc), code=getattr(exc, "code", "operation_failed"))
             from lab_control.storage.processing import ProcessingCancelled
 
-            if isinstance(exc, ProcessingCancelled):
+            if isinstance(exc, ProcessingCancelled) or getattr(exc, "code", "") == "cancelled":
                 task.update(state="cancelled", code="cancelled")
             if hasattr(exc, "outcome"):
                 task.update(state="partial", result=jsonable(exc.outcome))

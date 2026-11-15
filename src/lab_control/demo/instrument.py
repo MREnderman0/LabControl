@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import replace
 from typing import Any
 
@@ -274,6 +275,11 @@ class SimulatedInstrument:
             for name in SETTINGS
             if f"1.{name}" in batch.configuration
         )
+
+    @contextmanager
+    def single_acquisition(self, job, request):
+        job.wait(lambda: True, 0.001, 1)
+        yield None, self.adapter_id == "pico.6404e"
 
     def acquire(self, request: AcquisitionRequest) -> MeasurementBatch:
         request.validate()

@@ -45,6 +45,7 @@ from lab_control.ui.pages.monitoring.recording_state import (
 )
 from lab_control.ui.pages.monitoring.timing import MonitoringTiming
 from lab_control.ui.widgets.device_selector import DeviceSelector
+from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 
 
 def _scalar(value: Any) -> float | None:
@@ -69,7 +70,7 @@ class OpticalPowerPlot(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.plot = pg.PlotWidget(background="#101719")
+        self.plot = PublicationPlotWidget(background="#101719")
         self.plot.showGrid(x=True, y=True, alpha=0.16)
         self.plot.setLabel("left", self.axis_label, units=self.display_unit)
         self.plot.getAxis("left").enableAutoSIPrefix(False)

@@ -22,13 +22,16 @@ from lab_control.domain.instruments import (
 )
 from lab_control.domain.oscilloscope import ScopeDisplay
 from lab_control.instruments.base import ScpiAdapter
+from lab_control.instruments.scpi_single import RigolSingle
 from lab_control.transport.diagnostics import parsing
 
 from .profile import CHANNEL_SETTINGS, GLOBAL_SETTINGS, TRANSFER_SETTINGS
 from .protocol import FRAME_BYTES_MAX, POINTS_MAX, Preamble, equivalent, numeric, waveform
 
 
-class DHO924Adapter(ScpiAdapter):
+class DHO924Adapter(RigolSingle, ScpiAdapter):
+    single_divisions = 10
+
     supports_control_updates = True
     supports_live_acquisition = True
     supports_stream_acquisition = True

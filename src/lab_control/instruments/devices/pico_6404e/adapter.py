@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes as ct
 import time
+from contextlib import contextmanager
 from typing import Any
 
 import numpy as np
@@ -250,6 +251,14 @@ class PicoAdapter:
                 raise
             return ApplyResult("uncertain", command.operation, values, error=str(exc))
 
+    @contextmanager
+    def single_acquisition(self, job, request):
+        self._single_job = job
+        try:
+            yield None, True
+        finally:
+            self._single_job = None
+
     def acquire(self, request: AcquisitionRequest) -> MeasurementBatch:
         request.validate()
         if request.kind not in {"waveform", "streaming"}:
@@ -314,6 +323,14 @@ class PicoAdapter:
                     None,
                 )
                 ready = I16()
+                job = getattr(self, "_single_job", None)
+                if job is not None:
+
+                    def complete():
+                        self.call("IsReady", [PTR], ct.byref(ready))
+                        return bool(ready.value)
+
+                    job.wait(complete, dt * request.points, 1)
                 while not ready.value:
                     self.call("IsReady", [PTR], ct.byref(ready))
                     if time.monotonic() > deadline:

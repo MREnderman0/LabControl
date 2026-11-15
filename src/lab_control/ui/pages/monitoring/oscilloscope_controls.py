@@ -627,7 +627,7 @@ class OscilloscopeControls(QFrame):
         point_value = self.values.get((1, "record_length"))
         if self.points is not None:
             if point_value is not None and point_cap and "value" in point_cap.parameters:
-                self.points.configure(int(point_value), point_cap.parameters["value"])
+                self.points.configure(point_value, point_cap.parameters["value"])
             self.points.setEnabled(
                 bool(
                     available
@@ -639,7 +639,9 @@ class OscilloscopeControls(QFrame):
             )
             if point_cap and "value" in point_cap.parameters:
                 point_spec = point_cap.parameters["value"]
-                if point_spec.minimum is not None and point_spec.maximum is not None:
+                if point_spec.kind == "enum":
+                    self.points_range.setText("")
+                elif point_spec.minimum is not None and point_spec.maximum is not None:
                     self.points_range.setText(
                         f"{point_spec.minimum:,.0f}～{point_spec.maximum:,.0f}\n含软件限制"
                     )
@@ -748,7 +750,7 @@ class OscilloscopeControls(QFrame):
         value = enabled if cap.parameters["value"].kind == "boolean" else ("ON" if enabled else "OFF")
         self.submit([DeviceCommand("channel_enabled", {"value": value}, channel)], channels=True)
 
-    def set_points(self, value: int) -> None:
+    def set_points(self, value: int | str) -> None:
         if self.running or self.points is None or not self.points.isEnabled():
             return
         try:

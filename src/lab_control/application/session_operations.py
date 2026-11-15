@@ -149,7 +149,7 @@ class SessionOperations:
                         "operation_requested",
                         device_id=device_id,
                         operation=operation,
-                        argument=argument,
+                        argument=argument.request if operation == "single" else argument,
                         before=session.settings.get((argument.channel, argument.operation))
                         if isinstance(argument, DeviceCommand)
                         else None,
@@ -231,6 +231,10 @@ class SessionOperations:
                     manager._cache_readings(session, result.control_update.readings)
                 elif result.outcome != "success":
                     manager._invalidate_acquisition(session, "error")
+            elif operation == "single":
+                result = argument.capture(
+                    adapter, lambda request: manager._acquire(session, request, submitted_at)
+                )
             elif operation == "observe":
                 if not isinstance(argument, AcquisitionRequest):
                     raise TypeError("Expected AcquisitionRequest")
@@ -281,7 +285,7 @@ class SessionOperations:
                     device_id=device_id,
                     operation=operation,
                     result=result
-                    if operation not in {"acquire", "observe"}
+                    if operation not in {"acquire", "observe", "single"}
                     else {"timestamp": result.timestamp},
                 )
             if not quiet:
@@ -308,6 +312,12 @@ class SessionOperations:
                 "unsupported",
                 "invalid_parameter",
                 "confirmation_required",
+                "cancelled",
+                "task_busy",
+                "capture_timeout",
+                "incomplete_waveform",
+                "waveform_overload",
+                "waveform_unavailable",
                 "missing_option",
                 "acquisition_budget_exceeded",
                 "acquisition_setup_required",

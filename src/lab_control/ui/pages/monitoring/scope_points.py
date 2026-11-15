@@ -11,7 +11,7 @@ from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 
 class ScopePoints(WorkspaceComboBox):
-    committed = Signal(int)
+    committed = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -20,11 +20,18 @@ class ScopePoints(WorkspaceComboBox):
         self.signature = None
         self.activated.connect(self.choose)
 
-    def configure(self, actual: int, spec: Parameter) -> None:
-        signature = (actual, spec.minimum, spec.maximum, spec.choices)
+    def configure(self, actual: int | str, spec: Parameter) -> None:
+        actual = str(actual) if spec.kind == "enum" else int(actual)
+        signature = (actual, spec.kind, spec.minimum, spec.maximum, spec.choices)
         if signature == self.signature or self.view().isVisible():
             return
         self.actual, self.spec, self.signature = actual, spec, signature
+        if spec.kind == "enum":
+            self.clear()
+            for option in spec.choices:
+                self.addItem("自动" if option == "AUTO" else option, option)
+            self.setCurrentIndex(self.findData(actual))
+            return
         candidates = (
             [float(v) for v in spec.choices]
             if spec.choices
@@ -68,7 +75,7 @@ class ScopePoints(WorkspaceComboBox):
             self.setCurrentIndex(self.findData(self.actual))
             if not accepted:
                 return
-        self.committed.emit(int(value))
+        self.committed.emit(value if self.spec.kind == "enum" else int(value))
 
     def custom_value(self) -> tuple[int, bool]:
         assert self.spec is not None and self.actual is not None

@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from lab_control.domain.instruments import Parameter
 from lab_control.instruments.base import Profile, ScpiAdapter, command, enum, parameter
+from lab_control.instruments.scpi_single import LecroySingle
 
 BOOL = Parameter("boolean")
 LECROY_SOURCE = "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf"
@@ -61,7 +62,7 @@ def lecroy(model: str = "WaveRunner9254") -> Profile:
     )
 
 
-class WaveRunner9254Adapter(ScpiAdapter):
+class WaveRunner9254Adapter(LecroySingle, ScpiAdapter):
     def acquire_measurements(self, request):
         from .protocol import acquire
 

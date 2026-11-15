@@ -416,7 +416,13 @@ class MetricTasks:
                 adapter_id=session.config.adapter,
                 resource=session.config.resource,
             )
-            batch = self.runtime.sessions.submit(device, "acquire", plan.request, before_io=guard).result()
+            if service._scope_waveform(device, plan.request):
+                read = service._single_read(
+                    task["client_id"], task["grant_id"], device, plan.request, ctx["cancel"], guard
+                )
+            else:
+                read = self.runtime.sessions.submit(device, "acquire", plan.request, before_io=guard)
+            batch = read.result()
             self.runtime.monitoring._validate_saved_batch(batch)
             self.update(ctx, phase="saving")
             folder = service.repository.export(batch, context=context)

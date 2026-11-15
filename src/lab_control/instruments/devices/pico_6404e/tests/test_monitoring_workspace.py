@@ -51,14 +51,14 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
         panel = scope.controls
         assert isinstance(scope.plot, OscilloscopePlot)
         assert scope.plot.isVisible() and panel.isVisible() and scope.selector.isVisible()
-        assert scope.once_button.isVisible()
+        assert scope.single_action.isVisible()
         assert panel.channels() == (1,)
         assert panel.ranges[1].currentData() == "10" and panel.couplings[1].currentData() == "DC"
         assert panel.timebase.isVisible() and not panel.sample_interval.isVisible()
         panel.points.setValue(32)
         assert not applied and not requests
-        assert scope.once_button.isEnabled()
-        scope.once_button.click()
+        assert scope.single_action.isEnabled()
+        scope.single_action.trigger()
 
         def visible_frame():
             assert scope.plot.displayed_frame is not None, (
@@ -73,7 +73,7 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
             ("channel", 1, {"enabled": True, "range": "10", "coupling": "DC", "offset": 0})
         ]
         frame = scope.plot.displayed_frame
-        assert not runtime.monitoring.snapshots()[pico]["running"]
+        assert not runtime.monitoring.snapshots().get(pico, {}).get("running")
         assert len(requests) == 1 and len(frame.batch.measurements) == 1
         measurement = frame.batch.measurements[0]
         assert (measurement.channel, measurement.unit, measurement.axis_unit) == (1, "V", "s")
@@ -102,7 +102,7 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
         qtbot.waitUntil(panel.scroller.isEnabled)
 
         scope.selector.select(scpi)
-        assert not scope.once_button.isVisible() and scope.splitter.isVisible()
+        assert scope.single_action.isVisible() and scope.splitter.isVisible()
         scope.selector.select(pico)
         panel = scope.controls
         assert panel.channels() == (1, 2) and panel.timebase.value() == 12 and panel.points.value() == 32
@@ -112,17 +112,18 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
         panel.sample_interval.setValue(4)
         qtbot.waitUntil(lambda: panel.sample_interval.isVisible() and not panel.timebase.isVisible())
         assert len(applied) == 3
-        scope.once_button.click()
+        scope.start_button.click()
         qtbot.waitUntil(lambda: scope.plot.displayed_frame is not None)
         assert requests[-1].kind == "streaming" and requests[-1].channels == (2,)
         assert [(c.operation, c.parameters) for c in applied[3:]] == [
             ("channel", {"enabled": False, "range": "10", "coupling": "DC", "offset": 0}),
             ("sample_interval", {"value": 4e-6}),
         ]
+        scope.start_button.click()
         qtbot.waitUntil(panel.scroller.isEnabled)
         overload = True
-        qtbot.waitUntil(scope.once_button.isEnabled)
-        scope.once_button.click()
+        qtbot.waitUntil(scope.single_action.isEnabled)
+        scope.single_action.trigger()
 
         def overload_status():
             assert "CH 2 输入过载" in scope.status.text(), (
@@ -137,7 +138,7 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
         saved_frame = scope.plot.displayed_frame
         overload = False
         panel.ranges[2].setCurrentIndex(panel.ranges[2].findData("20"))
-        scope.once_button.click()
+        scope.single_action.trigger()
         qtbot.waitUntil(
             lambda: scope.plot.displayed_frame is not saved_frame and scope.plot.displayed_frame is not None
         )
@@ -145,7 +146,7 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
         assert scope.plot.displayed_frame.batch.measurements[0].quality == Quality.SIMULATED
         qtbot.waitUntil(panel.scroller.isEnabled)
         panel.checks[2].setChecked(False)
-        assert not scope.once_button.isEnabled() and not scope.start_button.isEnabled()
+        assert not scope.single_action.isEnabled() and not scope.start_button.isEnabled()
     finally:
         window.timer.stop()
         window.controller.close()

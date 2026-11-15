@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.controls import PARAMETER_LABELS
 from lab_control.domain.instruments import DeviceError, Parameter, ValidationError
 from lab_control.ui.widgets.parameter_combo import ParameterComboBox
+from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 
 UNIT_CHOICES = {
     "rad": (("°", math.pi / 180), ("rad", 1)),
@@ -466,7 +467,7 @@ class ArrayEditor(QWidget):
         self.table.setMaximumHeight(210)
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
-        self.preview = pg.PlotWidget(background="#151c1f")
+        self.preview = PublicationPlotWidget(background="#151c1f")
         self.preview.setMinimumHeight(140)
         self.preview.setMaximumHeight(180)
         self.preview.setLabel("bottom", "数据行 / 样点")

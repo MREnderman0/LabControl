@@ -30,13 +30,14 @@ def capability(definition):
         channel_scoped=True,
         source="TF LabControl",
         section="采集",
-        requires_confirmation=definition.acquisition_initiate_default
+        requires_confirmation=definition.category == "oscilloscope"
+        or definition.acquisition_initiate_default
         or definition.acquisition_requires_confirmation,
     )
 
 
 def timeout_error():
-    return DeviceError("单帧采集或图片保存超时，未能在 OFC 的 30 秒等待窗口内完成", "capture_timeout")
+    return DeviceError("单帧任务排队或图片保存超时", "capture_timeout")
 
 
 class FrameImage:
