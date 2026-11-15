@@ -160,6 +160,12 @@ class ApplicationRuntime:
             from lab_control.application.bulk_connection import BulkConnectionService
 
             self.bulk_connection = BulkConnectionService(self)
+            from lab_control.application.serial_autoconnect import SerialAutoConnect
+
+            self.serial_autoconnect = SerialAutoConnect(self)
+            if hardware:
+                self.sessions.recovery.serial_route = self.serial_autoconnect.recovery_route
+                self.sessions.recovery.serial_verified = self.serial_autoconnect.verified_route
         except Exception as failure:
             # Construction can fail after the scheduler or discovery worker starts.
             # Unwind every resource actually acquired, preserving the original error.
@@ -401,7 +407,11 @@ class ApplicationRuntime:
             try:
                 identity = completed.result()
                 self.inventory.merge(
-                    DiscoveryCandidate(config, "configured"), "connected", identity, config.adapter
+                    DiscoveryCandidate(config, "configured"),
+                    "connected",
+                    identity,
+                    config.adapter,
+                    session_device_id=device_id,
                 )
                 saved.set_result(identity)
             except Exception as exc:
@@ -606,6 +616,7 @@ class ApplicationRuntime:
                 errors.append(exc)
         for resource in (
             getattr(self, "_processing", None),
+            getattr(self, "serial_autoconnect", None),
             self.bulk_connection,
             self.monitoring,
             self.discovery,

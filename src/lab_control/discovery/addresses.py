@@ -83,10 +83,43 @@ def follow_verified_address(
     record: dict[str, Any], resource: str, identity: DeviceIdentity, config: ConnectionConfig
 ) -> None:
     original = record.get("config", {})
-    if not identity.key or record.get("primaryResourceExplicit") or record.get("identityConflict"):
+    if record.get("primaryResourceExplicit") and config.transport != "serial":
+        return
+    if not identity.key or record.get("identityConflict"):
         return
     if original.get("expected_serial") and original["expected_serial"] != identity.serial:
         record["identityConflict"] = {"reason": "configured_serial_differs", "serial": identity.serial}
+        return
+    if config.transport == "serial" and config.expected_serial == identity.serial and identity.serial:
+        from lab_control.discovery.serial_routes import policy
+        from lab_control.domain.connections import canonical_resource
+
+        if policy(config.adapter) == "instrument_serial":
+            scan = record["candidates"][resource]["verifiedScanRunId"]
+            for address, entry in record["candidates"].items():
+                if canonical_resource(address) == canonical_resource(resource):
+                    continue
+                if (
+                    entry.get("verifiedIdentityKey") == identity.key
+                    and entry.get("verifiedScanRunId") == scan
+                ):
+                    record["identityConflict"] = {
+                        "reason": "same_identity_at_multiple_serial_ports",
+                        "serial": identity.serial,
+                    }
+                    return
+            for address, entry in record["candidates"].items():
+                if canonical_resource(address) != canonical_resource(resource):
+                    entry.update(retired=True, presenceState="not_seen")
+            record["config"] = {
+                **original,
+                "resource": resource,
+                "transport": "serial",
+                "usb_instance_id": config.usb_instance_id,
+                "expected_serial": identity.serial,
+            }
+            record["serialPortVerified"] = True
+    if record.get("primaryResourceExplicit"):
         return
     if network_host(resource) and network_host(original.get("resource", "")):
         # Retain timeout, limits, options, unit policies and other user settings.

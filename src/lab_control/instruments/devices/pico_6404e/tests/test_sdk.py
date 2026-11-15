@@ -204,6 +204,15 @@ def test_pico_block_buffer_lifecycle_and_scaling(kind, stream_status):
     assert (a.channel, d.channel) == (1, 4)
     assert a.quality == Quality.GOOD and d.quality == Quality.OVERLOAD
     assert calls.index("stop") < calls.index("release") and not device.buffers
+    if kind == "streaming":
+        from dataclasses import replace
+
+        stream_calls = 0
+        live = device.acquire(replace(request, consistency="live"))
+        assert stream_calls == 1
+        for measurement in live.measurements:
+            np.testing.assert_array_equal(measurement.axis, np.arange(4) * 1e-6)
+            assert len(measurement.values) == 4
     device.close()
     assert calls[-1] == "close"
     assert ct.sizeof(StreamingInfo) == 30 and ct.sizeof(TriggerInfo) == 12

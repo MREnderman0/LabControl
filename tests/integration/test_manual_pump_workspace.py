@@ -1,13 +1,11 @@
 import json
 
 from PySide6.QtWidgets import QMessageBox, QPushButton
-from pytest import raises
 
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.discovery.providers import ConfiguredDiscoveryProvider, SerialDiscoveryProvider
 from lab_control.discovery.types import DiscoveryCandidate
 from lab_control.domain.connections import ConnectionConfig
-from lab_control.domain.instruments import ValidationError
 from lab_control.instruments.devices.custom_optical_comb_pump.adapter import ADAPTER_ID, OUTPUT_OFF
 from lab_control.instruments.devices.custom_optical_comb_pump.hardware.readonly import verify
 from lab_control.transport.visa import VisaRuntime
@@ -70,7 +68,7 @@ class FakeVisaManager:
         pass
 
 
-def test_manual_pump_connection_control_and_monitoring_use_selected_port_only(qtbot, tmp_path, monkeypatch):
+def test_automatic_pump_connection_control_and_monitoring_use_bound_port_only(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr("lab_control.storage.runtime.hardware_lock_home", lambda: tmp_path / "locks")
     monkeypatch.setattr("lab_control.storage.repository.application_home", lambda: tmp_path / "home")
     port = DiscoveryCandidate(ConnectionConfig(PORT, transport="serial"), "serial")
@@ -84,29 +82,24 @@ def test_manual_pump_connection_control_and_monitoring_use_selected_port_only(qt
         config = ConnectionConfig(RESOURCE, ADAPTER_ID)
         device_id = runtime.add(config)
         providers = (ConfiguredDiscoveryProvider((config,)), SerialDiscoveryProvider())
-        for _ in range(2):
-            scan = runtime.discovery.scan(providers).result(5)
-            assert scan["items"][0]["reason"] == "manual_connection_required"
-        assert len(runtime.inventory.all()) == 1
-        with raises(ValidationError, match="手动选择"):
-            runtime.connect(device_id)
-        assert runtime.connect_all_discovered().result(5)["total"] == 0
+        scan = runtime.discovery.scan(providers).result(5)
+        assert scan["items"][0]["reason"] == "sdk_identity_requires_explicit_connection"
         assert not manager.opens
-
         window = RealWindow(runtime)
         qtbot.addWidget(window)
         window.show()
         try:
-            button = next(
-                widget for widget in window.findChildren(QPushButton) if widget.text() == "手动连接泵浦"
+            assert not any(
+                w.text() in {"手动连接泵浦", "手动绑定开关板"} for w in window.findChildren(QPushButton)
             )
-            button.click()
-            qtbot.waitUntil(lambda: ("设备管理", "pump_driver") in window.page_map)
+            runtime.serial_autoconnect.poll((port,))
+            window.refresh()
+            window.navigate("设备管理", "pump_driver", device_id)
             page = window.page_map[("设备管理", "pump_driver")]
             assert page.selector.device_id == device_id
             assert manager.opens == [RESOURCE] and manager.handle.writes == [SETTINGS_REQUEST]
             assert runtime.inventory.all()[0]["identityKey"] is None
-            assert runtime.connect_all_discovered().result(5)["total"] == 0
+            assert runtime.connect_all_discovered().result(5)["items"][0]["status"] == "already_connected"
 
             off = page.form.editors[OUTPUT_OFF]
             assert off.apply_button.isEnabled() and not off.read_button.isVisible()
@@ -131,10 +124,12 @@ def test_manual_pump_connection_control_and_monitoring_use_selected_port_only(qt
             assert manager.handle.writes[-1] == CURRENT_REQUEST
             manager.handle.fail_current = True
             monitor.start()
-            qtbot.waitUntil(lambda: bool(runtime.monitoring.snapshots()[device_id]["error"]))
-            snapshot = runtime.monitoring.snapshots()[device_id]
-            assert not snapshot["running"] and not snapshot["recovering"]
-            assert manager.handle.closed and manager.opens == [RESOURCE]
+            qtbot.waitUntil(lambda: len(manager.opens) >= 2, timeout=10000)
+            manager.handle.fail_current = False
+            qtbot.waitUntil(lambda: runtime.monitoring.snapshots()[device_id]["sequence"] > 1, timeout=10000)
+            assert set(manager.opens) == {RESOURCE}
+            assert manager.handle.writes.count(OFF_REQUEST) == 1
+            runtime.monitoring.stop(device_id).result(5)
         finally:
             window.timer.stop()
             window.controller.close()

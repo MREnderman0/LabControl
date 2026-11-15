@@ -78,7 +78,7 @@ def test_invalid_settings_close_the_session_without_retry(reply):
     wire = FakeWire((SETTINGS_REQUEST, 48, reply))
     with pytest.raises(DeviceError) as error:
         adapter(wire).identify()
-    assert error.value.code == "manual_reconnect_required"
+    assert error.value.code == "identity_mismatch"
     assert wire.closed and wire.history == [SETTINGS_REQUEST]
 
 

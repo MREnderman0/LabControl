@@ -84,14 +84,6 @@ class WorkspaceOverview:
         window.address_list_button = QPushButton("地址列表")
         window.address_list_button.clicked.connect(window.show_static_addresses)
         toolbar.addWidget(window.address_list_button)
-        if window.runtime.hardware:
-            for definition in DEVICE_DEFINITIONS.values():
-                if definition.manual_connection_label:
-                    button = QPushButton(definition.manual_connection_label)
-                    button.clicked.connect(
-                        lambda _, key=definition.adapter_id: window.show_manual_serial(key)
-                    )
-                    toolbar.addWidget(button)
         window.device_list_button = QPushButton("设备列表")
         window.device_list_button.clicked.connect(lambda: window.open_category(""))
         toolbar.addWidget(window.device_list_button)

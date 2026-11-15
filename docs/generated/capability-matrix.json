@@ -22188,158 +22188,6 @@
           }
         },
         {
-          "name": "start_frequency",
-          "parameters": {
-            "value": {
-              "kind": "number",
-              "unit": "Hz",
-              "minimum": null,
-              "maximum": null,
-              "choices": [],
-              "required": true,
-              "range_source": "model",
-              "resolution": null
-            }
-          },
-          "readable": true,
-          "writable": false,
-          "requires_confirmation": false,
-          "channel_scoped": false,
-          "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
-          "section": "FREQ:STAR?",
-          "verification": "documented_pending_hardware",
-          "option": "",
-          "available": true,
-          "reason": "",
-          "partial_update": "none",
-          "implementation": "implemented",
-          "schema_tested": true,
-          "protocol_fixture_tested": false,
-          "hardware_passed": false,
-          "ui_label": "起始频率",
-          "ui_location": "",
-          "wire_templates": {
-            "select": [],
-            "writes": [],
-            "query": "FREQ:STAR?",
-            "custom_encoder": false
-          }
-        },
-        {
-          "name": "stop_frequency",
-          "parameters": {
-            "value": {
-              "kind": "number",
-              "unit": "Hz",
-              "minimum": null,
-              "maximum": null,
-              "choices": [],
-              "required": true,
-              "range_source": "model",
-              "resolution": null
-            }
-          },
-          "readable": true,
-          "writable": false,
-          "requires_confirmation": false,
-          "channel_scoped": false,
-          "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
-          "section": "FREQ:STOP?",
-          "verification": "documented_pending_hardware",
-          "option": "",
-          "available": true,
-          "reason": "",
-          "partial_update": "none",
-          "implementation": "implemented",
-          "schema_tested": true,
-          "protocol_fixture_tested": false,
-          "hardware_passed": false,
-          "ui_label": "终止频率",
-          "ui_location": "",
-          "wire_templates": {
-            "select": [],
-            "writes": [],
-            "query": "FREQ:STOP?",
-            "custom_encoder": false
-          }
-        },
-        {
-          "name": "center_frequency",
-          "parameters": {
-            "value": {
-              "kind": "number",
-              "unit": "Hz",
-              "minimum": null,
-              "maximum": null,
-              "choices": [],
-              "required": true,
-              "range_source": "model",
-              "resolution": null
-            }
-          },
-          "readable": true,
-          "writable": false,
-          "requires_confirmation": false,
-          "channel_scoped": false,
-          "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
-          "section": "FREQ:CENT?",
-          "verification": "documented_pending_hardware",
-          "option": "",
-          "available": true,
-          "reason": "",
-          "partial_update": "none",
-          "implementation": "implemented",
-          "schema_tested": true,
-          "protocol_fixture_tested": false,
-          "hardware_passed": false,
-          "ui_label": "中心频率",
-          "ui_location": "",
-          "wire_templates": {
-            "select": [],
-            "writes": [],
-            "query": "FREQ:CENT?",
-            "custom_encoder": false
-          }
-        },
-        {
-          "name": "span",
-          "parameters": {
-            "value": {
-              "kind": "number",
-              "unit": "Hz",
-              "minimum": null,
-              "maximum": null,
-              "choices": [],
-              "required": true,
-              "range_source": "model",
-              "resolution": null
-            }
-          },
-          "readable": true,
-          "writable": false,
-          "requires_confirmation": false,
-          "channel_scoped": false,
-          "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
-          "section": "FREQ:SPAN?",
-          "verification": "documented_pending_hardware",
-          "option": "",
-          "available": true,
-          "reason": "",
-          "partial_update": "none",
-          "implementation": "implemented",
-          "schema_tested": true,
-          "protocol_fixture_tested": false,
-          "hardware_passed": false,
-          "ui_label": "频率跨度",
-          "ui_location": "",
-          "wire_templates": {
-            "select": [],
-            "writes": [],
-            "query": "FREQ:SPAN?",
-            "custom_encoder": false
-          }
-        },
-        {
           "name": "sweep_time",
           "parameters": {
             "value": {
@@ -22526,6 +22374,166 @@
             "select": [],
             "writes": [],
             "query": "FORM:BORD?",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "start_frequency",
+          "parameters": {
+            "value": {
+              "kind": "number",
+              "unit": "Hz",
+              "minimum": null,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": false,
+          "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+          "section": "FREQ:STAR",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "等待 Swept SA 输入频率范围",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "起始频率",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [
+              "FREQ:STAR {value}"
+            ],
+            "query": "FREQ:STAR?",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "stop_frequency",
+          "parameters": {
+            "value": {
+              "kind": "number",
+              "unit": "Hz",
+              "minimum": null,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": false,
+          "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+          "section": "FREQ:STOP",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "等待 Swept SA 输入频率范围",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "终止频率",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [
+              "FREQ:STOP {value}"
+            ],
+            "query": "FREQ:STOP?",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "center_frequency",
+          "parameters": {
+            "value": {
+              "kind": "number",
+              "unit": "Hz",
+              "minimum": null,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": false,
+          "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+          "section": "FREQ:CENT",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "等待 Swept SA 输入频率范围",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "中心频率",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [
+              "FREQ:CENT {value}"
+            ],
+            "query": "FREQ:CENT?",
+            "custom_encoder": false
+          }
+        },
+        {
+          "name": "span",
+          "parameters": {
+            "value": {
+              "kind": "number",
+              "unit": "Hz",
+              "minimum": null,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": false,
+          "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+          "section": "FREQ:SPAN",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "等待 Swept SA 输入频率范围",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": true,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "频率跨度",
+          "ui_location": "",
+          "wire_templates": {
+            "select": [],
+            "writes": [
+              "FREQ:SPAN {value}"
+            ],
+            "query": "FREQ:SPAN?",
             "custom_encoder": false
           }
         },

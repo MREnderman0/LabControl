@@ -32,6 +32,7 @@ DEFINITION = DeviceDefinition(
     supported_transports=("visa", "serial"),
     discovery_connection_only_transports=("visa", "serial"),
     identity_requires_adapter=True,
+    serial_autoconnect="usb_bridge",
     management_surface=True,
     monitoring_surface=False,
     manual_connection_label="手动绑定开关板",

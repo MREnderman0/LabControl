@@ -32,110 +32,6 @@
         "partial_update": "none"
       },
       {
-        "name": "start_frequency",
-        "parameters": {
-          "value": {
-            "kind": "number",
-            "unit": "Hz",
-            "minimum": null,
-            "maximum": null,
-            "choices": [],
-            "required": true,
-            "range_source": "model",
-            "resolution": null
-          }
-        },
-        "readable": true,
-        "writable": false,
-        "requires_confirmation": false,
-        "channel_scoped": false,
-        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
-        "section": "FREQ:STAR?",
-        "verification": "documented_pending_hardware",
-        "option": "",
-        "available": true,
-        "reason": "",
-        "partial_update": "none"
-      },
-      {
-        "name": "stop_frequency",
-        "parameters": {
-          "value": {
-            "kind": "number",
-            "unit": "Hz",
-            "minimum": null,
-            "maximum": null,
-            "choices": [],
-            "required": true,
-            "range_source": "model",
-            "resolution": null
-          }
-        },
-        "readable": true,
-        "writable": false,
-        "requires_confirmation": false,
-        "channel_scoped": false,
-        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
-        "section": "FREQ:STOP?",
-        "verification": "documented_pending_hardware",
-        "option": "",
-        "available": true,
-        "reason": "",
-        "partial_update": "none"
-      },
-      {
-        "name": "center_frequency",
-        "parameters": {
-          "value": {
-            "kind": "number",
-            "unit": "Hz",
-            "minimum": null,
-            "maximum": null,
-            "choices": [],
-            "required": true,
-            "range_source": "model",
-            "resolution": null
-          }
-        },
-        "readable": true,
-        "writable": false,
-        "requires_confirmation": false,
-        "channel_scoped": false,
-        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
-        "section": "FREQ:CENT?",
-        "verification": "documented_pending_hardware",
-        "option": "",
-        "available": true,
-        "reason": "",
-        "partial_update": "none"
-      },
-      {
-        "name": "span",
-        "parameters": {
-          "value": {
-            "kind": "number",
-            "unit": "Hz",
-            "minimum": null,
-            "maximum": null,
-            "choices": [],
-            "required": true,
-            "range_source": "model",
-            "resolution": null
-          }
-        },
-        "readable": true,
-        "writable": false,
-        "requires_confirmation": false,
-        "channel_scoped": false,
-        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
-        "section": "FREQ:SPAN?",
-        "verification": "documented_pending_hardware",
-        "option": "",
-        "available": true,
-        "reason": "",
-        "partial_update": "none"
-      },
-      {
         "name": "sweep_time",
         "parameters": {
           "value": {
@@ -263,6 +159,110 @@
         "option": "",
         "available": true,
         "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "start_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FREQ:STAR",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "等待 Swept SA 输入频率范围",
+        "partial_update": "none"
+      },
+      {
+        "name": "stop_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FREQ:STOP",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "等待 Swept SA 输入频率范围",
+        "partial_update": "none"
+      },
+      {
+        "name": "center_frequency",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FREQ:CENT",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "等待 Swept SA 输入频率范围",
+        "partial_update": "none"
+      },
+      {
+        "name": "span",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://www.keysight.com/me/en/assets/9018-06099/user-manuals/9018-06099.pdf",
+        "section": "FREQ:SPAN",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "等待 Swept SA 输入频率范围",
         "partial_update": "none"
       },
       {
@@ -481,30 +481,6 @@
       "select": [],
       "compare": false
     },
-    "start_frequency": {
-      "writes": [],
-      "query": "FREQ:STAR?",
-      "select": [],
-      "compare": false
-    },
-    "stop_frequency": {
-      "writes": [],
-      "query": "FREQ:STOP?",
-      "select": [],
-      "compare": false
-    },
-    "center_frequency": {
-      "writes": [],
-      "query": "FREQ:CENT?",
-      "select": [],
-      "compare": false
-    },
-    "span": {
-      "writes": [],
-      "query": "FREQ:SPAN?",
-      "select": [],
-      "compare": false
-    },
     "sweep_time": {
       "writes": [],
       "query": "SWE:TIME?",
@@ -534,6 +510,38 @@
       "query": "FORM:BORD?",
       "select": [],
       "compare": false
+    },
+    "start_frequency": {
+      "writes": [
+        "FREQ:STAR {value}"
+      ],
+      "query": "FREQ:STAR?",
+      "select": [],
+      "compare": true
+    },
+    "stop_frequency": {
+      "writes": [
+        "FREQ:STOP {value}"
+      ],
+      "query": "FREQ:STOP?",
+      "select": [],
+      "compare": true
+    },
+    "center_frequency": {
+      "writes": [
+        "FREQ:CENT {value}"
+      ],
+      "query": "FREQ:CENT?",
+      "select": [],
+      "compare": true
+    },
+    "span": {
+      "writes": [
+        "FREQ:SPAN {value}"
+      ],
+      "query": "FREQ:SPAN?",
+      "select": [],
+      "compare": true
     },
     "rbw": {
       "writes": [

@@ -276,6 +276,10 @@ class SimulatedInstrument:
             if f"1.{name}" in batch.configuration
         )
 
+    @property
+    def single_capture_kinds(self):
+        return ("waveform", "streaming") if self.adapter_id == "pico.6404e" else ("waveform",)
+
     @contextmanager
     def single_acquisition(self, job, request):
         job.wait(lambda: True, 0.001, 1)
@@ -397,7 +401,14 @@ class SimulatedInstrument:
         return MeasurementBatch(
             self.identity,
             tuple(result),
-            dict(self.values),
+            {
+                **self.values,
+                "channels": {ch: dict(self.values.get(f"{ch}.channel", {})) for ch in request.channels},
+                "sample_interval_s": interval,
+                "capture_mode": request.kind,
+            }
+            if self.adapter_id == "pico.6404e" and request.kind in {"waveform", "streaming"}
+            else dict(self.values),
         )
 
     def close(self) -> None:

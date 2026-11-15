@@ -55,6 +55,53 @@ def test_split_button_does_not_arm_until_selected(qtbot, tmp_path, model, monkey
             window.bridge.worker.shutdown()
 
 
+def test_manual_monitor_preserves_single_until_first_trigger(qtbot, tmp_path, monkeypatch):
+    with ApplicationRuntime(root=tmp_path, hardware=False) as rt:
+        key = rt.add(ConnectionConfig("mock://resume", "rs.rtm3004", "mock"))
+        rt.connect(key).result()
+        adapter = rt.sessions.sessions[key].adapter
+        gate = Event()
+        starts = []
+
+        def resume():
+            starts.append(1)
+            return gate.is_set
+
+        monkeypatch.setattr(adapter, "ensure_continuous", resume, raising=False)
+        window = RealWindow(rt)
+        qtbot.addWidget(window)
+        try:
+            window.show()
+            window.navigate("实时监测", "oscilloscope", key)
+            page = window.stack.currentWidget()
+            qtbot.waitUntil(page.single_action.isEnabled)
+            page.single_action.trigger()
+            qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
+            frozen = page.plot.displayed_frame
+            page.start_button.click()
+            qtbot.waitUntil(lambda: rt.monitoring.snapshots()[key]["notice"] == "等待触发")
+            assert page.plot.displayed_frame is frozen and starts == [1]
+            gate.set()
+            qtbot.waitUntil(lambda: page.plot.displayed_frame is not frozen)
+            assert starts == [1]
+            page.start_button.click()
+            qtbot.waitUntil(lambda: not rt.monitoring.snapshots()[key]["running"])
+
+            def failed():
+                raise DeviceError("RUN 被仪器拒绝")
+
+            monkeypatch.setattr(adapter, "ensure_continuous", failed)
+            last = page.plot.displayed_frame
+            page.start_button.click()
+            qtbot.waitUntil(lambda: "RUN 被仪器拒绝" in page.status.text())
+            assert page.plot.displayed_frame is last
+        finally:
+            window.timer.stop()
+            window.controller.close()
+            window.closing = True
+            window.bridge.worker.shutdown()
+
+
 def test_pending_single_cancels_without_publishing_or_reading_old_frame(tmp_path, monkeypatch):
     with ApplicationRuntime(root=tmp_path, hardware=False) as rt:
         device = rt.add(ConnectionConfig("mock://single/cancel", "rs.rtm3004", "mock"))

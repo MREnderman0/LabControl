@@ -85,6 +85,8 @@ class DeviceDefinition:
     metric_profiles: tuple[MetricProfile, ...] = ()
     # Replace this generated candidate name with the documentation title once identified.
     pending_display_name: str = ""
+    # Desktop reconnect policy for serial devices: instrument serial, USB bridge, or protocol.
+    serial_autoconnect: str = ""
     manual_connection_only: bool = False
     transport_adapter: Callable[[ConnectionConfig, Any], InstrumentAdapter] | None = None
     manual_connection_label: str = ""

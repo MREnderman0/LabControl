@@ -40,6 +40,7 @@ def test_horizontal_vertical_preview_changes_scene_but_preserves_saved_frame(plo
     plot.preview_parameter(1, "timebase", 2e-6)
     plot.preview_parameter(1, "time_position", 1e-6)
     qtbot.waitUntil(lambda: "估算" in plot.meta.text())
+    assert "预览" in plot.bottom_voltage.text() and "CH1 −80.00 mV" in plot.bottom_voltage.text()
     assert plot.grid_range == pytest.approx((sign * 1e-6 - 10e-6, sign * 1e-6 + 10e-6))
     assert plot.plot.viewRange()[1] == [-4, 4] and len(plot.grid_lines) == 20
     assert plot.curves[1, "waveform"].transform().map(QPointF(0, 1)).y() == 0.5

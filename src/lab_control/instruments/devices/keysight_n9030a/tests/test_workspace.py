@@ -16,6 +16,8 @@ def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch):
     replies = {
         "*IDN?": b"Agilent Technologies,N9030A,FIXTURE,A.14.59",
         "CONF?": b"SAN",
+        "FREQ:STAR? MIN": b"-80000000",
+        "FREQ:STOP? MAX": b"8500000000",
         "BAND:RES?": b"30000",
         "BAND:RES:AUTO?": b"0",
         "BAND:VID?": b"10000",
@@ -52,7 +54,16 @@ def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch):
             window.navigate("实时监测", "spectrum_analyzer", key)
             page = window.stack.currentWidget()
             assert isinstance(page, SpectrumMonitoringPage)
-            assert {"rbw", "vbw", "reference_level", "attenuation"} <= page.controls.editors.keys()
+            assert {
+                "rbw",
+                "vbw",
+                "reference_level",
+                "attenuation",
+                "start_frequency",
+                "stop_frequency",
+                "center_frequency",
+                "span",
+            } <= page.controls.editors.keys()
             assert not page.controls.apply_button.isHidden()
             assert page.controls.auto_button.isHidden()
             page.toggle_monitoring()

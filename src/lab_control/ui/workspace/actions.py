@@ -38,6 +38,8 @@ class WorkspaceActions:
 
         show_preparation(window.runtime, window, first_run=True)
         window.scan()
+        if window.runtime.hardware:
+            window.runtime.serial_autoconnect.start()
 
     def scan(self) -> None:
         window = self.window

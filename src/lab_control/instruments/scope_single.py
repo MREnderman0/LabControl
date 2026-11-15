@@ -37,12 +37,15 @@ class SingleCapture:
     def capture(self, adapter, read):
         self.check()
         self.request.validate()
-        if self.request.kind != "waveform" or not self.request.confirmed:
+        if (
+            self.request.kind not in getattr(adapter, "single_capture_kinds", ("waveform",))
+            or not self.request.confirmed
+        ):
             raise DeviceError("Single 需要已确认的波形请求", "confirmation_required")
         request = replace(self.request, consistency="full", context_id="")
-        with adapter.single_acquisition(self, request) as (span, native_block):
+        with adapter.single_acquisition(self, request) as (span, native_capture):
             self.check()
-            batch = read(replace(request, initiate=native_block))
+            batch = read(replace(request, initiate=native_capture))
             self.check()
             overloaded = [m.channel for m in batch.measurements if m.quality == Quality.OVERLOAD]
             if overloaded:
@@ -52,7 +55,7 @@ class SingleCapture:
             validate_recorded_batch(batch)
             if sorted(m.channel for m in batch.measurements) != sorted(request.channels):
                 raise DeviceError("单帧未返回全部所选通道", "incomplete_waveform")
-            if native_block and any(len(m.values) != request.points for m in batch.measurements):
-                raise DeviceError("单帧块采样点数不足", "incomplete_waveform")
-            batch = mark_coverage(batch, span, require_full=True)
+            if native_capture and any(len(m.values) != request.points for m in batch.measurements):
+                raise DeviceError("单帧采样点数不足", "incomplete_waveform")
+            batch = mark_coverage(batch, span, require_full=not (native_capture and request.points == 1))
             return replace(batch, performance={**batch.performance, "single_completed": True})

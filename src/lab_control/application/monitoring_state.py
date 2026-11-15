@@ -85,6 +85,8 @@ class MonitorTask:
     configuration_changes: int = 0
     configuration_wait_deadline: float = 0
     configuration_wait_expired: bool = False
+    waiting_for_first_waveform: bool = False
+    empty_waveform_since: float = 0
     notice: str = ""
     cadence: str = "interval"
     csv_interval: float = 5

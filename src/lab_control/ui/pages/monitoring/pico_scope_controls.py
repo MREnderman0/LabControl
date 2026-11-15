@@ -5,21 +5,28 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
+    QSlider,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from lab_control.domain.instruments import DeviceCommand, DeviceError
-from lab_control.domain.oscilloscope import COLORS
+from lab_control.domain.oscilloscope import COLORS, engineering
+from lab_control.ui.pages.monitoring.oscilloscope_controls import gear_icon
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 
@@ -39,6 +46,26 @@ def number(spec, value, suffix="", *, integer=False):
     field.setSuffix(suffix)
     field.setKeyboardTracking(False)
     return field
+
+
+class InputRange(QSlider):
+    """The SDK exposes discrete full-scale input ranges, in volts."""
+
+    def __init__(self, choices):
+        super().__init__(Qt.Orientation.Horizontal)
+        self.choices = tuple(choices)
+        self.setRange(0, len(self.choices) - 1)
+        self.setAccessibleName("输入量程")
+
+    def currentData(self):
+        return self.choices[self.value()]
+
+    def findData(self, value):
+        return self.choices.index(value) if value in self.choices else -1
+
+    def setCurrentIndex(self, index):
+        if index >= 0:
+            self.setValue(index)
 
 
 class PicoScopeControls(QFrame):
@@ -107,15 +134,24 @@ class PicoScopeControls(QFrame):
         self.sample_interval.setValue(1)
         self.sample_interval.setSuffix(" µs")
         form.addRow("采样间隔", self.sample_interval)
+        self.sample_rate = QLabel("实际采样率　—")
+        self.sample_rate.setObjectName("scopeSampleRate")
+        form.addRow(self.sample_rate)
         self.horizontal = form
+        self.range_labels = {}
+        self.offset_sliders = {}
         for ch in caps.channels:
             channel = controller.declared_capabilities(device_id, ch).get("channel").parameters
             check = QCheckBox(f"CH {ch}")
-            check.setStyleSheet(f"color: {COLORS[(ch - 1) % len(COLORS)]}; font-weight: 600;")
+            color = COLORS[(ch - 1) % len(COLORS)]
+            check.setStyleSheet(
+                f"QCheckBox {{ color: {color}; font-weight: 600; }}"
+                f"QCheckBox::indicator:checked {{ background: {color}; border-color: {color}; }}"
+            )
             check.setChecked(ch == 1)
             self.checks[ch] = check
             box = section(check)
-            self.ranges[ch] = choice((f"±{value} V", value) for value in channel["range"].choices)
+            self.ranges[ch] = InputRange(channel["range"].choices)
             self.ranges[ch].setCurrentIndex(self.ranges[ch].findData("10"))
             self.couplings[ch] = choice(
                 ({"AC": "交流", "DC": "直流（高阻）", "DC50": "直流（50 Ω）"}[v], v)
@@ -123,26 +159,71 @@ class PicoScopeControls(QFrame):
             )
             self.couplings[ch].setCurrentIndex(self.couplings[ch].findData("DC"))
             self.offsets[ch] = number(channel["offset"], 0, " V")
-            box.addRow("量程", self.ranges[ch])
+            row = QHBoxLayout()
+            row.addWidget(self.ranges[ch], 1)
+            self.range_labels[ch] = QLabel()
+            self.range_labels[ch].setObjectName("scopeControlValue")
+            row.addWidget(self.range_labels[ch])
+            box.addRow("量程", row)
+            offset = self.offsets[ch]
+            offset.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            offset.setFixedWidth(max(118, offset.fontMetrics().horizontalAdvance("−20.000000 V") + 28))
+            slider = self.offset_sliders[ch] = QSlider(Qt.Orientation.Horizontal)
+            slider.setRange(-1000, 1000)
+            slider.setAccessibleName(f"CH{ch} 模拟偏移")
+            slider.valueChanged.connect(
+                lambda value, field=offset: field.setValue(value * field.maximum() / 1000)
+            )
+            offset.valueChanged.connect(lambda _value, ch=ch: self.sync_offset_slider(ch))
+            offset_row = QHBoxLayout()
+            offset_row.addWidget(slider, 1)
+            offset_row.addWidget(offset)
+            box.addRow("偏移", offset_row)
             box.addRow("耦合", self.couplings[ch])
-            box.addRow("偏移", self.offsets[ch])
+            for signal in (
+                self.ranges[ch].valueChanged,
+                self.couplings[ch].currentIndexChanged,
+                check.toggled,
+            ):
+                signal.connect(lambda *_args, ch=ch: self.update_channel(ch))
+            self.update_channel(ch)
             check.toggled.connect(self.channels_changed)
 
         title = QLabel("触发")
         title.setObjectName("spectrumChartTitle")
-        trig = section(title)
+        self.gear = QToolButton()
+        self.gear.setIcon(gear_icon())
+        self.gear.setIconSize(QSize(20, 20))
+        self.gear.setAccessibleName("触发设置")
+        self.gear.setToolTip("触发通道、边沿与等待时间")
+        self.trigger_summary = title
+        title_row = QHBoxLayout()
+        title_row.addWidget(title, 1)
+        title_row.addWidget(self.gear)
+        trig = section(title_row)
+        self.trigger_dialog = QDialog(self)
+        self.trigger_dialog.setWindowTitle("Pico 触发设置")
+        settings = QFormLayout(self.trigger_dialog)
         trig_spec = caps.get("trigger").parameters
         self.trigger_mode = choice((("保持当前", None), ("启用边沿触发", True), ("关闭触发", False)))
         self.trigger_channel = choice((f"CH {ch}", ch) for ch in caps.channels)
         self.threshold = number(trig_spec["threshold"], 0, " V")
         self.direction = choice((("上升沿", "RISING"), ("下降沿", "FALLING")))
         self.timeout_us = number(trig_spec["timeout_us"], 100000, " µs", integer=True)
-        trig.addRow("模式", self.trigger_mode)
-        trig.addRow("触发通道", self.trigger_channel)
+        settings.addRow("模式", self.trigger_mode)
+        settings.addRow("触发通道", self.trigger_channel)
+        settings.addRow("触发沿", self.direction)
+        settings.addRow("自动触发等待", self.timeout_us)
         trig.addRow("电平", self.threshold)
-        trig.addRow("触发沿", self.direction)
-        trig.addRow("自动触发等待", self.timeout_us)
-        self.trigger_form = trig
+        self.trigger_panel = trig
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.trigger_dialog.accept)
+        buttons.rejected.connect(self.trigger_dialog.reject)
+        settings.addRow(buttons)
+        self.gear.clicked.connect(self.edit_trigger)
+        self.trigger_form = settings
         stack.addStretch()
         self.scroller.setWidget(body)
         layout.addWidget(self.scroller)
@@ -155,7 +236,7 @@ class PicoScopeControls(QFrame):
             self.sample_interval.setValue(draft["interval_us"])
             for ch, values in draft["channels"].items():
                 self.checks[ch].setChecked(values["enabled"])
-                for widget, name in ((self.ranges[ch], "range"), (self.couplings[ch], "coupling")):
+                for widget, name in ((self.couplings[ch], "coupling"), (self.ranges[ch], "range")):
                     widget.setCurrentIndex(widget.findData(values[name]))
                 self.offsets[ch].setValue(values["offset"])
             self.trigger_mode.setCurrentIndex(draft["trigger_mode"])
@@ -165,7 +246,51 @@ class PicoScopeControls(QFrame):
             self.timeout_us.setValue(draft["timeout_us"])
         self.capture_mode.currentIndexChanged.connect(self.update_mode)
         self.trigger_mode.currentIndexChanged.connect(self.update_trigger_mode)
+        self.trigger_channel.currentIndexChanged.connect(self.update_trigger_mode)
+        self.direction.currentIndexChanged.connect(self.update_trigger_mode)
         self.update_mode()
+        self.applied_draft = None
+
+    def update_channel(self, ch):
+        value = self.ranges[ch]
+        maximum = (
+            value.findData("5") if self.couplings[ch].currentData() == "DC50" else len(value.choices) - 1
+        )
+        value.setMaximum(maximum)
+        input_range = float(value.currentData())
+        self.range_labels[ch].setText("±" + engineering(input_range, "V"))
+        limit = 1.25 if input_range <= 1 else 20
+        self.offsets[ch].setRange(-limit, limit)
+        self.sync_offset_slider(ch)
+        for widget in (
+            value,
+            self.range_labels[ch],
+            self.couplings[ch],
+            self.offsets[ch],
+            self.offset_sliders[ch],
+        ):
+            widget.setEnabled(self.checks[ch].isChecked())
+
+    def sync_offset_slider(self, ch):
+        slider, field = self.offset_sliders[ch], self.offsets[ch]
+        with QSignalBlocker(slider):
+            slider.setValue(round(1000 * field.value() / field.maximum()))
+
+    def edit_trigger(self):
+        combos = (self.trigger_mode, self.trigger_channel, self.direction)
+        indices = [box.currentIndex() for box in combos]
+        timeout = self.timeout_us.value()
+        if not self.trigger_dialog.exec():
+            for box, index in zip(combos, indices, strict=True):
+                box.setCurrentIndex(index)
+            self.timeout_us.setValue(timeout)
+
+    def show_sample_rate(self, frame):
+        interval = frame.batch.configuration.get("sample_interval_s")
+        if interval and interval > 0:
+            self.sample_rate.setText(
+                f"实际采样率　{engineering(1 / interval, 'Sa/s')}　·　{engineering(interval, 's')}/点"
+            )
 
     def restore_session_inputs(self):
         # Only consume snapshots already published by the session. Changing pages
@@ -200,8 +325,16 @@ class PicoScopeControls(QFrame):
         self.source_changed.emit()
 
     def update_trigger_mode(self):
-        for field in (self.trigger_channel, self.threshold, self.direction, self.timeout_us):
-            self.trigger_form.setRowVisible(field, self.trigger_mode.currentData() is not None)
+        enabled = self.trigger_mode.currentData() is True
+        for field in (self.trigger_channel, self.direction, self.timeout_us):
+            self.trigger_form.setRowVisible(field, enabled)
+        self.trigger_panel.setRowVisible(self.threshold, enabled)
+        summary = (
+            f"CH{self.trigger_channel.currentData()} · {self.direction.currentText()}"
+            if enabled
+            else self.trigger_mode.currentText()
+        )
+        self.trigger_summary.setText(f"触发 · {summary}")
 
     def channels(self):
         return tuple(ch for ch, box in self.checks.items() if box.isChecked())
@@ -327,6 +460,7 @@ class PicoScopeControls(QFrame):
                     self.device_id, self._commands.popleft(), self.applied, self.failed, group_member=True
                 )
             else:
+                self.applied_draft = self.draft()
                 ready = self._on_ready
                 self.finish()
                 ready()
@@ -373,7 +507,9 @@ class PicoScopeControls(QFrame):
                 if self.running
                 else "停止监测后可编辑参数"
                 if not editing and connected
-                else "选择通道后，点击单次采集或开始监测"
+                else "参数待应用 · 开始采集时生效"
+                if self.channels() and self.draft() != self.applied_draft
+                else "参数已应用"
                 if self.channels()
                 else "请至少选择一个采集通道"
             )

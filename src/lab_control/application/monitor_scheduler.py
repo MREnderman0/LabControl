@@ -51,6 +51,19 @@ class MonitorScheduler:
         except DeviceError as exc:
             if record_session and task.recorder:
                 task.recorder.cancel_reservation()
+            if exc.code == "waiting_for_trigger":
+                task.empty_waveform_since = 0
+                task.notice = "等待触发"
+                task.next_at = time.monotonic() + max(0.05, task.interval)
+                return
+            if exc.code == "waveform_unavailable" and task.waiting_for_first_waveform:
+                now = time.monotonic()
+                if not task.empty_waveform_since:
+                    task.empty_waveform_since = now
+                if now - task.empty_waveform_since < 30:
+                    task.notice = "等待触发 · 尚无首帧"
+                    task.next_at = now + max(0.05, task.interval)
+                    return
             if exc.code in {"waveform_unavailable", "acquisition_setup_blocked"}:
                 # A known setup constraint or empty record is not a transport failure.
                 # End this read without reconnecting or initiating the instrument.
@@ -81,6 +94,9 @@ class MonitorScheduler:
             task.notice = "仪器正在自动调整或配置变化 · 等待稳定曲线（最多 30 秒）"
             task.next_at = min(now + task.interval, task.configuration_wait_deadline)
             return
+        if task.waiting_for_first_waveform:
+            task.waiting_for_first_waveform = False
+            task.before_acquire = None
         good = all(m.quality in {Quality.GOOD, Quality.SIMULATED} for m in batch.measurements)
         if not good:
             invalid = [m for m in batch.measurements if m.quality not in {Quality.GOOD, Quality.SIMULATED}]

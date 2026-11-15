@@ -77,6 +77,9 @@ class Rto64Adapter(RohdeSingle, ScpiAdapter):
     def single_initial(self):
         return bool(int(self.transport.query("STAT:OPER:COND?")) & 16)
 
+    def continuous_frame_ready(self):
+        return int(self.transport.query("ACQ:CURR?")) > 0
+
     def single_finished(self):
         return not self.single_initial() and int(self.transport.query("ACQ:CURR?")) >= self.read(
             "acquisition_count"

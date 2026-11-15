@@ -18,6 +18,7 @@ from lab_control.domain.instruments import (
     ValidationError,
     utc_now,
 )
+from lab_control.domain.spectrum import SpectrumSpan
 from lab_control.instruments.base import ScpiAdapter
 from lab_control.transport.diagnostics import parsing
 
@@ -168,6 +169,10 @@ class FphAdapter(ScpiAdapter):
                 maximum=self.maximum_frequency,
                 range_source="instrument",
             )
+        if self._k13:
+            self.dynamic_parameters["span"] = SpectrumSpan(
+                "number", "Hz", 0, self.maximum_frequency, range_source="instrument"
+            )
         self.read("amplitude_unit")
         self.read("span")
         self.read("measurement_mode")
@@ -237,8 +242,10 @@ class FphAdapter(ScpiAdapter):
                         reason="只读连接保留仪器错误队列",
                     )
                     if cap.name == "errors"
+                    else replace(cap, writable=False, reason="频率选件未确认")
+                    if cap.name in FREQUENCY[:-1] and not self._options_checked
                     else cap
-                    if cap.name in PANEL_SETTINGS
+                    if cap.name in PANEL_SETTINGS or cap.name in FREQUENCY[:-1]
                     else replace(cap, writable=False, available=cap.available and cap.readable)
                     for cap in caps.operations
                 ),
@@ -299,6 +306,11 @@ class FphAdapter(ScpiAdapter):
             if self.read("frequency_offset") != 0:
                 raise Unsupported("Frequency writes with an offset are not qualified")
             super().preflight(command, parameters)
+            if self._k13 and op in {"start_frequency", "stop_frequency"}:
+                start = value if op == "start_frequency" else self.read("start_frequency")
+                stop = value if op == "stop_frequency" else self.read("stop_frequency")
+                if stop - start < 10 or self.read("span") == 0:
+                    raise ValidationError("端点设置需要非零扫宽且至少 10 Hz；请先设置扫宽")
             if op in {"center_frequency", "span"}:
                 center = value if op == "center_frequency" else self.read("center_frequency")
                 span = value if op == "span" else self.read("span")

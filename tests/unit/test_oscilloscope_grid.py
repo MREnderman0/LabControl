@@ -52,6 +52,30 @@ def plot(qtbot):
     return widget
 
 
+def test_pico_known_voltage_and_each_stream_batch_replaces_previous(plot):
+    sample = frame(n=3, channels=(1,))
+    for sequence, voltages in enumerate(([0.15, -1.1, 0.90], [-0.85, -0.60, -0.10]), 1):
+        m = replace(
+            sample.batch.measurements[0],
+            values=np.array(voltages),
+            axis=np.array([0, 1e-6, 2e-6]),
+            metadata={},
+        )
+        batch = replace(
+            sample.batch,
+            identity=DeviceIdentity("Pico Technology", "6404E", "fixture"),
+            measurements=(m,),
+            configuration={"sample_interval_s": 1e-6, "channels": {1: {"range": "1", "offset": 0.1}}},
+        )
+        plot.show_frame(replace(sample, sequence=sequence, batch=batch), SOURCE, (1,))
+        curve = plot.curves[1, "waveform"]
+        assert len(curve.yData) == len(voltages)
+        assert plot.grid_range == pytest.approx((0, 2e-6))
+        assert plot.display_specs[1].units_per_div == 0.25
+        assert "CH1 −1.10 V" in plot.bottom_voltage.text()
+        np.testing.assert_allclose(-1.1 + (4 + curve.yData) * 0.25, voltages, atol=1e-14)
+
+
 @pytest.mark.parametrize("span", [10e-9, 10e-6, 10e-3])
 def test_fixed_grid_actual_display_points_and_independent_channel_scales(plot, qtbot, span):
     sample = frame(span)

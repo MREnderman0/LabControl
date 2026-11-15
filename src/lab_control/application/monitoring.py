@@ -137,6 +137,7 @@ class MonitoringService:
         recording: bool = False,
         background: bool = False,
         batch: BatchSaveContext | None = None,
+        ensure_continuous: bool = False,
     ) -> Future[Any] | None:
         preparation = None
         if batch is not None and not recording:
@@ -219,6 +220,28 @@ class MonitoringService:
                     raise
             else:
                 candidate = MonitorTask(merged, mode, interval, record_interval, once=once)
+                if ensure_continuous:
+                    candidate.notice = "等待触发 · 等待首帧"
+                    candidate.waiting_for_first_waveform = True
+
+                    def prepare_scope(session, _request):
+                        try:
+                            prepare = getattr(session.adapter, "ensure_continuous", None)
+                            ready = prepare() if prepare else None
+                        except Exception as exc:
+                            raise DeviceError(
+                                f"启动连续采集失败：{exc}", "acquisition_setup_blocked"
+                            ) from exc
+
+                        def wait_first(_session, _request):
+                            if not ready():
+                                raise DeviceError("等待触发", "waiting_for_trigger")
+
+                        candidate.before_acquire = wait_first if ready else None
+                        if ready:
+                            wait_first(session, _request)
+
+                    candidate.before_acquire = prepare_scope
                 candidate.cadence = cadence or "interval"
                 candidate.csv_interval = csv_interval
                 self.tasks[device_id] = candidate

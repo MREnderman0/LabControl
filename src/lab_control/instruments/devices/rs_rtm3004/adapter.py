@@ -42,6 +42,10 @@ class Rtm3004Adapter(RohdeSingle, ScpiAdapter):
     def single_initial(self):
         return self.read("acquisition_state") == "RUN"
 
+    def continuous_frame_ready(self):
+        # RTM3000 operation register bit 3 is set while waiting for a trigger.
+        return not (int(self.transport.query("STAT:OPER:COND?")) & 8)
+
     def single_finished(self):
         return self.read("acquisition_state") == "COMP"
 

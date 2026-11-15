@@ -1,4 +1,4 @@
-"""Fixed-frame protocol for the manually selected optical-comb ground-test pump."""
+"""Fixed-frame protocol for the optical-comb ground-test pump."""
 
 from __future__ import annotations
 
@@ -132,16 +132,21 @@ class OpticalCombPumpAdapter:
 
     def _query(self, request: bytes, count: int) -> bytes:
         if self.closed:
-            raise DeviceError("泵浦会话已关闭，请断开后重新选择串口", "manual_reconnect_required")
+            raise DeviceError("泵浦会话已关闭，请检查串口连接", "disconnected")
         return self.transport.query_fixed(request, count)
 
     def _failed(self, error: Exception) -> DeviceError:
-        message = f"泵浦通信异常：{error}。请断开后重新选择串口。"
+        message = f"泵浦通信异常：{error}。请检查电源和串口接线。"
         try:
             self.close()
         except Exception as cleanup:
             message += f" 串口关闭失败：{cleanup}"
-        return DeviceError(message, "manual_reconnect_required")
+        return DeviceError(
+            message,
+            "identity_mismatch"
+            if getattr(error, "code", "") == "parse_error"
+            else getattr(error, "code", "connection_failed"),
+        )
 
     def _settings(self) -> dict[str, int | float | bool]:
         try:

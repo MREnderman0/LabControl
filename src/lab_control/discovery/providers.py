@@ -61,6 +61,7 @@ class SerialDiscoveryProvider:
                 self.name,
                 {
                     "description": port.description,
+                    "hwid": getattr(port, "hwid", ""),
                     "vid": port.vid,
                     "pid": port.pid,
                     "usb_serial": port.serial_number,
@@ -136,8 +137,16 @@ class ConfiguredDiscoveryProvider:
 
     def enumerate(self) -> tuple[DiscoveryCandidate, ...]:
         following = set()
+        serial_ports = {}
         if self.inventory is not None:
             for record in self.inventory.all():
+                if (
+                    record.get("serialPortVerified")
+                    and record.get("identityKey")
+                    and not record.get("identityConflict")
+                ):
+                    cfg = record["config"]
+                    serial_ports[(record["adapterId"], record["identity"]["serial"])] = cfg["resource"]
                 if (
                     record.get("identityKey")
                     and record.get("dhcpBinding", {}).get("identityKey") == record["identityKey"]
@@ -145,7 +154,14 @@ class ConfiguredDiscoveryProvider:
                 ):
                     following.add((record.get("adapterId"), record.get("identity", {}).get("serial")))
         return tuple(
-            DiscoveryCandidate(config, self.name, {"configured": True})
+            DiscoveryCandidate(
+                replace(
+                    config,
+                    resource=serial_ports.get((config.adapter, config.expected_serial), config.resource),
+                ),
+                self.name,
+                {"configured": True},
+            )
             for config in self.configurations
             if (config.adapter, config.expected_serial) not in following
         )

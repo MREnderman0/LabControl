@@ -144,6 +144,17 @@ class DiscoveryService:
                 # for serial, VISA and SDK candidates.
                 available_sources = ()
 
+        from lab_control.discovery.serial_routes import add_serial_routes
+
+        if "serial" in successful:
+            from lab_control.discovery.serial_routes import policy
+
+            for key, group in tuple(observations.items()):
+                if key.startswith("SERIAL:") and not any(c.source == "serial" for c in group):
+                    observations[key] = [c for c in group if not policy(c.config.adapter)]
+                    if not observations[key]:
+                        del observations[key]
+        add_serial_routes(observations, self.inventory)
         # Publish every resource before identity I/O. One slow probe cannot hide the other resources.
         candidates: list[DiscoveryCandidate] = []
         for group in observations.values():
@@ -414,7 +425,12 @@ class DiscoveryService:
             # The host lease is shared by VXI-11 and HiSLIP. Schedule them in sequence
             # so this scan never defers one protocol behind its own probe of the other.
             host = network_host(candidate.config.resource).rstrip(".")
-            group_key = host
+            # Candidate ports for one pinned serial share a single asset lease.
+            group_key = host or (
+                candidate.config.adapter + ":" + candidate.config.expected_serial
+                if candidate.config.transport == "serial" and candidate.config.expected_serial
+                else ""
+            )
             record = self.inventory.by_resource(candidate.config.resource)
             if record and can_recheck_network_conflict(record):
                 # Related addresses share the same asset claim; probing in parallel

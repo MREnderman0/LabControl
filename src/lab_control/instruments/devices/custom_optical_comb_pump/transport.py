@@ -8,6 +8,8 @@ from lab_control.transport.visa import RawSerialVisaTransport, VisaRuntime
 
 
 def create_transport(config: ConnectionConfig, runtime: VisaRuntime) -> RawSerialVisaTransport:
-    if config.transport != "visa" or not re.fullmatch(r"ASRL[1-9][0-9]*::INSTR", config.resource):
-        raise ValidationError("请手动选择泵浦的 Windows COM 口")
-    return RawSerialVisaTransport(runtime, config.resource, config.timeout, terminator="", baud_rate=115200)
+    port = re.fullmatch(r"COM([1-9][0-9]*)", config.resource, re.I)
+    resource = f"ASRL{port[1]}::INSTR" if port else config.resource.upper()
+    if config.transport not in {"visa", "serial"} or not re.fullmatch(r"ASRL[1-9][0-9]*::INSTR", resource):
+        raise ValidationError("泵浦需要 Windows 串口资源")
+    return RawSerialVisaTransport(runtime, resource, config.timeout, terminator="", baud_rate=115200)

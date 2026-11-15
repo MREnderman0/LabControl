@@ -196,7 +196,6 @@ class OscilloscopeMonitoringPage(QWidget):
             kind = self.controls.capture_mode.currentData()
             config = config_from_record(self.controller.records[self.device_id])
             self.source = next(s for s in data_sources(config) if s.kind == kind)
-            self.plot.reset()
 
     def focus_settings(self) -> None:
         self.controller.focus_settings(self.device_id, self.controls.keys() if self.controls else ())
@@ -233,7 +232,11 @@ class OscilloscopeMonitoringPage(QWidget):
             self.plot.clear_preview()
 
     def channels_changed(self) -> None:
-        # An explicit OFF must disappear immediately, including the all-off pause.
+        if isinstance(self.controls, PicoScopeControls):
+            # Pico channel switches edit the next capture, including after Single.
+            self.refresh()
+            return
+        # A committed SCPI OFF must disappear immediately, including the all-off pause.
         if self.controls:
             channels = self.controls.channels()
             self.plot.restrict_channels(channels)
@@ -241,17 +244,13 @@ class OscilloscopeMonitoringPage(QWidget):
             self.plot.meta.setText("通道已更新 · 等待新波形" if channels else "未选择采集通道")
             self.refresh()
 
-    def start(self, *, once=False) -> None:
+    def start(self, *, once=False, manual=False) -> None:
         if not self.source or not self.controls or not self.controls.channels():
             return
         try:
             self.controller.ensure_applicable(self.device_id)
             self.timing.commit()
             if isinstance(self.controls, PicoScopeControls):
-                if once and self.controls.capture_mode.currentData() != "waveform":
-                    self.controls.capture_mode.setCurrentIndex(
-                        self.controls.capture_mode.findData("waveform")
-                    )
                 request = self.source.request(
                     self.controls.channels(), self.controls.points.value(), initiate=True, confirmed=True
                 )
@@ -260,11 +259,11 @@ class OscilloscopeMonitoringPage(QWidget):
                 def ready():
                     state = self.controller.states.get(device_id, {})
                     if self.device_id == device_id and state.get("sessionId") == session:
-                        self.start_request(request, once)
+                        self.start_request(request, once, manual=manual)
 
                 self.controls.prepare(ready)
             else:
-                self.start_request(self.source.request(self.controls.channels()), once)
+                self.start_request(self.source.request(self.controls.channels()), once, manual=manual)
         except Exception as exc:
             self.controller.message.emit(str(exc))
 
@@ -303,8 +302,8 @@ class OscilloscopeMonitoringPage(QWidget):
         if self.single_job:
             self.single_job.cancel.set()
 
-    def start_request(self, request, once):
-        if once and request.kind == "waveform":
+    def start_request(self, request, once, *, manual=False):
+        if once:
             if self.single_job:
                 return
             device = self.device_id
@@ -331,14 +330,20 @@ class OscilloscopeMonitoringPage(QWidget):
                         )
                         self.frozen_at = frame.received_at
                         self.plot.show_frame(frame, self.source, request.channels)
+                        if isinstance(self.controls, PicoScopeControls):
+                            self.controls.show_sample_rate(frame)
                 self.refresh()
 
             self.controller.watch(future, finished, lambda exc: finished(error=exc))
             return
         self.single_notice = ""
-        self.frozen_at = 0.0
         self.controller.start_monitoring(
-            self.device_id, (request,), **self.timing.options(), mode=self.mode, once=once
+            self.device_id,
+            (request,),
+            **self.timing.options(),
+            mode=self.mode,
+            once=once,
+            ensure_continuous=manual,
         )
         self.refresh()
 
@@ -356,7 +361,7 @@ class OscilloscopeMonitoringPage(QWidget):
         if service.snapshots().get(self.device_id, {}).get("running"):
             self.controller.watch(service.stop(self.device_id))
         else:
-            self.start()
+            self.start(manual=True)
 
     def record(self) -> None:
         service = self.controller.runtime.monitoring
@@ -545,5 +550,9 @@ class OscilloscopeMonitoringPage(QWidget):
         service = self.controller.runtime.monitoring
         frame = service.latest(device_id, self.source.kind, self.source.quantity)
         if frame and not self.single_job and frame.received_at > self.frozen_at:
-            self.plot.show_frame(frame, self.source, self.controls.channels())
+            pico = isinstance(self.controls, PicoScopeControls)
+            channels = frame.request.channels if pico else self.controls.channels()
+            self.plot.show_frame(frame, self.source, channels)
+            if isinstance(self.controls, PicoScopeControls):
+                self.controls.show_sample_rate(frame)
             service.displayed(device_id, frame)

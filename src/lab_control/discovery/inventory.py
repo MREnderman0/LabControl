@@ -41,6 +41,7 @@ class Inventory:
         self.repository = repository
         self.lock = threading.RLock()
         self.records = {item["id"]: item for item in repository.records()}
+        self._merge_serial_placeholders()
         self._merge_legacy_visa_spellings()
         renamed = tuple(record for record in self.records.values() if _promote_display_name(record))
         if renamed:
@@ -52,6 +53,64 @@ class Inventory:
                 candidate["presenceState"] = "unknown"
                 candidate.pop("evidenceScanRunId", None)
             update_record_presence(record)
+
+    def _merge_serial_placeholders(self) -> None:
+        for asset in tuple(self.records.values()):
+            cfg = asset.get("config", {})
+            definition = DEVICE_DEFINITIONS.get(asset.get("adapterId", ""))
+            key = asset.get("identityKey")
+            if not (definition and definition.serial_autoconnect == "instrument_serial" and key):
+                continue
+            port = cfg.get("resource", "")
+            if asset.get("identityConflict") or cfg.get("expected_serial") != asset["identity"].get("serial"):
+                continue
+            if asset["candidates"].get(port, {}).get("verifiedIdentityKey") != key:
+                continue
+            endpoint = canonical_resource(port)
+            owners = [
+                r
+                for r in self.records.values()
+                if r.get("identityKey")
+                and any(
+                    canonical_resource(a) == endpoint and not c.get("retired")
+                    for a, c in r["candidates"].items()
+                )
+            ]
+            if len(owners) != 1:
+                continue
+            removed = []
+            for row in self.records.values():
+                if (
+                    row is asset
+                    or row.get("identity")
+                    or row.get("identityKey")
+                    or row.get("displayName")
+                    or any(row.get("slots", {}).values())
+                ):
+                    continue
+                if row.get("primaryResourceExplicit") or row.get("adapterId") not in ("", asset["adapterId"]):
+                    continue
+                if not row["candidates"] or any(canonical_resource(a) != endpoint for a in row["candidates"]):
+                    continue
+                old = row.get("config", {})
+                if old.get("expected_serial") not in ("", cfg["expected_serial"]) or any(
+                    old.get(k) for k in ("limits", "options", "usb_instance_id", "identity_confirmed")
+                ):
+                    continue
+                conflict = row.get("identityConflict")
+                if conflict and (
+                    conflict.get("reason")
+                    or any(
+                        conflict.get(k) != asset["identity"].get(k)
+                        for k in ("manufacturer", "model", "serial")
+                    )
+                ):
+                    continue
+                removed.append(row["id"])
+            if removed:
+                self.repository.save_many((asset,), remove_ids=tuple(removed))
+                for row_id in removed:
+                    del self.records[row_id]
 
     def _merge_legacy_visa_spellings(self) -> None:
         """Retain the verified asset and its settings when old scans split one VISA endpoint."""
@@ -211,6 +270,7 @@ class Inventory:
         *,
         error_code: str = "",
         serial_binding: ConnectionConfig | None = None,
+        session_device_id: str = "",
     ) -> dict[str, Any]:
         from lab_control.instruments.registry import requires_manual_connection
 
@@ -237,7 +297,9 @@ class Inventory:
             # A stable USB identity wins over a reused COM number. If an old
             # record predates this field, adopt it once at the same resource so
             # it can follow the bridge on later insertions.
-            if stable_existing is not None:
+            if session_device_id:
+                existing = self.records[session_device_id]
+            elif stable_existing is not None:
                 existing = stable_existing
             elif candidate.config.usb_instance_id:
                 existing = (
@@ -245,7 +307,18 @@ class Inventory:
                     if resource_existing and not resource_existing.get("config", {}).get("usb_instance_id")
                     else None
                 )
-            elif pinned:
+            elif pinned or (
+                serial_binding
+                and serial_binding.expected_serial
+                and resource_existing
+                and not resource_existing.get("identityKey")
+                and not resource_existing.get("identityConflict")
+                and resource_existing.get("adapterId") in ("", serial_binding.adapter)
+                and resource_existing.get("config", {}).get("expected_serial")
+                == serial_binding.expected_serial
+            ):
+                # A failed probe is still the same pending endpoint on the next attempt.
+                # The eventual instrument reply is needed before tying it to the verified asset.
                 existing = resource_existing
             elif candidate.config.transport == "serial":
                 # Without a USB bridge serial there is no safe asset key. Keep
@@ -260,8 +333,13 @@ class Inventory:
                         or requires_manual_connection(resource_existing["adapterId"])
                         or (
                             (definition := DEVICE_DEFINITIONS.get(resource_existing["adapterId"])) is not None
-                            and definition.manual_usb_id is not None
-                            and definition.matches_manual_port(candidate.descriptor)
+                            and (
+                                definition.serial_autoconnect == "protocol"
+                                or (
+                                    definition.manual_usb_id is not None
+                                    and definition.matches_manual_port(candidate.descriptor)
+                                )
+                            )
                         )
                     )
                     else None

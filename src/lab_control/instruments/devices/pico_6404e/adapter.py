@@ -56,6 +56,8 @@ class TriggerInfo(ct.Structure):
 
 class PicoAdapter:
     adapter_id = "pico.6404e"
+    supports_live_acquisition = True
+    single_capture_kinds = ("waveform", "streaming")
 
     def __init__(self, config: ConnectionConfig, library: Any = None) -> None:
         self.config = config
@@ -362,7 +364,10 @@ class PicoAdapter:
                 counts = dict.fromkeys(request.channels, 0)
                 infos = (StreamingInfo * len(request.channels))()
                 trigger = TriggerInfo()
+                job = getattr(self, "_single_job", None)
                 while min(counts.values()) < request.points:
+                    if job is not None:
+                        job.check()
                     for index, channel in enumerate(request.channels):
                         infos[index].channel, infos[index].mode, infos[index].type = channel - 1, RAW, 1
                         infos[index].count = 0
@@ -379,15 +384,17 @@ class PicoAdapter:
                         count = info.count
                         if channel not in counts or not 0 <= count <= request.points - counts[channel]:
                             raise DeviceError("Invalid SDK streaming sample count", "parse_error")
+                        if count and request.consistency == "live" and info.start != counts[channel]:
+                            raise DeviceError("Pico streaming batch contains a sample gap", "parse_error")
                         counts[channel] += count
                         if info.overflow:
                             overflow |= 1 << (channel - 1)
-                    if min(counts.values()) == request.points:
+                    total = min(counts.values())
+                    if total == request.points or (request.consistency == "live" and total > 0):
                         break
                     if time.monotonic() > deadline:
                         raise DeviceError("Pico streaming batch timed out", "timeout")
                     time.sleep(0.002)
-                total = request.points
             # Each channel owns one full-length buffer until this finite acquisition is stopped.
             measurements = tuple(
                 Measurement(
@@ -408,7 +415,7 @@ class PicoAdapter:
                 self.identity,
                 measurements,
                 {
-                    "channels": self.settings,
+                    "channels": {ch: dict(values) for ch, values in self.settings.items()},
                     "timebase": self.timebase,
                     "sample_interval_s": dt,
                     "capture_mode": request.kind,

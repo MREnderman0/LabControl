@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
 from lab_control.domain.instruments import DeviceError, MeasurementBatch, utc_now
@@ -13,6 +13,8 @@ from lab_control.instruments.registry import requires_manual_connection
 
 if TYPE_CHECKING:
     from lab_control.application.sessions import DeviceSession, SessionManager
+    from lab_control.domain.connections import ConnectionConfig
+    from lab_control.domain.instruments import DeviceIdentity
     from lab_control.storage.recording import Recording
 
 
@@ -72,6 +74,8 @@ class Recovery:
 class AcquisitionRecovery:
     def __init__(self, manager: SessionManager) -> None:
         self.manager = manager
+        self.serial_route: Callable[[DeviceSession], ConnectionConfig] | None = None
+        self.serial_verified: Callable[[DeviceSession, ConnectionConfig, DeviceIdentity], None] | None = None
 
     def event(
         self, session: DeviceSession, recovery: Recovery, event: str, recording: Recording | None = None
@@ -113,6 +117,9 @@ class AcquisitionRecovery:
                 session.capability_snapshot = replace(session.capability_snapshot, stale=True)
         manager.emit("recovery_started", session.device_id, recovery=recovery.snapshot())
         candidate = None
+        config = session.config
+        added_claims: set[str] = set()
+        previous_claims: set[str] = set()
         try:
             # Teardown never sends LOCAL, reset or output commands. Any authorized
             # model setup runs only after the replacement identity is verified below.
@@ -127,7 +134,16 @@ class AcquisitionRecovery:
                 session.adapter = None
             check()
             if candidate is None:
-                candidate = manager.factory(session.config)
+                if self.serial_route is not None:
+                    config = self.serial_route(session)
+                if config != session.config:
+                    from lab_control.application.leases import connection_claims
+
+                    old = manager.leases.keys(connection_claims(session.config))
+                    new = manager.leases.keys(connection_claims(config))
+                    manager.leases.acquire(session.device_id, connection_claims(config), identified=True)
+                    added_claims, previous_claims = new - old, old - new
+                candidate = manager.factory(config)
             check()
             identity = candidate.identify()
             same_model = (identity.manufacturer.strip().casefold(), identity.model.strip().casefold()) == (
@@ -163,6 +179,12 @@ class AcquisitionRecovery:
                         f"重连采集初始化未确认：{exc}", "recovery_initialization_failed"
                     ) from exc
             check()
+            if config != session.config:
+                if self.serial_verified is not None:
+                    self.serial_verified(session, config, identity)
+                manager.leases.release_resources(session.device_id, previous_claims)
+                session.config = config
+                added_claims.clear()
             session.adapter, candidate = candidate, None
             session.identity = identity
             manager._refresh_capabilities(session)
@@ -184,6 +206,8 @@ class AcquisitionRecovery:
                     manager.audit.try_record(
                         "recovery_cleanup_failed", device_id=session.device_id, error=str(cleanup)
                     )
+            if added_claims:
+                manager.leases.release_resources(session.device_id, added_claims)
             with manager.lock:
                 session.state = "recovering"
             raise

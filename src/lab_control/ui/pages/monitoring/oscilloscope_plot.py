@@ -23,6 +23,13 @@ class OscilloscopePlot(LivePlot):
         layout = self.layout()
         assert isinstance(layout, QVBoxLayout)
         layout.insertWidget(0, self.preview_hint)
+        self.bottom_voltage = QLabel()
+        self.bottom_voltage.setObjectName("scopeSampleRate")
+        self.bottom_voltage.setWordWrap(True)
+        layout.insertWidget(layout.indexOf(self.plot) + 1, self.bottom_voltage)
+        self.bottom_voltage.hide()
+        self.display_specs: dict[int, ScopeDisplay] = {}
+        self.plot.getViewBox().sigYRangeChanged.connect(self.update_shared_bottom)
         self.grid_lines: list = []
         self.grid_range: tuple | None = None
         self.instrument_view = False
@@ -39,6 +46,9 @@ class OscilloscopePlot(LivePlot):
         self.plot.getViewBox().sigStateChanged.connect(self._keep_instrument_view)
 
     def reset(self) -> None:
+        self.bottom_voltage.hide()
+        self.bottom_voltage.clear()
+        self.display_specs.clear()
         self.preview_hint.hide()
         self.preview_timer.stop()
         self.preview_targets.clear()
@@ -51,6 +61,46 @@ class OscilloscopePlot(LivePlot):
         self.instrument_view = False
         self.legend_signature = None
 
+    def show_bottom(self, values, preview=False):
+        labels = []
+        for ch, value, unit in sorted(values):
+            number, scaled_unit = engineering(value, unit).split(" ", 1)
+            if "e" not in number and len(number.partition(".")[2]) < 2:
+                number = f"{float(number):.2f}"
+            number = number.replace("-", "−")
+            color = COLORS[(ch - 1) % len(COLORS)]
+            labels.append(f'<span style="color:{color}">CH{ch} {number} {scaled_unit}</span>')
+        self.bottom_voltage.setText(("预览 · " if preview else "") + "底边电压　" + "　".join(labels))
+        self.bottom_voltage.setVisible(bool(labels))
+
+    def update_shared_bottom(self, *_):
+        if self.instrument_view or self.displayed_frame is None:
+            return
+        bottom = self.plot.getViewBox().viewRange()[1][0]
+        self.show_bottom([(m.channel, bottom, m.unit) for m in self.displayed_frame.batch.measurements])
+
+    @staticmethod
+    def display_spec(measurement, batch):
+        if "scope_display" in measurement.metadata:
+            return ScopeDisplay.parse(measurement.metadata["scope_display"])
+        if batch.identity.model.upper() != "6404E":
+            return None
+        config = batch.configuration
+        settings = config.get("channels", {})
+        channel = settings.get(measurement.channel, settings.get(str(measurement.channel)))
+        if channel is None or measurement.axis is None or not len(measurement.axis):
+            return None
+        start, stop = float(measurement.axis[0]), float(measurement.axis[-1])
+        duration = stop - start if len(measurement.axis) > 1 else config["sample_interval_s"]
+        return ScopeDisplay.parse(
+            dict(
+                units_per_div=float(channel["range"]) / 4,
+                reference_value=-float(channel["offset"]),
+                seconds_per_div=duration / 10,
+                time_center=(start + stop) / 2,
+            )
+        )
+
     def show_frame(self, frame, source, channels) -> None:
         wanted = tuple(m for m in frame.batch.measurements if m.channel in channels)
         if not wanted:
@@ -60,7 +110,11 @@ class OscilloscopePlot(LivePlot):
             validate_displayed_batch(candidate.batch)
         except DeviceError:
             return
-        if not any("scope_display" in m.metadata for m in wanted):
+        try:
+            displays = [self.display_spec(m, frame.batch) for m in wanted]
+        except (DeviceError, KeyError, TypeError, ValueError):
+            return
+        if all(spec is None for spec in displays):
             if self.instrument_view:
                 self.reset()
             self.plot.showAxis("left")
@@ -68,9 +122,11 @@ class OscilloscopePlot(LivePlot):
             self.plot.setMouseEnabled(x=True, y=True)
             self.plot.setMenuEnabled(True)
             super().show_frame(frame, source, channels)
+            self.update_shared_bottom()
             return
         try:
-            displays = [ScopeDisplay.parse(m.metadata.get("scope_display", {})) for m in wanted]
+            if any(spec is None for spec in displays):
+                return
             first = displays[0]
             for m, spec in zip(wanted, displays, strict=True):
                 if m.axis is None or m.axis_unit != "s" or m.unit != spec.unit:
@@ -171,14 +227,14 @@ class OscilloscopePlot(LivePlot):
             if update_legend:
                 legend.addItem(
                     curve,
-                    f'<span style="color:{color}">CH{m.channel}  {engineering(spec.units_per_div, m.unit, custom_scale=True)}/格</span>',
+                    f'<span style="color:{color}">CH{m.channel}  {engineering(spec.units_per_div, m.unit)}/格</span>',
                 )
             used.add(key)
         for key, curve in self.curves.items():
             if key not in used:
                 curve.hide()
         self.meta.setText(
-            f"{engineering(first.seconds_per_div, 's', custom_scale=True)}/格 · "
+            f"{engineering(first.seconds_per_div, 's')}/格 · "
             + " / ".join(f"CH{m.channel} {len(m.values)} 点" for m in wanted)
             + (
                 {"screen": " · 屏幕波形", "memory": " · 完整存储波形"}.get(
@@ -188,6 +244,10 @@ class OscilloscopePlot(LivePlot):
             + f" · 配置 {frame.configuration_version} · {frame.batch.validation}"
         )
         self.displayed_frame = candidate
+        self.display_specs = {m.channel: s for m, s in zip(wanted, displays, strict=True)}
+        self.show_bottom(
+            [(ch, s.reference_value - 4 * s.units_per_div, s.unit) for ch, s in self.display_specs.items()]
+        )
         self.actual_meta = self.meta.text()
         if self.trigger_preview is not None:
             self.trigger_preview.hide()
@@ -245,7 +305,7 @@ class OscilloscopePlot(LivePlot):
         if self.trigger_preview is not None:
             self.trigger_preview.hide()
         for measurement in self.displayed_frame.batch.measurements:
-            original = ScopeDisplay.parse(measurement.metadata["scope_display"])
+            original = self.display_specs[measurement.channel]
             ch = measurement.channel
             targets = self.preview_targets
             scale = targets.get((ch, "scale"), (original.units_per_div, None))[0]
@@ -301,6 +361,9 @@ class OscilloscopePlot(LivePlot):
                 curve.setTransform(transform)
         if not specs:
             return
+        self.show_bottom(
+            [(m.channel, s.reference_value - 4 * s.units_per_div, s.unit) for m, s in specs], used
+        )
         first = specs[0][1]
         self.grid_range = (
             first.time_center - first.horizontal_divisions / 2 * first.seconds_per_div,
@@ -320,7 +383,7 @@ class OscilloscopePlot(LivePlot):
                 color = COLORS[(m.channel - 1) % len(COLORS)]
                 legend.addItem(
                     self.curves[m.channel, m.quantity],
-                    f'<span style="color:{color}">CH{m.channel}  {engineering(spec.units_per_div, m.unit, custom_scale=True)}/格</span>',
+                    f'<span style="color:{color}">CH{m.channel}  {engineering(spec.units_per_div, m.unit)}/格</span>',
                 )
             self.legend_signature = signature
         self.meta.setText(
@@ -329,7 +392,7 @@ class OscilloscopePlot(LivePlot):
                 if any(v is None for _, v in self.preview_targets.values())
                 else "预览 · 估算，等待实测新帧"
             )
-            + f" · {engineering(first.seconds_per_div, 's', custom_scale=True)}/格 · 基于上一帧，保存仍用原始数据"
+            + f" · {engineering(first.seconds_per_div, 's')}/格 · 基于上一帧，保存仍用原始数据"
             if used
             else self.actual_meta
         )
@@ -348,6 +411,8 @@ class OscilloscopePlot(LivePlot):
         else:
             for curve in self.curves.values():
                 curve.hide()
+            self.bottom_voltage.hide()
+            self.display_specs.clear()
             self.plot.plotItem.legend.clear()
             self.legend_signature = None
             self.displayed_frame = None

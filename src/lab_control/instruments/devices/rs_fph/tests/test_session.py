@@ -170,7 +170,23 @@ def test_unqualified_variant_does_not_connect(product, firmware):
     assert adapter.identity is None
 
 
-def test_k13_passive_connection_and_readonly_controls(tmp_path):
+@pytest.mark.parametrize("options,maximum", [(b"0", 13.6e9), (b"FPH-B20", 20e9)])
+def test_k13_reports_frequency_option_bounds(options, maximum):
+    transport = StateTransport("V2.33", "1321.1111K13")
+    transport.options = options
+    adapter = FphAdapter(transport, fph(), ConnectionConfig("mock://k13", "rs.fph"))
+    adapter.identify()
+    adapter.refresh_capabilities()
+    caps = adapter.capabilities()
+    for name in ("start_frequency", "stop_frequency", "center_frequency", "span"):
+        assert caps.get(name).writable and caps.get(name).parameters["value"].maximum == maximum
+    from lab_control.domain.instruments import ValidationError
+
+    with pytest.raises(ValidationError):
+        caps.get("span").validate({"value": 9})
+
+
+def test_k13_passive_connection_and_frequency_controls(tmp_path):
     config = ConnectionConfig("mock://k13", "rs.fph", "mock")
     transport = StateTransport("V2.33", "1321.1111K13")
     transport.state.update(
@@ -183,6 +199,10 @@ def test_k13_passive_connection_and_readonly_controls(tmp_path):
             assert app.connect(key).result(5).firmware == "V2.33"
             adapter = app.sessions.sessions[key].adapter
             assert {c.name for c in adapter.capabilities().operations if c.writable} == {
+                "start_frequency",
+                "stop_frequency",
+                "center_frequency",
+                "span",
                 "rbw",
                 "vbw",
                 "reference_level",
@@ -191,7 +211,7 @@ def test_k13_passive_connection_and_readonly_controls(tmp_path):
                 "vbw_auto",
                 "attenuation_auto",
             }
-            for name in ("single", "span"):
+            for name in ("single", "marker_frequency"):
                 with pytest.raises(Unsupported):
                     adapter.apply(DeviceCommand(name, confirmed=True))
             assert adapter.maximum_frequency == 13.6e9

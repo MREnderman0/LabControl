@@ -53,6 +53,8 @@ class SpectrumControls(QFrame):
         self.refresh_only = False
         self.session_id = ""
         self.verified: dict[str, Any] = {}
+        self.frequency_target: dict[str, float] = {}
+        self.write_failure = ("", "")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -378,6 +380,8 @@ class SpectrumControls(QFrame):
             self.pending = prepare_changes(current, target, self.controller.capabilities(self.device_id))
             if self.pending:
                 self.begin(False)
+                if any(cmd.operation in FREQUENCY for cmd in self.pending):
+                    self.frequency_target = {name: target[name] for name in FREQUENCY}
                 self.next_command()
         except Exception as exc:
             self.status.setText(str(exc))
@@ -418,6 +422,8 @@ class SpectrumControls(QFrame):
         self.controller.begin_group(self.device_id)
         self.session_id = self.controller.states[self.device_id]["sessionId"]
         self.completed, self.verified = [], {}
+        self.frequency_target = {}
+        self.write_failure = ("", "")
         self.auto_running, self.running = auto, True
         self.refresh_only = False
         self.scroller.setEnabled(False)
@@ -465,26 +471,52 @@ class SpectrumControls(QFrame):
                 self.device_id,
                 command,
                 self.applied,
-                lambda exc: self.finish(str(exc), failed=command.operation),
+                lambda exc: self.write_failed(command.operation, str(exc)),
                 group_member=True,
             )
         except Exception as exc:
-            self.finish(str(exc), failed=command.operation)
+            self.write_failed(command.operation, str(exc))
 
     def applied(self, result) -> None:
         if not self.valid_session():
             self.finish("会话已改变，已丢弃旧结果")
         elif result.outcome != "success":
-            self.finish(result.error or result.outcome, failed=self.pending[0].operation)
+            self.write_failed(self.pending[0].operation, result.error or result.outcome)
         else:
             self.completed.append(self.pending.pop(0).operation)
             self.next_command()
+
+    def write_failed(self, operation: str, reason: str) -> None:
+        if self.frequency_target and self.valid_session():
+            self.write_failure = (operation, reason)
+            self.read_pending = list(FREQUENCY)
+            self.read_next()
+        else:
+            self.finish(reason, failed=operation)
 
     def read_next(self) -> None:
         if not self.valid_session():
             self.finish("会话已改变，已丢弃旧结果")
             return
         if not self.read_pending:
+            if self.frequency_target:
+                actual = {}
+                for name in FREQUENCY:
+                    reading = self.verified.get(name)
+                    if reading is not None:
+                        value = reading.value
+                        actual[name] = float(value["value"] if isinstance(value, dict) else value)
+                failed, reason = self.write_failure
+                if failed or any(
+                    name not in actual or abs(actual[name] - target) > 0.5
+                    for name, target in self.frequency_target.items()
+                ):
+                    values = "、".join(
+                        f"{label} {frequency_text(actual[k]) if k in actual else '未读回'}"
+                        for k, label in zip(FREQUENCY, ("起始", "终止", "中心", "扫宽"), strict=True)
+                    )
+                    self.finish(f"{reason or '目标与读回不一致'} · 实际读回：{values}", failed=failed)
+                    return
             if self.auto_running:
                 for op in self.editors.values():
                     op.dirty = False
@@ -502,7 +534,10 @@ class SpectrumControls(QFrame):
             self.controller.runtime.sessions.submit(self.device_id, "read_settings", (tuple(names), 1)),
             self.read_done,
             lambda exc: self.finish(
-                ("参数读取失败：" if self.refresh_only else "设置已执行，读回未确认：") + str(exc)
+                (self.write_failure[1] + " · " if self.write_failure[0] else "")
+                + ("参数读取失败：" if self.refresh_only else "设置已执行，读回未确认：")
+                + str(exc),
+                failed=self.write_failure[0],
             ),
         )
 
@@ -512,6 +547,8 @@ class SpectrumControls(QFrame):
         for reading in readings:
             op = self.editors[reading.operation]
             if not usable_reading(reading, op.cap.parameters):
+                if reading.operation in self.frequency_target:
+                    continue
                 self.finish("读回未确认；草稿已保留")
                 return
             self.verified[reading.operation] = reading

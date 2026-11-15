@@ -24,7 +24,7 @@ OTHER = DiscoveryCandidate(
 )
 
 
-def test_bulk_and_manual_board_gui_verify_identity_without_switching_outputs(qtbot, tmp_path, monkeypatch):
+def test_bulk_and_automatic_board_gui_verify_identity_without_switching_outputs(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr("lab_control.storage.runtime.hardware_lock_home", lambda: tmp_path / "locks")
     monkeypatch.setattr("lab_control.storage.repository.application_home", lambda: tmp_path / "home")
     monkeypatch.setattr(SerialDiscoveryProvider, "enumerate", lambda _: (OTHER, PORT))
@@ -52,10 +52,12 @@ def test_bulk_and_manual_board_gui_verify_identity_without_switching_outputs(qtb
         qtbot.addWidget(window)
         window.show()
         try:
-            next(b for b in window.findChildren(QPushButton) if b.text() == "手动绑定开关板").click()
-            qtbot.waitUntil(lambda: ("设备管理", "output_switch") in window.page_map)
+            assert not any(b.text() == "手动绑定开关板" for b in window.findChildren(QPushButton))
+            runtime.serial_autoconnect.poll((OTHER, PORT))
+            window.refresh()
+            window.navigate("设备管理", "output_switch", device_id)
             page = window.page_map[("设备管理", "output_switch")]
-            assert choices == ["COM99"] and page.selector.device_id == device_id
+            assert choices == [] and page.selector.device_id == device_id
             assert "RF3 和 RF4 互斥" in page.note.text()
             assert page.form.refresh_button.isHidden() and page.form.snapshot_status.isHidden()
             assert "output_switch" not in window._submenu_categories("实时监测")

@@ -75,6 +75,14 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
         frame = scope.plot.displayed_frame
         assert not runtime.monitoring.snapshots().get(pico, {}).get("running")
         assert len(requests) == 1 and len(frame.batch.measurements) == 1
+        assert scope.plot.display_specs[1].units_per_div == 2.5
+        assert "CH1 −10.00 V" in scope.plot.bottom_voltage.text()
+        panel.ranges[1].setCurrentIndex(panel.ranges[1].findData("1"))
+        panel.offsets[1].setValue(0.1)
+        assert scope.plot.display_specs[1].units_per_div == 2.5
+        assert "CH1 −10.00 V" in scope.plot.bottom_voltage.text()
+        panel.ranges[1].setCurrentIndex(panel.ranges[1].findData("10"))
+        panel.offsets[1].setValue(0)
         measurement = frame.batch.measurements[0]
         assert (measurement.channel, measurement.unit, measurement.axis_unit) == (1, "V", "s")
         assert len(measurement.axis) == len(measurement.values) == 32
@@ -113,8 +121,17 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
         qtbot.waitUntil(lambda: panel.sample_interval.isVisible() and not panel.timebase.isVisible())
         assert len(applied) == 3
         scope.start_button.click()
-        qtbot.waitUntil(lambda: scope.plot.displayed_frame is not None)
+        qtbot.waitUntil(
+            lambda: (
+                scope.plot.displayed_frame is not None
+                and scope.plot.displayed_frame.request.kind == "streaming"
+            )
+        )
         assert requests[-1].kind == "streaming" and requests[-1].channels == (2,)
+        assert set(scope.plot.display_specs) == {2}
+        axis = scope.plot.displayed_frame.batch.measurements[0].axis
+        assert np.isclose(scope.plot.grid_range, (axis[0], axis[-1])).all()
+        assert scope.plot.display_specs[2].reference_value == -0.1
         assert [(c.operation, c.parameters) for c in applied[3:]] == [
             ("channel", {"enabled": False, "range": "10", "coupling": "DC", "offset": 0}),
             ("sample_interval", {"value": 4e-6}),
@@ -143,6 +160,8 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
             lambda: scope.plot.displayed_frame is not saved_frame and scope.plot.displayed_frame is not None
         )
         assert applied[-1].parameters["range"] == "20"
+        assert scope.plot.displayed_frame.request.kind == "streaming"
+        assert scope.plot.displayed_frame.batch.performance["single_completed"]
         assert scope.plot.displayed_frame.batch.measurements[0].quality == Quality.SIMULATED
         qtbot.waitUntil(panel.scroller.isEnabled)
         panel.checks[2].setChecked(False)

@@ -239,6 +239,22 @@ def test_auto_confirm_and_markers_do_not_write(spectrum, qtbot, monkeypatch):
     assert runtime.monitoring.snapshots()[key]["running"]
 
 
+def test_linked_apply_reports_inconsistent_center_readback(spectrum, qtbot, monkeypatch):
+    _, page, _, _, adapter = spectrum
+    edit(qtbot, page, "stop_frequency", "4")
+    original = adapter.read_settings
+
+    def shifted_center(*args, **kwargs):
+        result = original(*args, **kwargs)
+        return tuple(replace(r, value=12345.0) if r.operation == "center_frequency" else r for r in result)
+
+    monkeypatch.setattr(adapter, "read_settings", shifted_center)
+    page.controls.apply_button.click()
+    qtbot.waitUntil(lambda: not page.controls.running)
+    assert "读回不一致" in page.controls.status.text()
+    assert "12.345 kHz" in page.controls.status.text()
+
+
 def test_partial_failure_stops_and_keeps_remaining_draft(spectrum, qtbot, monkeypatch):
     _, page, _, _, adapter = spectrum
     writes = []
@@ -258,6 +274,7 @@ def test_partial_failure_stops_and_keeps_remaining_draft(spectrum, qtbot, monkey
     assert writes == ["stop_frequency", "reference_level"]
     assert page.controls.editors["reference_level"].dirty
     assert "失败" in page.controls.status.text()
+    assert "实际读回" in page.controls.status.text() and "起始" in page.controls.status.text()
 
 
 def test_draft_units_device_isolation_and_failed_auto(spectrum, qtbot, monkeypatch):

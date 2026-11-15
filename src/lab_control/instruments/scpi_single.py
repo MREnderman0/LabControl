@@ -21,6 +21,7 @@ class ScpiSingle:
     def single_acquisition(self, job, request):
         span, count = self.single_span(), self.single_count(request.channels)
         initial = self.single_initial()
+        self._before_single = initial
         job.check()
         success = False
         try:
@@ -39,6 +40,11 @@ class ScpiSingle:
 
 
 class RohdeSingle(ScpiSingle):
+    def ensure_continuous(self):
+        if not self.single_initial():
+            self.single_restore(True)
+        return self.continuous_frame_ready
+
     def single_abort(self):
         self.transport.write("STOP")
 
@@ -74,6 +80,26 @@ class RohdeSingle(ScpiSingle):
 
 
 class RigolSingle(ScpiSingle):
+    def continuous_frame_ready(self):
+        return token(self, ":TRIG:STAT?") in {"TD", "AUTO"}
+
+    def ensure_continuous(self):
+        status = token(self, ":TRIG:STAT?")
+        sweep = token(self, ":TRIG:SWE?")
+        if sweep.startswith("SING"):
+            previous = getattr(self, "_before_single", (False, "AUTO"))[1]
+            sweep = "NORM" if previous.startswith("NORM") else "AUTO"
+            self.transport.write(":TRIG:SWE " + sweep)
+        elif sweep not in {"AUTO", "NORM", "NORMAL"}:
+            raise DeviceError("无法确认连续触发模式：" + sweep, "acquisition_setup_blocked")
+        elif status != "STOP":
+            return self.continuous_frame_ready if status in {"WAIT", "RUN"} else None
+        self.transport.write(":RUN")
+        running, actual = self.single_initial()
+        if not running or actual.startswith("SING"):
+            raise DeviceError("示波器未进入连续采集", "acquisition_setup_blocked")
+        return self.continuous_frame_ready
+
     def single_count(self, channels):
         mode = token(self, ":ACQ:TYPE?")
         return int(float(token(self, ":ACQ:AVER?"))) if mode.startswith("AVER") else 1
@@ -105,6 +131,17 @@ class RigolSingle(ScpiSingle):
 
 
 class LecroySingle(ScpiSingle):
+    def ensure_continuous(self):
+        mode = token(self, "TRMD?")
+        if mode in {"NORM", "AUTO"}:
+            return (lambda: bool(int(token(self, "INR?")) & 1)) if mode == "NORM" else None
+        if mode not in {"STOP", "SINGLE"}:
+            raise DeviceError("无法确认示波器运行状态：" + mode, "acquisition_setup_blocked")
+        token(self, "INR?")
+        previous = getattr(self, "_before_single", "AUTO")
+        self.single_restore(previous if previous in {"AUTO", "NORM"} else "AUTO")
+        return lambda: bool(int(token(self, "INR?")) & 1)
+
     single_divisions = 10
 
     def single_count(self, channels):

@@ -72,3 +72,53 @@ def test_rto_uses_the_common_acquisition_and_average_count():
 
     adapter = SimpleNamespace(read={"acquisition_count": 8}.__getitem__)
     assert Rto64Adapter.single_count(adapter, (1, 2)) == 8
+
+
+@pytest.mark.parametrize(
+    ("initial", "sweep", "previous", "expected"),
+    [
+        ("STOP", "SING", "NORM", "NORM"),
+        ("STOP", "AUTO", "AUTO", "AUTO"),
+    ],
+)
+def test_rigol_manual_resume_waits_for_trigger(initial, sweep, previous, expected):
+    scope = RigolSingle()
+    scope._before_single = (True, previous)
+    steps = [(":TRIG:STAT?", initial), (":TRIG:SWE?", sweep)]
+    if sweep == "SING":
+        steps.append((":TRIG:SWE " + expected, None))
+    scope.transport = Transcript(
+        steps
+        + [
+            (":RUN", None),
+            (":TRIG:SWE?", expected),
+            (":TRIG:STAT?", "WAIT"),
+            (":TRIG:STAT?", "WAIT"),
+            (":TRIG:STAT?", "TD"),
+        ]
+    )
+    ready = scope.ensure_continuous()
+    assert not ready() and ready() and not scope.transport.exchanges
+
+
+def test_running_rigol_joins_without_writes():
+    scope = RigolSingle()
+    scope.transport = Transcript([(":TRIG:STAT?", "AUTO"), (":TRIG:SWE?", "AUTO")])
+    assert scope.ensure_continuous() is None and not scope.transport.exchanges
+
+
+def test_lecroy_resumes_previous_mode_and_waits_for_new_acquisition():
+    scope = LecroySingle()
+    scope._before_single = "NORM"
+    scope.transport = Transcript(
+        [
+            ("TRMD?", "TRMD STOP"),
+            ("INR?", "INR 1"),
+            ("TRMD NORM", None),
+            ("TRMD?", "TRMD NORM"),
+            ("INR?", "INR 0"),
+            ("INR?", "INR 1"),
+        ]
+    )
+    ready = scope.ensure_continuous()
+    assert not ready() and ready() and not scope.transport.exchanges

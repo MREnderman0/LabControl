@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from lab_control.domain.instruments import CapabilitySet, DeviceCommand, ValidationError
+from lab_control.domain.instruments import CapabilitySet, DeviceCommand, Parameter, ValidationError
 
 FREQUENCY = ("start_frequency", "stop_frequency", "center_frequency", "span")
 NUMERIC = (*FREQUENCY, "reference_level", "attenuation", "rbw", "vbw")
@@ -56,6 +56,16 @@ def prepare_optical_changes(
     ]
 
 
+class SpectrumSpan(Parameter):
+    """A zero-span time trace, or a frequency sweep of at least 10 Hz."""
+
+    def validate(self, name: str, value: Any) -> Any:
+        value = super().validate(name, value)
+        if 0 < value < 10:
+            raise ValidationError("普通扫宽至少 10 Hz，零扫宽请输入 0 Hz")
+        return value
+
+
 def frequency_draft(values: dict[str, Any], changed: str, low: float, high: float) -> dict[str, float]:
     """Clamp the edited pair as a whole, preserving a center/span draft at the band edges."""
     if changed in ("start_frequency", "stop_frequency"):
@@ -99,9 +109,14 @@ def prepare_changes(
     if (
         "start_frequency" in target
         and "stop_frequency" in current
-        and target["start_frequency"] > current["stop_frequency"]
+        and target["start_frequency"] > current.get("start_frequency", current["stop_frequency"])
     ):
         order.reverse()
+    if all(name in target and name in current for name in FREQUENCY):
+        if target["span"] == 0:
+            order = ["span", "center_frequency"]
+        elif current["span"] == 0:
+            order = ["center_frequency", "span"]
     # Lower the level before reducing attenuation; raise it only after attenuation is settled.
     lowering = target.get("reference_level", 0) < current.get("reference_level", 0)
     if lowering:

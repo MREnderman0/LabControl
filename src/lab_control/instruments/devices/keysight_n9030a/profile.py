@@ -1,8 +1,9 @@
-"""Documented, passive subset of the PXA Swept SA measurement."""
+"""SCPI contracts for the PXA Swept SA workspace."""
 
 from dataclasses import replace
 
 from lab_control.domain.instruments import Parameter
+from lab_control.domain.spectrum import SpectrumSpan
 from lab_control.instruments.base import Profile, command, parameter, read_command
 
 from .protocol import point_count, scalar, token
@@ -16,10 +17,6 @@ def n9030a() -> Profile:
     commands = {}
     for name, query, unit, decode in (
         ("measurement_mode", "CONF?", "", token),
-        ("start_frequency", "FREQ:STAR?", "Hz", scalar),
-        ("stop_frequency", "FREQ:STOP?", "Hz", scalar),
-        ("center_frequency", "FREQ:CENT?", "Hz", scalar),
-        ("span", "FREQ:SPAN?", "Hz", scalar),
         ("sweep_time", "SWE:TIME?", "s", scalar),
         ("sweep_points", "SWE:POIN?", "", point_count),
         ("amplitude_unit", "UNIT:POW?", "", token),
@@ -30,6 +27,21 @@ def n9030a() -> Profile:
         kind = "number" if decode is scalar else "integer" if decode is point_count else "text"
         cap = replace(spec.capability, parameters={"value": Parameter(kind, unit)})
         commands[name] = replace(spec, capability=cap, decode=decode)
+    for name, suffix in (
+        ("start_frequency", "STAR"),
+        ("stop_frequency", "STOP"),
+        ("center_frequency", "CENT"),
+        ("span", "SPAN"),
+    ):
+        commands[name] = replace(
+            command(
+                name,
+                "FREQ:" + suffix,
+                (SpectrumSpan if name == "span" else Parameter)("number", "Hz"),
+                scoped=False,
+            ),
+            decode=scalar,
+        )
     for name, path, param in (
         ("rbw", "BAND:RES", parameter("Hz", 1, 8e6)),
         ("vbw", "BAND:VID", parameter("Hz", 1, 50e6)),

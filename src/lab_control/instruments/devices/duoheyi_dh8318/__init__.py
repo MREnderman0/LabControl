@@ -28,6 +28,7 @@ DEFINITION = DeviceDefinition(
     supported_transports=("serial",),
     transport_factory=create_transport,
     identity_requires_adapter=True,
+    serial_autoconnect="instrument_serial",
     management_surface=True,
     monitoring_surface=False,
     manual_connection_note="选择 CH1～CH8 中的一路。输入开关控制该路拉载，设定值需与当前模式一致。",

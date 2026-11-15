@@ -20,6 +20,7 @@
 | 坐标与单位 | 横轴直接使用仪器返回的坐标。扫频单位为 Hz，零跨度单位为秒。纵轴采用 `UNIT:POW?` 读回的单位。项目的峰值与信噪比指标适用于 Hz/dBm 频谱。 |
 | 格式和点数 | 支持当前 ASCII 或 IEEE 488.2 REAL,32 / REAL,64，按当前字节序解码。每帧与读回的扫频点数核对，拒绝异常值、非递增横轴或截断报文。 |
 | 面板变化 | 每帧在轨迹前后读取模式、端点、跨度、时间、点数、单位和数据格式。设置变化会丢弃该帧。 |
+| 频率 | Swept SA 下可联动修改起始、终止、中心和扫宽。上下限从当前输入和已装选件读回，普通扫宽至少 10 Hz，零扫宽显式设置为 0 Hz。 |
 | 控制 | Swept SA 支持手动 RBW、VBW、参考电平和输入衰减。RBW、VBW 与衰减支持自动/手动，参考电平按当前 dBm 单位校验。只有应用修改才发送设置命令，并回读核对。连接、刷新和采集使用查询。 |
 
 ## 测试入口与验证范围
@@ -45,15 +46,15 @@
 | 操作 | 参数 / 单位 / 范围 | 作用域 | 方向 | 额外确认 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | `measurement_mode` | value: text  [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `start_frequency` | value: number Hz [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `stop_frequency` | value: number Hz [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `center_frequency` | value: number Hz [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `span` | value: number Hz [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `sweep_time` | value: number s [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `sweep_points` | value: integer  [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `amplitude_unit` | value: text  [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `transfer_format` | value: text  [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `byte_order` | value: text  [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
+| `start_frequency` | value: number Hz [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
+| `stop_frequency` | value: number Hz [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
+| `center_frequency` | value: number Hz [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
+| `span` | value: number Hz [None, None] | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `rbw` | value: number Hz [1, 8000000.0] | 整机 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
 | `rbw_auto` | value: boolean  [None, None] | 整机 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
 | `vbw` | value: number Hz [1, 50000000.0] | 整机 | 读/写 | 无需 | 软件已实现；实测按资产查证 |

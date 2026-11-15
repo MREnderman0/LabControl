@@ -110,6 +110,18 @@ class ResourceLeases:
         with self._lock:
             return self._owners.get(canonical_resource(resource))
 
+    def release_resources(self, owner: str, resources: set[str]) -> None:
+        """Release only the replaced endpoint claims, retaining the session and identity gates."""
+        with self._lock:
+            files = self._files.get(owner, {})
+            for key in resources:
+                if self._owners.get(key) != owner:
+                    continue
+                if key in files:
+                    files[key].close()
+                    del files[key]
+                del self._owners[key]
+
     def release(self, owner: str) -> None:
         with self._lock:
             # A failed OS close must not make the ownership map advertise a free resource.
