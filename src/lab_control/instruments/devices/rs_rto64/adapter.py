@@ -73,10 +73,7 @@ def rto64() -> Profile:
 
 
 class Rto64Adapter(RohdeSingle, ScpiAdapter):
-    def single_count(self, channels):
-        count = super().single_count(channels)
-        return max(count, self.read("averages")) if self.read("acquisition_mode") == "AVER" else count
-
+    # On the RTO6, ACQuire:COUNt is also the average count (manual, p. 132).
     def single_initial(self):
         return bool(int(self.transport.query("STAT:OPER:COND?")) & 16)
 

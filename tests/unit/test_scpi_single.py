@@ -65,3 +65,10 @@ def test_lecroy_wait_budget_uses_only_selected_channels():
         ]
     )
     assert model.single_count((1, 3)) == 64
+
+
+def test_rto_uses_the_common_acquisition_and_average_count():
+    from lab_control.instruments.devices.rs_rto64.adapter import Rto64Adapter
+
+    adapter = SimpleNamespace(read={"acquisition_count": 8}.__getitem__)
+    assert Rto64Adapter.single_count(adapter, (1, 2)) == 8
