@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from lab_control.domain.instruments import DeviceIdentity, ValidationError, jsonable
+from lab_control.domain.instruments import DeviceIdentity, ValidationError, jsonable, readable_serial
 from lab_control.domain.workspace import WORKSPACE_MODES
 
 SaveKind = Literal["single_frame", "continuous"]
@@ -73,6 +73,7 @@ class SaveContext:
     slot: str = ""
     slot_label: str = ""
     channel_names: dict[str, str] = field(default_factory=dict, hash=False)
+    resource: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "root", self.root.absolute())
@@ -141,6 +142,8 @@ class SaveContext:
             "channel_names": self.channel_names,
             "identity": jsonable(self.identity),
         }
+        if self.identity and not readable_serial(self.identity.serial) and self.resource:
+            metadata["resource"] = self.resource
         with (self.raw_folder / "recording.json").open("x", encoding="utf-8") as stream:
             json.dump(metadata, stream, ensure_ascii=False, indent=2, allow_nan=False)
         if self.layout_version == 2:

@@ -232,6 +232,7 @@ class AgentCollaborationPanel(QWidget):
     def __init__(self, runtime, parent=None):
         super().__init__(parent)
         self.runtime, self.service = runtime, runtime.agent
+        self.service.desktop_grant_enabled = True
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-settings")
         self.job = None
         self._signature = None
@@ -497,12 +498,15 @@ class AgentCollaborationPanel(QWidget):
             else "接入未运行" + ("：" + server["error"] if server.get("error") else "")
         )
         grants = snapshot["grants"]
-        signature = tuple((g["id"], g["enabled"], g.get("full_device_access", False)) for g in grants)
+        signature = tuple(
+            (g["id"], g["enabled"], g.get("full_device_access", False), g.get("desktop_automatic", False))
+            for g in grants
+        )
         if signature != self._signature:
             selected_grant = self.grants.currentData()
             self.grants.clear()
-            for grant_id, active, full in signature:
-                scope = "全部设备授权" if full else "范围授权"
+            for grant_id, active, full, automatic in signature:
+                scope = "启动自动全授权" if automatic else "全部设备授权" if full else "范围授权"
                 state = "有效" if active else "已失效"
                 self.grants.addItem(f"{scope} · {state} · {grant_id[:8]}", grant_id)
             self.grants.setCurrentIndex(max(0, self.grants.findData(selected_grant)))

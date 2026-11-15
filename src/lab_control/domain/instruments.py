@@ -52,6 +52,11 @@ class Quality(StrEnum):
     STALE = "stale"
 
 
+def readable_serial(value: str) -> str:
+    serial = value.strip()
+    return "" if serial.upper() in {"0", "N/A", "UNKNOWN"} else serial
+
+
 @dataclass(frozen=True)
 class DeviceIdentity:
     manufacturer: str
@@ -63,7 +68,7 @@ class DeviceIdentity:
 
     @property
     def key(self) -> str | None:
-        if not self.serial.strip() or self.serial.strip().upper() in {"0", "N/A", "UNKNOWN"}:
+        if not readable_serial(self.serial):
             return None
         return "|".join((self.manufacturer.upper().strip(), self.model.upper().strip(), self.serial.strip()))
 

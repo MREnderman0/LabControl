@@ -152,6 +152,7 @@ class Repository:
         device_id: str = "",
         identity: DeviceIdentity | None = None,
         adapter_id: str = "",
+        resource: str = "",
         channels: tuple[int, ...] | None = None,
         batch: BatchSaveContext | None = None,
     ) -> SaveContext:
@@ -189,6 +190,7 @@ class Repository:
                 batch=batch,
                 slot=slot,
                 channel_names=channel_names,
+                resource=resource,
                 slot_label=self.function_slots.label(slot, slot_mode) if slot else "",
             )
 

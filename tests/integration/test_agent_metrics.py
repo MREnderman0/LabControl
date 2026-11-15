@@ -133,14 +133,21 @@ def test_per_channel_metrics_use_saved_optical_power_channels(metrics, adapter, 
     runtime, service, client, *_ = metrics
     device = runtime.add(ConnectionConfig("mock://metrics/power", adapter, "mock"))
     runtime.connect(device).result()
-    grant = service.policy.create_grant(
-        client,
-        [device],
-        ["view", "acquire", "results", "process"],
-        channels=channels,
-        operations=[],
-        limits={},
-    )
+    if adapter == "joinwit.jw8105":
+        session = runtime.sessions.sessions[device]
+        session.adapter.identity = session.identity = replace(
+            session.identity, serial="", confidence="model_only"
+        )
+        grant, _, _ = service.grant_all_devices()
+    else:
+        grant = service.policy.create_grant(
+            client,
+            [device],
+            ["view", "acquire", "results", "process"],
+            channels=channels,
+            operations=[],
+            limits={},
+        )
     profiles = service.get_processing_capabilities(client, grant, device)["profiles"]
     assert {profile["id"] for profile in profiles} == {
         OPTICAL_POWER_FLUCTUATION_PROFILE.id,
@@ -186,6 +193,14 @@ def test_per_channel_metrics_use_saved_optical_power_channels(metrics, adapter, 
         )
         assert result["metrics"][f"ch{channel}.min_deviation_percent"]["unit"] == "%"
         assert result["metrics"][f"ch{channel}.min_deviation_percent"]["quality"] == "simulated"
+    if adapter == "joinwit.jw8105":
+        record = service.metrics.store.resolve(acquired["recording_id"])
+        path = record.device.folder / "_raw" / "recording.json"
+        meta = json.loads(path.read_text(encoding="utf8"))
+        assert meta.pop("resource") == "mock://metrics/power"
+        for missing_or_moved in (meta, {**meta, "resource": "mock://metrics/other"}):
+            path.write_text(json.dumps(missing_or_moved), encoding="utf8")
+            assert not service.list_recordings(client, grant, device)
 
 
 @pytest.mark.parametrize(

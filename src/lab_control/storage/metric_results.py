@@ -14,7 +14,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 from pydantic import Field
 
-from lab_control.domain.instruments import DeviceError
+from lab_control.domain.instruments import DeviceError, readable_serial
 from lab_control.domain.metrics import ExperimentRecordingIds, MetricParameters
 from lab_control.domain.processing import RecordedDevice
 from lab_control.storage.layout import atomic_json, raw_folder
@@ -117,9 +117,13 @@ class MetricStore:
                     or not isinstance(identity, dict)
                     or not all(
                         isinstance(identity.get(k), str) and identity[k].strip()
-                        for k in ("manufacturer", "model", "serial")
+                        for k in ("manufacturer", "model")
                     )
-                    or identity["serial"].strip().upper() in {"0", "N/A", "UNKNOWN"}
+                    or not isinstance(identity.get("serial"), str)
+                    or not (
+                        readable_serial(identity["serial"])
+                        or (isinstance(meta.get("resource"), str) and meta["resource"].strip())
+                    )
                     or linked(raw_folder(device.folder))
                 ):
                     continue

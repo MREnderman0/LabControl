@@ -56,9 +56,10 @@ class AgentLedger:
             if alias[0] != fingerprint:
                 raise DeviceError("request_id 已用于不同请求", "request_conflict")
             return self.get(alias[1])
-        if row[0] != fingerprint:
+        task = json.loads(row[1])
+        if row[0] != fingerprint and task.get("original_request_fingerprint") != fingerprint:
             raise DeviceError("request_id 已用于不同请求", "request_conflict")
-        return json.loads(row[1])
+        return task
 
     def alias(self, client: str, request: str, fingerprint: str, task_id: str) -> None:
         with self.repository.lock, self.repository.db:

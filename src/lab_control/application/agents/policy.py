@@ -44,7 +44,10 @@ class AgentPolicy:
         self.repository, self.identity_lookup = repository, identity_lookup
         self.lock = threading.RLock()
         self.grants = repository.load_workspace("agent/grants", {})
+        self.desktop_grant_id: str | None = None
+        self.desktop_identities: dict[str, dict] = {}
         # Templates survive a restart, execution authority does not.
+        self.grants = {key: g for key, g in self.grants.items() if not g.get("desktop_automatic")}
         for grant in self.grants.values():
             grant["enabled"] = False
         self._save()
@@ -109,9 +112,9 @@ class AgentPolicy:
             }
         )
 
-    def create_full_grant(self, identities: dict[str, dict]) -> str:
+    def create_full_grant(self, identities: dict[str, dict], *, desktop_automatic=False) -> str:
         if not identities:
-            raise ValidationError("没有可全部授权的设备，请先核对受支持型号和序列号")
+            raise ValidationError("没有可全部授权的设备，请先核对设备型号及其连接地址")
         return self._store_grant(
             {
                 "client_id": INTERNAL_CLIENT,
@@ -122,8 +125,38 @@ class AgentPolicy:
                 "limits": {},
                 "asset_confirmed": False,
                 "full_device_access": True,
+                **({"desktop_automatic": True} if desktop_automatic else {}),
             }
         )
+
+    def sync_desktop_grant(self, identities: dict[str, dict]) -> None:
+        with self.lock:
+            if self.desktop_grant_id is None:
+                if identities:
+                    self.desktop_grant_id = self.create_full_grant(identities, desktop_automatic=True)
+                    self.desktop_identities.update(identities)
+                return
+            grant = self.grants[self.desktop_grant_id]
+            if not grant["enabled"]:
+                return
+            devices = {
+                key: value
+                for key, value in identities.items()
+                if self.desktop_identities.get(key, value) == value
+            }
+            if grant["devices"] == devices:
+                return
+            previous = grant["devices"]
+            grant["devices"] = devices
+            try:
+                self._save()
+            except Exception:
+                grant["devices"] = previous
+                raise
+            self.desktop_identities.update(devices)
+            self.repository.audit_sink.try_record(
+                "agent_desktop_grant_updated", grant_id=grant["id"], devices=sorted(devices)
+            )
 
     def _store_grant(self, scope: dict) -> str:
         with self.lock:

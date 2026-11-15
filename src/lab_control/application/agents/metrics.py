@@ -17,7 +17,7 @@ from lab_control.application.agents.command_processing import (
     command_capability,
 )
 from lab_control.application.agents.policy import COMMAND_CLIENT
-from lab_control.domain.instruments import DeviceError, utc_now
+from lab_control.domain.instruments import DeviceError, readable_serial, utc_now
 from lab_control.domain.metrics import (
     MAX_EXPERIMENT_RECORDINGS,
     CapturePlan,
@@ -84,11 +84,12 @@ class MetricTasks:
         expected = self.service.identity(record.device_id)
         actual = record.device.metadata["identity"]
         if (
-            not actual.get("serial")
-            or expected["adapter"] != record.device.metadata["adapter_id"]
+            expected["adapter"] != record.device.metadata["adapter_id"]
+            or readable_serial(actual["serial"]).casefold() != expected["serial"].strip().casefold()
+            or (not expected["serial"] and record.device.metadata.get("resource") != expected["resource"])
             or any(
                 actual.get(k, "").strip().casefold() != expected[k].strip().casefold()
-                for k in ("manufacturer", "model", "serial")
+                for k in ("manufacturer", "model")
             )
         ):
             raise DeviceError("历史记录缺少完整可核验资产身份或与授权不符", "identity_conflict")
@@ -243,8 +244,6 @@ class MetricTasks:
         records: tuple[MetricRecord, ...] = ()
         source_stamps, plan, key = None, None, ""
         if capture_parameters is not None:
-            if service.identity(device)["serial"].strip().upper() in {"", "0", "N/A", "UNKNOWN"}:
-                raise DeviceError("自动流程需要可核验的设备序列号", "identity_conflict")
             if profile.capture is None or profile.capture_parameters is None:
                 raise DeviceError("此处理项未声明自动采集", "capture_unsupported")
             plan = profile.capture(profile.capture_parameters.model_validate(capture_parameters))
@@ -415,6 +414,7 @@ class MetricTasks:
                 device_id=device,
                 identity=session.identity,
                 adapter_id=session.config.adapter,
+                resource=session.config.resource,
             )
             batch = self.runtime.sessions.submit(device, "acquire", plan.request, before_io=guard).result()
             self.runtime.monitoring._validate_saved_batch(batch)

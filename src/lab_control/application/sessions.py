@@ -767,6 +767,7 @@ class SessionManager:
                 device_id=device_id,
                 identity=session.identity,
                 adapter_id=session.config.adapter,
+                resource=session.config.resource,
                 channels=request.channels,
             )
             run_factory = None

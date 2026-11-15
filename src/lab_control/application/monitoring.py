@@ -316,6 +316,7 @@ class MonitoringService:
                 "continuous",
                 device_id=device_id,
                 batch=batch,
+                resource=self.sessions.sessions[device_id].config.resource,
                 channels=tuple(ch for request in task.requests for ch in request.channels),
             )
         except Exception:

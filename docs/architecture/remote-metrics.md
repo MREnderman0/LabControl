@@ -80,7 +80,7 @@
 
 ## 记录、授权与结果
 
-规范记录必须有 recording.json 的版本、run_id、device_id、adapter_id 与完整厂家/型号/序列号；无法核验的旧记录不远程开放，也不根据目录名或当前槽位推断身份。本版无序列号的历史记录明确拒绝远程指标处理，即使旧连接流程允许本机确认资产。记录 ID 由 device_id 与 run_id 派生，重命名、移动及算法更新不改变；重复 ID 的多目录副本报冲突。
+规范记录须保存版本、run_id、device_id、adapter_id、厂家和型号。有可读序列号时按序列号匹配，无可读序列号时按采集会话保存的连接地址与当前授权映射匹配。缺少这两种凭据的旧记录无法远程处理。记录 ID 由 device_id 与 run_id 派生，重命名、移动及算法更新不改变；重复 ID 的多目录副本报冲突。
 
 仅从本机已登记的数据目录检索，客户端用记录 ID 引用数据。查看和选择记录需要当前 view/results 授权。执行普通处理项另需 process，并检查源文件实际全部通道。自动采集还检查 acquire 或 record、必要的 output_trigger/acquisition_setup。process 默认不勾选。解析或校验失败标记不可用，未完成保存的记录拒绝处理，不完整来源仅在声明 supports_partial 且请求 allow_partial 时允许。
 

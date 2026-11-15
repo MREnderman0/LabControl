@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from lab_control.application.agents import frame_image
 from lab_control.application.agents.command_processing import LOCAL_COMMAND_PROFILE
 from lab_control.application.agents.policy import COMMAND_CLIENT, AgentPolicy, fail
 from lab_control.domain.instruments import (
@@ -22,6 +23,7 @@ from lab_control.domain.instruments import (
     MeasurementBatch,
     ValidationError,
     jsonable,
+    readable_serial,
     utc_now,
 )
 from lab_control.domain.workspace import CATEGORY_LABELS, GENERAL, WORKSPACE_MODES
@@ -33,6 +35,7 @@ class AgentService:
         self.runtime, self.repository = runtime, runtime.repository
         self.lock = threading.RLock()
         self.policy = AgentPolicy(self.repository, self.identity)
+        self.desktop_grant_enabled = False
         self.ledger = AgentLedger(self.repository)
         self.previews: dict[str, dict] = {}
         self.active: dict[str, dict] = {}
@@ -49,20 +52,27 @@ class AgentService:
 
     def identity(self, device_id: str) -> dict:
         record = next((r for r in self.runtime.inventory.all() if r["id"] == device_id), None)
-        if record is None or record.get("identityConflict") or record.get("discoveryState") == "conflict":
-            fail("设备不存在或身份存在冲突", "identity_conflict")
-        value = record.get("identity", {})
         state: dict = next(
             (s for s in self.runtime.sessions.snapshots() if s["stableDeviceId"] == device_id), {}
         )
-        value = state.get("identity") or value
+        return self._record_identity(record, state)
+
+    @staticmethod
+    def _record_identity(record, state) -> dict:
+        if record is None or record.get("identityConflict") or record.get("discoveryState") == "conflict":
+            fail("设备不存在或身份存在冲突", "identity_conflict")
+        value = state.get("identity") or record.get("identity") or {}
+        serial = readable_serial(value.get("serial", ""))
+        resource = record["config"]["resource"]
+        if not serial and state.get("resource", resource) != resource:
+            fail("设备会话与库存连接地址不符", "identity_conflict")
         return {
             "manufacturer": value.get("manufacturer", ""),
             "model": value.get("model", ""),
-            "serial": value.get("serial", ""),
+            "serial": value["serial"] if serial else "",
             "adapter": record.get("adapterId", ""),
             # A serial-less instrument cannot be silently followed to a new endpoint.
-            "resource": "" if value.get("serial") else record["config"]["resource"],
+            "resource": "" if serial else resource,
         }
 
     def _check(self, client: str, grant: str, device: str, action: str, **kwargs) -> dict:
@@ -82,6 +92,7 @@ class AgentService:
 
     def get_server_info(self, client: str) -> dict:
         self.policy.require_client(client)
+        self.refresh_desktop_grant()
         grants = [g for g in self.policy.snapshot()["grants"] if g["client_id"] == client and g["enabled"]]
         return {
             "name": "TF LabControl",
@@ -91,8 +102,7 @@ class AgentService:
             "output_on_stop": "unchanged_or_unknown",
         }
 
-    def grant_all_devices(self, template: dict | None = None) -> tuple[str, int, int]:
-        """Sign one shared grant using the current verified asset identities."""
+    def _grant_identities(self, template=None):
         from lab_control.instruments.registry import DEVICE_DEFINITIONS
 
         if self.closing or self.runtime.closed:
@@ -100,6 +110,7 @@ class AgentService:
         expected = template["devices"] if template is not None else None
         with self.runtime.sessions.lock, self.runtime.inventory.lock:
             records = self.runtime.inventory.all()
+            states = {s["stableDeviceId"]: s for s in self.runtime.sessions.snapshots()}
             identities = {}
             for record in records:
                 device = record["id"]
@@ -108,7 +119,7 @@ class AgentService:
                 ):
                     continue
                 try:
-                    identity = self.identity(device)
+                    identity = self._record_identity(record, states.get(device, {}))
                 except DeviceError as exc:
                     if exc.code != "identity_conflict":
                         raise
@@ -116,14 +127,24 @@ class AgentService:
                 if (
                     not identity["manufacturer"].strip()
                     or not identity["model"].strip()
-                    or identity["serial"].strip().upper() in {"", "0", "N/A", "UNKNOWN"}
+                    or not (identity["serial"] or identity["resource"].strip())
                     or (expected is not None and identity != expected[device])
                 ):
                     continue
                 identities[device] = identity
-            grant_id = self.policy.create_full_grant(identities)
         total = len(records) if expected is None else len(expected)
+        return identities, total
+
+    def grant_all_devices(self, template: dict | None = None) -> tuple[str, int, int]:
+        identities, total = self._grant_identities(template)
+        grant_id = self.policy.create_full_grant(identities)
         return grant_id, len(identities), total - len(identities)
+
+    def refresh_desktop_grant(self):
+        if self.desktop_grant_enabled:
+            with self.runtime.sessions.lock, self.runtime.inventory.lock:
+                identities, _ = self._grant_identities()
+                self.policy.sync_desktop_grant(identities)
 
     def get_processing_capabilities(self, client, grant_id, device_id, *, local_commands=False):
         return self.metrics.capabilities(client, grant_id, device_id, local_commands=local_commands)
@@ -280,7 +301,7 @@ class AgentService:
         from lab_control.instruments.registry import DEVICE_DEFINITIONS
 
         grant = self._check(client, grant_id, device_id, "view")
-        snapshot = self.runtime.sessions.capability_snapshot(device_id)
+        snapshot = self._remote_snapshot(device_id, grant)
         if snapshot is None:
             fail("请先连接设备以获取通道与实际范围", "disconnected")
         config = self.runtime.sessions.sessions[device_id].config
@@ -322,7 +343,11 @@ class AgentService:
                 str(channel): {
                     c.name: {
                         "read": "device_io" if c.readable else "unsupported",
-                        "write": "output_trigger" if c.requires_confirmation else "configuration",
+                        "write": "output_trigger"
+                        if c.requires_confirmation
+                        else "acquisition"
+                        if c.name == frame_image.OPERATION
+                        else "configuration",
                     }
                     for c in caps.operations
                 }
@@ -331,8 +356,31 @@ class AgentService:
             "acquisition_effect": "device_operation_unless_model_verified",
         }
 
-    def _capability(self, device: str, operation: str, channel: int):
+    def _remote_snapshot(self, device, grant):
         snapshot = self.runtime.sessions.capability_snapshot(device)
+        if snapshot is None or not {"apply", "acquire", "process", "results"} <= set(grant["actions"]):
+            return snapshot
+        full = grant.get("full_device_access")
+        if not full and frame_image.OPERATION not in grant["operations"]:
+            return snapshot
+        from lab_control.instruments.registry import DEVICE_DEFINITIONS
+
+        definition = DEVICE_DEFINITIONS[self.runtime.sessions.sessions[device].config.adapter]
+        cap = frame_image.capability(definition)
+        if cap.requires_confirmation and "output_trigger" not in grant["actions"]:
+            return snapshot
+        channels = dict(snapshot.channels)
+        for channel, caps in channels.items():
+            if caps.category in frame_image.KINDS and (full or channel in grant["channels"]):
+                channels[channel] = replace(caps, operations=(*caps.operations, cap))
+        return replace(snapshot, channels=channels)
+
+    def _capability(self, device: str, operation: str, channel: int, grant=None):
+        snapshot = (
+            self._remote_snapshot(device, grant)
+            if operation == frame_image.OPERATION and grant
+            else self.runtime.sessions.capability_snapshot(device)
+        )
         if snapshot is None or snapshot.stale or channel not in snapshot.channels:
             fail("设备能力不可用或已过期，请在软件内刷新", "capability_stale")
         return snapshot.channels[channel].get(operation)
@@ -347,10 +395,12 @@ class AgentService:
 
         return guard
 
-    def _task(self, client, grant, device, action, request_id, payload, start) -> dict:
+    def _task(
+        self, client, grant, device, action, request_id, payload, start, *, fingerprint_payload=None
+    ) -> dict:
         if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
             raise ValidationError("request_id 必须为 1..128 字符的唯一标识")
-        fingerprint = self.ledger.fingerprint([grant, device, action, payload])
+        fingerprint = self.ledger.fingerprint([grant, device, action, fingerprint_payload or payload])
         with self.lock:
             self._check(client, grant, device, action)
             previous = self.ledger.find_request(client, request_id, fingerprint)
@@ -398,6 +448,11 @@ class AgentService:
             }
             if require_full_scope:
                 task["require_full_scope"] = True
+            if fingerprint_payload is not None:
+                # The original preview may have expired by the time the client retries.
+                task["original_request_fingerprint"] = self.ledger.fingerprint(
+                    [grant, device, action, payload]
+                )
             audit = self.repository.audit_sink.try_record if action == "stop" else self.repository.audit
             audit(
                 "agent_request_accepted",
@@ -449,9 +504,13 @@ class AgentService:
                         self._check(client, grant_id, device_id, "acquisition_setup")
                     if identity is not None:
                         expected = grant["devices"][device_id]
-                        if any(
-                            getattr(identity, key).strip().casefold() != expected[key].strip().casefold()
-                            for key in ("manufacturer", "model", "serial")
+                        if (
+                            any(
+                                getattr(identity, key).strip().casefold() != expected[key].strip().casefold()
+                                for key in ("manufacturer", "model")
+                            )
+                            or readable_serial(identity.serial).casefold()
+                            != expected["serial"].strip().casefold()
                         ):
                             fail("连接身份与实验授权不符", "identity_conflict")
 
@@ -503,8 +562,8 @@ class AgentService:
         return future
 
     def preview_change(self, client, grant_id, device_id, operation, parameters, channel=1, partial=False):
-        self._check(client, grant_id, device_id, "apply", channels=(channel,), operation=operation)
-        cap = self._capability(device_id, operation, channel)
+        grant = self._check(client, grant_id, device_id, "apply", channels=(channel,), operation=operation)
+        cap = self._capability(device_id, operation, channel, grant)
         if not cap.writable:
             fail("参数只读", "unsupported")
         missing = [key for key, spec in cap.parameters.items() if spec.required and key not in parameters]
@@ -569,6 +628,17 @@ class AgentService:
             raise ValidationError(f"{operation} 无法保留当前模式下的字段：{exc}") from exc
 
     def apply_change(self, client, grant_id, device_id, preview_id, request_id):
+        fingerprint_payload = None
+        with self.lock:
+            preview = self.previews.get(preview_id, {})
+            if (
+                preview.get("operation") == frame_image.OPERATION
+                and preview["client_id"] == client
+                and preview["grant_id"] == grant_id
+                and preview["device_id"] == device_id
+            ):
+                fingerprint_payload = {"operation": frame_image.OPERATION, "channel": preview["channel"]}
+
         def start(ctx):
             preview = self.previews.get(preview_id)
             if (
@@ -595,7 +665,12 @@ class AgentService:
 
             def guard(session):
                 check(session)
-                cap = self._capability(device_id, preview["operation"], preview["channel"])
+                image_grant = (
+                    self.policy.require_grant(client, grant_id)
+                    if preview["operation"] == frame_image.OPERATION
+                    else None
+                )
+                cap = self._capability(device_id, preview["operation"], preview["channel"], image_grant)
                 if cap.requires_confirmation:
                     self._check(client, grant_id, device_id, "output_trigger")
                 if "baseline" in preview:
@@ -617,6 +692,9 @@ class AgentService:
                     before=jsonable(session.settings.get((preview["channel"], preview["operation"]))),
                 )
 
+            if preview["operation"] == frame_image.OPERATION:
+                self._start_frame_image(ctx, client, grant_id, device_id, preview["channel"], guard)
+                return
             ctx["future"] = self.runtime.sessions.submit(
                 device_id,
                 "apply",
@@ -626,7 +704,52 @@ class AgentService:
                 before_io=guard,
             )
 
-        return self._task(client, grant_id, device_id, "apply", request_id, {"preview_id": preview_id}, start)
+        return self._task(
+            client,
+            grant_id,
+            device_id,
+            "apply",
+            request_id,
+            {"preview_id": preview_id},
+            start,
+            fingerprint_payload=fingerprint_payload,
+        )
+
+    def _start_frame_image(self, ctx, client, grant, device, channel, guard):
+        from lab_control.instruments.registry import DEVICE_DEFINITIONS
+
+        job = frame_image.FrameImage()
+        ctx.update(frame_image=job, cancel=job.cancel)
+        session = self.runtime.sessions.sessions[device]
+        category = self.runtime.sessions.capability_snapshot(device).channels[channel].category
+        kind = frame_image.KINDS[category]
+        request = {"kind": kind, "channels": [channel]}
+        acquisition = self._request(client, grant, device, "acquire", request)
+        definition = DEVICE_DEFINITIONS[session.config.adapter]
+        context = self.repository.new_save_context(GENERAL, "single_frame", device_id=device)
+
+        def authorize():
+            self._check(client, grant, device, "apply", channels=(channel,), operation=frame_image.OPERATION)
+            for action in ("acquire", "process", "results"):
+                self._check(client, grant, device, action, channels=(channel,))
+
+        def before_io(current):
+            job.checkpoint()
+            guard(current)
+            authorize()
+
+        read = self.runtime.sessions.submit(device, "acquire", acquisition, before_io=before_io)
+
+        def save():
+            try:
+                batch = read.result(timeout=max(0, job.deadline - time.monotonic()))
+            except TimeoutError:
+                if not read.done():
+                    raise frame_image.timeout_error() from None
+                raise
+            return job.save(batch, kind, channel, context.slot_label, definition, authorize)
+
+        ctx["future"] = self.worker.submit(save)
 
     def _request(self, client, grant, device, action, value):
         from lab_control.instruments.registry import DEVICE_DEFINITIONS
@@ -686,6 +809,7 @@ class AgentService:
                 "single_frame",
                 device_id=device_id,
                 identity=self.runtime.sessions.sessions[device_id].identity,
+                resource=self.runtime.sessions.sessions[device_id].config.resource,
                 channels=acquisition.channels,
             )
 
@@ -1101,6 +1225,9 @@ class AgentService:
                         if self._persist(ctx):
                             self.active.pop(task["id"], None)
                         continue
+                    if ctx.get("frame_image") and ctx["frame_image"].expired():
+                        self._finish(ctx, exc=frame_image.timeout_error())
+                        continue
                     try:
                         self.policy.check(
                             task["client_id"], task["grant_id"], task["device_id"], task["action"]
@@ -1160,6 +1287,7 @@ class AgentService:
                 self.repository.audit_sink.try_record("agent_tracking_failed", error=str(exc))
 
     def snapshot(self):
+        self.refresh_desktop_grant()
         return {
             **self.policy.snapshot(),
             "tasks": self.ledger.tasks(),
