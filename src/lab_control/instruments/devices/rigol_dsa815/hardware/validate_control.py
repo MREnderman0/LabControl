@@ -223,6 +223,8 @@ class TestSession:
             "axis_unit": m.axis_unit,
             "axis_start": float(m.axis[0]),
             "axis_stop": float(m.axis[-1]),
+            "amplitude_min": float(min(m.values)),
+            "amplitude_max": float(max(m.values)),
             **m.metadata,
         }
         self.report["traces"].append(entry)
@@ -385,6 +387,11 @@ def verify(
     config: ConnectionConfig, folder: Path, *, control: bool = False, restore_from: Path | None = None
 ) -> dict:
     folder.mkdir(parents=True, exist_ok=False)
+    scope = "Read-only LAN identity, current settings and existing Trace 1 with the current input wiring"
+    if control:
+        scope = "Authorized LAN control and trace tests under the RF input precondition"
+    elif restore_from:
+        scope = "LAN settings restoration from a verified backup"
     report: dict[str, Any] = {
         "adapter_id": config.adapter,
         "config": asdict(config),
@@ -393,7 +400,7 @@ def verify(
         "started_at": utc_now(),
         "operations": [],
         "traces": [],
-        "scope": "LAN common controls; RF input empty/50 ohm; no physical accuracy tests; traces saved by human only",
+        "scope": scope,
         "stages": dict.fromkeys(
             (
                 "identity",
