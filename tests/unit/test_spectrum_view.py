@@ -179,22 +179,53 @@ def test_model_dbm_view_on_first_frame_fit_and_restore(qtbot, adapter, panel, ex
     assert plot.plot.viewRange()[1] == pytest.approx(panel)
 
 
-def test_dbm_endpoint_labels_are_drawn_with_the_grid(qtbot):
+@pytest.mark.parametrize(
+    "size, bounds",
+    [
+        ((700, 420), (-120, 30)),
+        ((480, 260), (-120, 12)),  # N9030A
+        ((580, 320), (-60, 30)),  # 4959E
+        ((520, 280), (-80, 9)),  # DSA815
+        ((420, 220), (-88.25, 12.125)),  # Neither limit is a regular grid tick.
+    ],
+)
+def test_dbm_endpoint_labels_are_drawn_with_the_grid(qtbot, size, bounds):
     from PySide6.QtGui import QImage, QPainter
 
     plot = SpectrumPlot()
     qtbot.addWidget(plot)
-    plot.resize(700, 420)
+    plot.resize(*size)
     plot.show()
     source = DataSource("spectrum", "频谱", "spectrum")
-    plot.show_frame(frame(), source, (1,))
-    plot.plot.setYRange(-120, 30, padding=0)
+    f = frame()
+    m = replace(
+        f.batch.measurements[0],
+        metadata={"spectrum_display": {"unit": "dBm", "lower": bounds[0], "upper": bounds[1]}},
+    )
+    plot.show_frame(replace(f, batch=replace(f.batch, measurements=(m,))), source, (1,))
     qtbot.wait(20)
     axis = plot.plot.getAxis("left")
+    viewport = plot.plot.viewport()
     image = QImage(plot.size(), QImage.Format.Format_ARGB32)
     with QPainter(image) as painter:
-        _, _, text_specs = axis.generateDrawSpecs(painter)
-    assert {"-120", "30"} <= {label for _, _, label in text_specs}
+        _, _, specs = axis.generateDrawSpecs(painter)
+
+    assert plot.plot.viewRange()[1] == pytest.approx(bounds)
+    areas = []
+    for limit, edge in zip(bounds, (axis.rect().bottom(), axis.rect().top()), strict=True):
+        label = str(limit)
+        (rect,) = [rect for rect, _, text in specs if text == label]
+        assert rect.center().y() == pytest.approx(edge)
+        assert not any(rect.intersects(other) for other, _, text in specs if text != label)
+        area = plot.plot.mapFromScene(axis.mapRectToScene(rect)).boundingRect()
+        assert viewport.rect().contains(area)
+        areas.append(area)
+
+    # Verify the labels actually reach the viewport. Grid lines remain in both grabs.
+    visible = [viewport.grab(area).toImage() for area in areas]
+    axis.setTextPen((0, 0, 0, 0))
+    for area, labeled in zip(areas, visible, strict=True):
+        assert labeled != viewport.grab(area).toImage()
 
 
 def test_menu_marker_uses_clicked_frequency_and_requires_a_frequency_position(qtbot):

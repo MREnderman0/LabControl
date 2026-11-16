@@ -14,6 +14,36 @@ class SpectrumAmplitudeAxis(pg.AxisItem):
         self.label_margin = label_margin
         super().__init__("left")
 
+    def tickValues(self, minVal, maxVal, size):  # noqa: N802
+        levels = super().tickValues(minVal, maxVal, size)
+        if not levels or self.logMode or minVal == maxVal:
+            return levels
+        low, high = sorted((minVal, maxVal))
+        # Only major labels are guaranteed space. Promote both ends even when
+        # they fall between regular ticks, keeping the interior grid intact.
+        levels = [(step, [v for v in ticks if low < v < high]) for step, ticks in levels]
+        major = levels[0][1]
+        major.insert(0, low)
+        major.append(high)
+        return levels
+
+    def tickStrings(self, values, scale, spacing):  # noqa: N802
+        labels = super().tickStrings(values, scale, spacing)
+        if self.logMode:
+            return labels
+        low, high = sorted(self.range)
+        gap = (high - low) * (2 * self.label_margin) / max(1, self.height())
+        ends = {v: f"{v * scale:.8g}" for v in (low, high)}
+        if ends[low] == ends[high] and low != high:
+            ends = {v: str(v * scale) for v in (low, high)}
+        for i, value in enumerate(values):
+            if value in ends:
+                # Grid spacing may be integral while an instrument limit is fractional.
+                labels[i] = ends[value]
+            elif min(value - low, high - value) < gap:
+                labels[i] = None  # AxisItem keeps this grid line but skips its text.
+        return labels
+
     def boundingRect(self):  # noqa: N802
         # With the grid enabled, AxisItem clips labels to the ViewBox ends.
         return super().boundingRect().adjusted(0, -self.label_margin, 0, self.label_margin)
