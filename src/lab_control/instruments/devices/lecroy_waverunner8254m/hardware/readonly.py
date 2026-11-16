@@ -5,12 +5,22 @@ from lab_control.domain.connections import ConnectionConfig
 from lab_control.domain.instruments import AcquisitionRequest, Unsupported
 from lab_control.instruments.base import ScpiAdapter
 from lab_control.instruments.common import readonly_hardware
+from lab_control.instruments.common.lecroy_ranges import MEMORY_QUERIES, PATHS, cvar_query
 
 from .. import DEFINITION
 from ..profile import CHANNELS
 from .records import publish_report
 
-QUERIES = tuple(f"C{ch}:WF? ALL" for ch in CHANNELS)
+QUERIES = (
+    *(f"C{ch}:WF? ALL" for ch in CHANNELS),
+    *MEMORY_QUERIES.values(),
+    *(
+        cvar_query(op, ch, member)
+        for op in PATHS
+        for ch in (CHANNELS if "{ch}" in PATHS[op] else (1,))
+        for member in ("GetMinValue", "GetMaxValue", "GetGrainValue")
+    ),
+)
 
 
 def capture_request(adapter: ScpiAdapter) -> AcquisitionRequest:

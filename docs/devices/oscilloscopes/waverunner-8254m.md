@@ -12,8 +12,9 @@
 | --- | --- |
 | 波形采集与保存 | 被动读取所选已开启通道，每个通道查询一次 `WF? ALL`；单帧和监测共用型号入口。通道按顺序读取，各自保留描述符时间。 |
 | 离线回放与导出 | 使用帧处理，保留每通道原始时轴和物理量，可按通道导出 PNG。 |
-| 参数与远程能力 | 可查询通道开关、垂直刻度与偏移、时基、时延、触发模式和传输格式。通道状态由面板控制。公共远程接口可暴露被动波形数据源。 |
-| 参数写入与远程指标 | 本包未声明可写操作、触发启动或指标处理项。 |
+| 参数控制 | C1～C4 通道开关、垂直刻度和偏移、耦合、探头倍率、带宽限制、平均次数，整机时基、水平偏移与最大记录长度。采样率和内存模式由仪器读回。 |
+| 触发与波形 | 模拟边沿触发支持来源、电平及斜率，可选择 AUTO、NORM、STOP 或 SINGLE。Single 通过公共单次任务执行，清除上一轮采集事件后等待本次采集完成，再读取所选通道。 |
+| 参数范围 | 刻度、偏移、时基、时延、触发电平和记录长度在写入时复核当前 CVAR 范围；固定采样率下按完整帧点数预算约束时基。 |
 
 协议依据为 [8254M 产品资料](https://www.teledynelecroy.com/oscilloscope/oscilloscopemodel.aspx?modelid=9722)、[WaveRunner 8000 操作手册的 Remote Control 章节](https://cdn.teledynelecroy.com/files/manuals/waverunner-8000-operators-manual.pdf)和 [MAUI Remote Control 手册的波形传输与 WAVEDESC 章节](https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf)。
 
@@ -27,7 +28,7 @@
 
 ## 文件与公共依赖
 
-`profile.py` 声明查询及通道，`adapter.py` 负责采集与快照一致性。与 9404M 共用 MAUI 波形解码器，各型号维护自己的身份、能力及采集逻辑。脱敏回放在 `tests/`，只读验收和离线记录转换位于 `hardware/`。
+`profile.py` 声明通道与命令，`control.py` 处理写前校验及读回，`adapter.py` 负责采集与快照一致性。8254M 与 9404M 共用 MAUI 波形解码、CVAR 范围查询和 Single 协议。脱敏回放在 `tests/`，实机验收和离线记录转换位于 `hardware/`。
 
 ## 测试入口与实机状态
 
@@ -38,13 +39,16 @@
 | 桌面监测与离线处理 | CH2 连续三帧的仪器触发时间各异。已用实机记录逐点复算四通道的 WAVEDESC 电压和时间，并核对 CH2 离线回放与 PNG 导出。 |
 | Agent 能力与远程记录 | 使用正式 Agent 服务方法和限定 CH2 的授权，核对波形数据源及可见通道，启动并结束被动记录，按本次任务核实两帧完整波形。 |
 | VXI-11 | 当前面板选 TCP/IP，实机能识别身份，参数读取受接口选择阻挡。LXI 面板模式待单独测试。 |
-| 写控制、主动触发、外部电压精度 | 本次未执行。 |
+| VICP 参数写入与读回 | 固件 10.6.0，实测 CH2 的开关、垂直刻度与偏移、输入耦合、探头倍率、触发电平与斜率、平均次数及带宽限制。整机的时基、时延、最大记录长度、触发源及运行模式经写入和独立查询核对。 |
+| 原生 Single | CH2 连续执行两次单次任务，每帧 2,000,002 个有效点，触发时间各异，保存后逐点核对。一次采完停在 STOP，另一次采完恢复 AUTO。 |
+| 恢复与重连 | 测试前备份完整面板，测试后及断开重连后核对 51 项设置。完整面板脚本除导出时间注释外逐字节一致。 |
+| 外部电压精度 | 需已知参考源单独核对。 |
 
 软件测试使用本包 `tests`，实机验收见[测试入口与计划](../../../src/lab_control/instruments/devices/lecroy_waverunner8254m/hardware/README.md)，各资产结果以运行目录 `hardware-tests` 内的批次为准。
 
 ## 已知限制与待测
 
-序列、RIS、截取或抽点传输不在已验证范围。WORD 的数值换算有协议回放覆盖，当前实机保持原有 BYTE 格式。界面和 Agent 的原生 Single 触发未开放；可读取面板已有波形、开始监测或连续记录。
+序列、RIS、截取或抽点传输不在已验证范围。WORD 的数值换算有协议回放覆盖，当前实机保持原有 BYTE 格式。桌面 Single 成功后停在本次波形，调用方也可请求采完恢复原触发模式。等待超时、取消或读帧失败时，任务尝试恢复并核对触发模式。
 
 ## 扩展与移除
 
@@ -56,12 +60,26 @@
 
 | 操作 | 参数 / 单位 / 范围 | 作用域 | 方向 | 额外确认 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| `channel_enabled` | 无 | 通道 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `scale` | 无 | 通道 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `offset` | 无 | 通道 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `timebase` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `time_position` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
-| `trigger_mode` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
+| `channel_enabled` | value: enum  ON/OFF | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `scale` | value: number V/div [1e-06, 100000.0] | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `offset` | value: number V [None, None] | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `coupling` | value: enum  A1M/D1M/D50/GND | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `probe_attenuation` | value: number ratio 1/2/5/10/20/25/50/100/200/500/1000/10000 | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `trigger_level` | value: number V [None, None] | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `trigger_slope` | value: enum  POS/NEG | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `timebase` | value: number s/div [1e-12, 1000] | 整机 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `time_position` | value: number s [None, None] | 整机 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `record_length` | value: integer  [1000, 10000000] | 整机 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `trigger_mode` | value: enum  AUTO/NORM/SINGLE/STOP | 整机 | 读/写 | 需要 | 软件已实现；实测按资产查证 |
+| `trigger_source` | value: enum  C1/C2/C3/C4 | 整机 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `averages` | value: integer  [1, 1024] | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `bandwidth_limit` | value: enum  FULL/20MHZ/200MHZ | 通道 | 读/写 | 无需 | 软件已实现；实测按资产查证 |
+| `run` | 无 | 整机 | /写 | 需要 | 软件已实现；实测按资产查证 |
+| `stop` | 无 | 整机 | /写 | 需要 | 软件已实现；实测按资产查证 |
+| `single` | 无 | 整机 | /写 | 需要 | 软件已实现；实测按资产查证 |
+| `trigger_setup` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
+| `memory_mode` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
+| `sample_rate` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `transfer_format` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `byte_order` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |
 | `waveform_setup` | 无 | 整机 | 读 | 无需 | 软件已实现；实测按资产查证 |

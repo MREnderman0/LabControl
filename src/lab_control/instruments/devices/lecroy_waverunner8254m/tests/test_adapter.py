@@ -42,9 +42,25 @@ def snapshot(channels, *, enabled=b"ON", dt=b"1 MS"):
         + [(f"C{ch}:VDIV?", b"50 MV") for ch in channels]
         + [(f"C{ch}:OFST?", b"0 V") for ch in channels]
         + [
+            (f"C{ch}:{cmd}?", reply)
+            for cmd, reply in (("CPL", b"D1M"), ("ATTN", b"1"), ("TRLV", b"0 V"), ("TRSL", b"POS"))
+            for ch in channels
+        ]
+        + [
             ("TDIV?", dt),
             ("TRDL?", b"0 S"),
+            ("MSIZ?", b"10K"),
             ("TRMD?", b"AUTO"),
+        ]
+        + [
+            (f"VBS? 'return=app.Acquisition.C{ch}.{path}'", value)
+            for path, value in (("AverageSweeps", b"1"), ("BandwidthLimit", b"Full"))
+            for ch in channels
+        ]
+        + [
+            ("TRSE?", b"TRSE EDGE,SR,C2,HT,OFF"),
+            ("VBS? 'return=app.Acquisition.Horizontal.SmartMemory'", b"FixedSampleRate"),
+            ("VBS? 'return=app.Acquisition.Horizontal.SamplingRate'", b"1000"),
             ("CFMT?", b"DEF9,BYTE,BIN"),
             ("CORD?", b"LO"),
             ("WFSU?", b"SP,0,NP,0,FP,0,SN,0"),
@@ -95,10 +111,10 @@ def test_reject_invalid_frame_without_replaying_commands(failure):
     assert wire.history.count(query) == int(failure != "disabled")
 
 
-def test_writes_and_initiation_rejected_before_io():
+def test_invalid_setting_and_unsequenced_initiation_rejected_before_io():
     adapter, wire = scope([])
     with pytest.raises(DeviceError):
-        adapter.apply(DeviceCommand("scale", {"value": 0.2}))
+        adapter.apply(DeviceCommand("scale", {"value": -0.2}))
     with pytest.raises(DeviceError):
         adapter.acquire(AcquisitionRequest("waveform", initiate=True, confirmed=True))
     assert wire.history == ["*IDN?"]

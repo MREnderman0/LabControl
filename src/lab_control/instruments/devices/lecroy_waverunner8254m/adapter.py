@@ -1,4 +1,4 @@
-"""Read the displayed single-sweep waveforms without changing the panel or arming the scope."""
+"""WaveRunner 8254M analog controls, native Single and displayed-waveform acquisition."""
 
 from dataclasses import replace
 from typing import Any
@@ -11,18 +11,30 @@ from lab_control.domain.instruments import (
     utc_now,
 )
 from lab_control.domain.oscilloscope import ScopeDisplay
-from lab_control.instruments.base import ScpiAdapter
 from lab_control.instruments.common.lecroy_waveform import waveform
+from lab_control.instruments.scpi_single import LecroySingle
+
+from .control import PanelControl
 
 # The shared decoder accepts up to ten million samples per channel (BYTE or WORD).
 MAX_REPLY_BYTES = 20_000_000 + 65536
 
 
-class WaveRunner8254MAdapter(ScpiAdapter):
+class WaveRunner8254MAdapter(LecroySingle, PanelControl):
+    def single_count(self, channels):
+        if self.identity is None:
+            raise DeviceError("Identify the scope before Single", "identity_required")
+        if any(ch not in self.profile.channels for ch in channels):
+            raise Unsupported("Single requires analog channels C1–C4")
+        if any(self.read("channel_enabled", ch) != "ON" for ch in channels):
+            raise Unsupported("Selected Single channel is disabled on the scope")
+        return super().single_count(channels)
+
     def _snapshot(self, channels: tuple[int, ...]) -> dict[str, Any]:
         return {
             f"{ch}.{name}": self.read(name, ch)
             for name, command in self.profile.commands.items()
+            if command.capability.readable and name not in {"trigger_source"}
             for ch in (channels if command.capability.channel_scoped else (1,))
         }
 
@@ -36,7 +48,7 @@ class WaveRunner8254MAdapter(ScpiAdapter):
             or request.waveform_extent == "memory"
             or any(ch not in self.profile.channels for ch in request.channels)
         ):
-            raise Unsupported("Only passive displayed C1–C4 waveforms are supported")
+            raise Unsupported("Use the Single action to arm, or read displayed C1–C4 waveforms")
         before = self._snapshot(request.channels)
         if any(before[f"{ch}.channel_enabled"] != "ON" for ch in request.channels):
             raise Unsupported("Selected waveform channel is disabled on the scope")

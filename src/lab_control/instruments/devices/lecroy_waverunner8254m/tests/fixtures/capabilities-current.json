@@ -1,0 +1,769 @@
+{
+  "capabilities": {
+    "category": "oscilloscope",
+    "channels": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "operations": [
+      {
+        "name": "channel_enabled",
+        "parameters": {
+          "value": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "ON",
+              "OFF"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "C{ch}:TRA",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "scale",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "V/div",
+            "minimum": 1e-06,
+            "maximum": 100000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "C{ch}:VDIV",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "offset",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "V",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "C{ch}:OFST",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "coupling",
+        "parameters": {
+          "value": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "A1M",
+              "D1M",
+              "D50",
+              "GND"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "C{ch}:CPL",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "probe_attenuation",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "ratio",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "1",
+              "2",
+              "5",
+              "10",
+              "20",
+              "25",
+              "50",
+              "100",
+              "200",
+              "500",
+              "1000",
+              "10000"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "C{ch}:ATTN",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "trigger_level",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "V",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "C{ch}:TRLV",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "trigger_slope",
+        "parameters": {
+          "value": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "POS",
+              "NEG"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "C{ch}:TRSL",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "timebase",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "s/div",
+            "minimum": 1e-12,
+            "maximum": 1000,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "TDIV",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "time_position",
+        "parameters": {
+          "value": {
+            "kind": "number",
+            "unit": "s",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "TRDL",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "record_length",
+        "parameters": {
+          "value": {
+            "kind": "integer",
+            "unit": "",
+            "minimum": 1000,
+            "maximum": 10000000,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "MSIZ",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "trigger_mode",
+        "parameters": {
+          "value": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "AUTO",
+              "NORM",
+              "SINGLE",
+              "STOP"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "TRMD",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "trigger_source",
+        "parameters": {
+          "value": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "C1",
+              "C2",
+              "C3",
+              "C4"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "TRSE EDGE,SR,",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "averages",
+        "parameters": {
+          "value": {
+            "kind": "integer",
+            "unit": "",
+            "minimum": 1,
+            "maximum": 1024,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "AverageSweeps",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "bandwidth_limit",
+        "parameters": {
+          "value": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "FULL",
+              "20MHZ",
+              "200MHZ"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": true,
+        "writable": true,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "BandwidthLimit",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "run",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "TRMD AUTO",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "stop",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "TRMD STOP",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "single",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "TRMD SINGLE",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "trigger_setup",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "TRSE?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "memory_mode",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "VBS? 'return=app.Acquisition.Horizontal.SmartMemory'",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "sample_rate",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "VBS? 'return=app.Acquisition.Horizontal.SamplingRate'",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "transfer_format",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "CFMT?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "byte_order",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "CORD?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "waveform_setup",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+        "section": "WFSU?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "lecroy.8254m",
+    "manufacturer": [
+      "LECROY"
+    ],
+    "models": [
+      "WaveRunner8254M",
+      "8254M"
+    ],
+    "category": "oscilloscope",
+    "channels": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "source": "https://cdn.teledynelecroy.com/files/manuals/maui-remote-control-and-automation-manual.pdf",
+    "revision": "MAUI Remote Control, waveform transfer and WAVEDESC",
+    "status": [
+      "channel_enabled",
+      "scale",
+      "offset",
+      "coupling",
+      "probe_attenuation",
+      "trigger_level",
+      "trigger_slope",
+      "timebase",
+      "time_position",
+      "record_length",
+      "trigger_mode",
+      "trigger_source",
+      "averages",
+      "bandwidth_limit",
+      "trigger_setup",
+      "memory_mode",
+      "sample_rate",
+      "transfer_format",
+      "byte_order",
+      "waveform_setup"
+    ],
+    "identity_query": "*IDN?",
+    "error_query": "",
+    "acquisition": "lecroy",
+    "channel_limits": {}
+  },
+  "commands": {
+    "channel_enabled": {
+      "writes": [
+        "C{ch}:TRA {value}"
+      ],
+      "query": "C{ch}:TRA?",
+      "select": [],
+      "compare": true
+    },
+    "scale": {
+      "writes": [
+        "C{ch}:VDIV {value}"
+      ],
+      "query": "C{ch}:VDIV?",
+      "select": [],
+      "compare": true
+    },
+    "offset": {
+      "writes": [
+        "C{ch}:OFST {value}"
+      ],
+      "query": "C{ch}:OFST?",
+      "select": [],
+      "compare": true
+    },
+    "coupling": {
+      "writes": [
+        "C{ch}:CPL {value}"
+      ],
+      "query": "C{ch}:CPL?",
+      "select": [],
+      "compare": true
+    },
+    "probe_attenuation": {
+      "writes": [
+        "C{ch}:ATTN {value}"
+      ],
+      "query": "C{ch}:ATTN?",
+      "select": [],
+      "compare": true
+    },
+    "trigger_level": {
+      "writes": [
+        "C{ch}:TRLV {value}"
+      ],
+      "query": "C{ch}:TRLV?",
+      "select": [],
+      "compare": true
+    },
+    "trigger_slope": {
+      "writes": [
+        "C{ch}:TRSL {value}"
+      ],
+      "query": "C{ch}:TRSL?",
+      "select": [],
+      "compare": true
+    },
+    "timebase": {
+      "writes": [
+        "TDIV {value}"
+      ],
+      "query": "TDIV?",
+      "select": [],
+      "compare": true
+    },
+    "time_position": {
+      "writes": [
+        "TRDL {value}"
+      ],
+      "query": "TRDL?",
+      "select": [],
+      "compare": true
+    },
+    "record_length": {
+      "writes": [
+        "MSIZ {value}"
+      ],
+      "query": "MSIZ?",
+      "select": [],
+      "compare": true
+    },
+    "trigger_mode": {
+      "writes": [
+        "TRMD {value}"
+      ],
+      "query": "TRMD?",
+      "select": [],
+      "compare": true
+    },
+    "trigger_source": {
+      "writes": [
+        "TRSE EDGE,SR,{value}"
+      ],
+      "query": "TRSE?",
+      "select": [],
+      "compare": true
+    },
+    "averages": {
+      "writes": [
+        "VBS 'app.Acquisition.C{ch}.AverageSweeps={value}'"
+      ],
+      "query": "VBS? 'return=app.Acquisition.C{ch}.AverageSweeps'",
+      "select": [],
+      "compare": true
+    },
+    "bandwidth_limit": {
+      "writes": [
+        "VBS 'app.Acquisition.C{ch}.BandwidthLimit=\"{value}\"'"
+      ],
+      "query": "VBS? 'return=app.Acquisition.C{ch}.BandwidthLimit'",
+      "select": [],
+      "compare": true
+    },
+    "run": {
+      "writes": [
+        "TRMD AUTO"
+      ],
+      "query": "TRMD?",
+      "select": [],
+      "compare": true
+    },
+    "stop": {
+      "writes": [
+        "TRMD STOP"
+      ],
+      "query": "TRMD?",
+      "select": [],
+      "compare": true
+    },
+    "single": {
+      "writes": [
+        "TRMD SINGLE"
+      ],
+      "query": "TRMD?",
+      "select": [],
+      "compare": true
+    },
+    "trigger_setup": {
+      "writes": [],
+      "query": "TRSE?",
+      "select": [],
+      "compare": false
+    },
+    "memory_mode": {
+      "writes": [],
+      "query": "VBS? 'return=app.Acquisition.Horizontal.SmartMemory'",
+      "select": [],
+      "compare": false
+    },
+    "sample_rate": {
+      "writes": [],
+      "query": "VBS? 'return=app.Acquisition.Horizontal.SamplingRate'",
+      "select": [],
+      "compare": false
+    },
+    "transfer_format": {
+      "writes": [],
+      "query": "CFMT?",
+      "select": [],
+      "compare": false
+    },
+    "byte_order": {
+      "writes": [],
+      "query": "CORD?",
+      "select": [],
+      "compare": false
+    },
+    "waveform_setup": {
+      "writes": [],
+      "query": "WFSU?",
+      "select": [],
+      "compare": false
+    }
+  }
+}

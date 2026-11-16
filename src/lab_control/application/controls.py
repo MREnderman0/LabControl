@@ -91,6 +91,7 @@ trigger_sweep=触发运行方式
 vertical_position=垂直显示位置
 time_reference=水平参考位置
 horizontal_divisions=水平格数
+memory_mode=采集内存模式
 record_length_auto=自动采集点数
 acquisition_state=采集状态
 polarity=通道极性
