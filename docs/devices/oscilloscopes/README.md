@@ -10,4 +10,5 @@
 | RIGOL DS1202Z（待确认后缀）/ DS1202Z-E | DS1202Z-E：USB / LAN VISA | [型号说明](rigol-ds1202z.md) |
 | Teledyne LeCroy WaveRunner 9254 | LAN VICP（1861）/ VISA VXI-11 或 USBTMC | [型号说明](waverunner-9254.md) |
 | Teledyne LeCroy WaveRunner 9404M | LAN PyVISA/VXI-11（仪器选择 LXI） | [型号说明](waverunner-9404m.md) |
+| Teledyne LeCroy WaveRunner 8254M | LAN / VICP（TCP/IP）或 VXI-11（LXI） | [型号说明](waverunner-8254m.md) |
 | RIGOL DHO924 | LAN PyVISA / VISA SOCKET | [型号说明](rigol-dho924.md) |

@@ -61,6 +61,7 @@
 | GW Instek GPD-4303S | `gwinstek.gpd4303s` | USB 虚拟串口；优先 PyVISA ASRL，9600 baud / 8N1 / LF | [卡片](devices/power-supplies/gpd-4303s.md) |
 | RIGOL DSA815 | `rigol.dsa815` | LAN / USB；优先 PyVISA | [卡片](devices/spectrum-analyzers/rigol-dsa815.md) |
 | Teledyne LeCroy WaveRunner 9404M | `lecroy.9404m` | LAN PyVISA/VXI-11（仪器选择 LXI） | [卡片](devices/oscilloscopes/waverunner-9404m.md) |
+| Teledyne LeCroy WaveRunner 8254M | `lecroy.8254m` | LAN / VICP（TCP/IP）或 VXI-11（LXI） | [卡片](devices/oscilloscopes/waverunner-8254m.md) |
 | RIGOL DHO924 | `rigol.dho924` | LAN PyVISA / VISA SOCKET | [卡片](devices/oscilloscopes/rigol-dho924.md) |
 | R&S FPH02 / FPH13 | `rs.fph` | LAN；优先 PyVISA | [卡片](devices/spectrum-analyzers/rs-fph.md) |
 | 思仪 4959E 微波综合测试仪 | `ceyear.4959e` | LAN / VXI-11 | [卡片](devices/spectrum-analyzers/ceyear-4959e.md) |

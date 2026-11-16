@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from lab_control.storage.hardware_records import resource_protocol
+from lab_control.storage.hardware_records import resource_protocol, validate
 
 MARKER = "<!-- hardware-documents: structured-v1 -->"
 COMMON = frozenset(
@@ -104,12 +104,18 @@ def collect(root: Path) -> list[dict[str, Any]]:
     for path in root.glob("*/*/summary.json"):
         if not path.parent.name[:4].isdigit():
             continue
-        item = json.loads(path.read_text(encoding="utf-8"))
-        item.update(
-            source_folder=str(path.parent.resolve()),
-            batch=path.parent.name,
-            asset_directory=path.parent.parent.name,
-        )
+        location = {
+            "source_folder": str(path.parent.resolve()),
+            "batch": path.parent.name,
+            "asset_directory": path.parent.parent.name,
+        }
+        item = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(item, dict) or validate(item):
+            # Legacy batches also used the filename summary.json for raw stage results.
+            # Keep their evidence link until the model's offline converter supplies a v1 summary.
+            rows.setdefault(location["source_folder"], {**location, "interface": "待核对", "items": []})
+            continue
+        item.update(location)
         # Imported summaries may reflect more recent converter fixes. Prefer them
         # until the raw batch has actually changed.
         old = rows.get(item["source_folder"])

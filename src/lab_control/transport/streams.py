@@ -193,10 +193,25 @@ class VicpTransport(TcpSocketTransport):
     @synchronized
     @measured("read")
     def read(self) -> bytes:
+        return self._read_message(MAX_MESSAGE)
+
+    @synchronized
+    @measured("query")
+    def query_binary(self, payload: bytes | str, max_bytes: int) -> bytes:
+        if not 0 < max_bytes <= MAX_MESSAGE:
+            raise DeviceError("Invalid VICP receive budget", "invalid_parameter")
+        try:
+            self.write(payload)
+            return self._read_message(max_bytes)
+        except Exception:
+            self.close()
+            raise
+
+    def _read_message(self, max_bytes: int) -> bytes:
         data = bytearray()
         while True:
             flags, version, _seq, reserved, length = struct.unpack(">BBBBI", self.reader.exact(8))
-            if version != 1 or reserved != 0 or length > MAX_MESSAGE - len(data):
+            if version != 1 or reserved != 0 or length > max_bytes - len(data):
                 raise DeviceError("Invalid VICP header", "parse_error")
             segment = self.reader.exact(length)
             if flags & 0x80:

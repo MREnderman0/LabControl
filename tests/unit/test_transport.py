@@ -67,7 +67,13 @@ def test_real_socket_stream_and_vicp_packets():
         [struct.pack(">BBBBI", 0x80, 1, 1, 0, 2), b"AB", struct.pack(">BBBBI", 0x81, 1, 1, 0, 2), b"CD"]
     )
     vicp.reader = BufferedReader(lambda count: next(chunks))
-    assert vicp.read() == b"ABCD"
+    assert vicp.query_binary("C1:WF? ALL", 4) == b"ABCD"
+    # Reject a segmented transfer before consuming an over-budget payload.
+    chunks = iter([struct.pack(">BBBBI", 0x80, 1, 2, 0, 2), b"AB", struct.pack(">BBBBI", 0x81, 1, 2, 0, 3)])
+    vicp.reader = BufferedReader(lambda count: next(chunks))
+    with pytest.raises(DeviceError, match="Invalid VICP header"):
+        vicp.query_binary("C1:WF? ALL", 4)
+    assert len(sent) == 3
 
 
 def test_manager_not_closed_during_enumeration_or_live_handle():

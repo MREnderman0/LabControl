@@ -1,0 +1,14 @@
+{
+  "fixture_origin": "Synthetic readback based on the MAUI command reference",
+  "adapter": "lecroy.8254m",
+  "access": "read",
+  "operation": "scale",
+  "channel": 2,
+  "exchanges": [
+    [
+      "C2:VDIV?",
+      "C2:VDIV 50 MV"
+    ]
+  ],
+  "expected": 0.05
+}

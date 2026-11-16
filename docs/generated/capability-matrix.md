@@ -33,6 +33,7 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 | GW Instek GPD-4303S | `gwinstek.gpd4303s` | 10 | power | [型号卡片](../devices/power-supplies/gpd-4303s.md) |
 | RIGOL DSA815 | `rigol.dsa815` | 45 | dsa | [型号卡片](../devices/spectrum-analyzers/rigol-dsa815.md) |
 | Teledyne LeCroy WaveRunner 9404M | `lecroy.9404m` | 23 | lecroy | [型号卡片](../devices/oscilloscopes/waverunner-9404m.md) |
+| Teledyne LeCroy WaveRunner 8254M | `lecroy.8254m` | 9 | lecroy | [型号卡片](../devices/oscilloscopes/waverunner-8254m.md) |
 | RIGOL DHO924 | `rigol.dho924` | 36 | dho924 | [型号卡片](../devices/oscilloscopes/rigol-dho924.md) |
 | R&S FPH02 / FPH13 | `rs.fph` | 35 | fph | [型号卡片](../devices/spectrum-analyzers/rs-fph.md) |
 | 思仪 4959E 微波综合测试仪 | `ceyear.4959e` | 20 | spectrum | [型号卡片](../devices/spectrum-analyzers/ceyear-4959e.md) |

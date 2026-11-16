@@ -13,6 +13,7 @@ from pathlib import Path
 
 SMOKE = r"""
 import importlib
+import importlib.util
 import json
 import socket
 import sys
@@ -47,7 +48,13 @@ for definition in registry.DEVICE_DEFINITIONS.values():
     assert not transport.history
     for file in ("README.md", "hardware/README.md", "hardware/records.py", "tests/fixtures/control.json", "tests/fixtures/capabilities-before.json"):
         assert (definition.root / file).is_file(), file
-    importlib.import_module("lab_control.instruments.devices." + definition.root.name + ".hardware.readonly")
+    hardware = "lab_control.instruments.devices." + definition.root.name + ".hardware"
+    if importlib.util.find_spec(hardware + ".readonly") is not None:
+        importlib.import_module(hardware + ".readonly")
+    else:
+        # Some packages expose the registered read-only check from hardware.verify.
+        assert callable(definition.readonly_check), definition.adapter_id
+        assert callable(importlib.import_module(hardware + ".verify").verify_readonly)
     records = importlib.import_module("lab_control.instruments.devices." + definition.root.name + ".hardware.records")
     from lab_control.storage.hardware_records import validate
     summary = records.summarize({"stages": {"physical_output": "not_tested"}})

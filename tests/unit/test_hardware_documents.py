@@ -143,6 +143,30 @@ def test_legacy_sources_readonly_and_unverified_identity_not_promoted(tmp_path):
     assert not (root / "Unknown-UNKNOWN/connection-status.md").exists()
 
 
+def test_raw_legacy_summary_does_not_block_other_assets_or_override_import(tmp_path):
+    folder = make_batch(tmp_path, "Scope", "TEST-A", "2026-01-01-control")
+    legacy = tmp_path / "Old" / "2026-01-02-batch"
+    legacy.mkdir(parents=True)
+    path = legacy / "summary.json"
+    raw = b'{"stages":{"waveform":"passed"}}'
+    path.write_bytes(raw)
+    update_documents(tmp_path)
+    assert "待核对" in (tmp_path / "index.md").read_text(encoding="utf-8")
+    assert (folder.parent / "connection-status.md").exists()
+    assert not (legacy.parent / "connection-status.md").exists()
+
+    from lab_control.storage.hardware_documents import collect
+
+    imported = next(row for row in collect(tmp_path) if row["asset_directory"] == "Scope-TEST-A")
+    imported.update(source_folder=str(legacy), asset_directory="Old", batch=legacy.name)
+    summaries = tmp_path / "overview/summaries"
+    summaries.mkdir(exist_ok=True)
+    (summaries / "old.json").write_text(json.dumps(imported), encoding="utf-8")
+    (summaries.parent / "manifest.json").write_text('{"summaries":["old.json"]}', encoding="utf-8")
+    assert next(row for row in collect(tmp_path) if row["source_folder"] == str(legacy)) == imported
+    assert path.read_bytes() == raw
+
+
 def test_protocols_do_not_share_qualification_and_asset_alias_preserves_notes(tmp_path):
     vxi = make_batch(
         tmp_path,

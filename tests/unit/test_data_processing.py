@@ -106,6 +106,7 @@ def test_qualified_model_processing_profiles_are_registered():
         "keysight.3458a": "scalar",
         "keysight.53220a": "scalar",
         "lecroy.9254": "frames",
+        "lecroy.8254m": "frames",
         "lecroy.9404m": "frames",
         "microchip.53100a": "frames",
         "rigol.dg5504pro": "scalar",

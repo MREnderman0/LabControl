@@ -76,6 +76,25 @@ class QueryOnlyTransport:
         self.inner.close()
 
 
+class BinaryQueryOnlyTransport(QueryOnlyTransport):
+    """Preserve the real transport's bounded reader and the exact reply for offline checks."""
+
+    def query_binary(self, payload: bytes | str, max_bytes: int) -> bytes:
+        if not isinstance(payload, str) or payload not in self.allowed:
+            raise DeviceError("Read-only verification forbids this command", "unsupported")
+        self.record("tx", payload)
+        try:
+            raw = self.inner.query_binary(payload, max_bytes)  # type: ignore[attr-defined]
+        except Exception as exc:
+            self.record("error", str(exc))
+            raise
+        digest = hashlib.sha256(raw).hexdigest()
+        name = f"reply-{digest}.bin"
+        (self.log.parent / name).write_bytes(raw)
+        self.record("rx", f"{len(raw)} bytes, sha256={digest}, file={name}")
+        return raw
+
+
 def record_trace(batch: MeasurementBatch, folder: Path) -> list[dict[str, Any]]:
     from lab_control.storage.recording import SegmentWriter, read_frames
 
@@ -136,6 +155,7 @@ def verify(
     *,
     expected_model: str = "",
     capture_request: Callable[[ScpiAdapter], AcquisitionRequest] | None = None,
+    audit_transport: type[QueryOnlyTransport] = QueryOnlyTransport,
     root: Path | None = None,
     input_condition: str = "",
     duration: float = 60,
@@ -221,7 +241,7 @@ def verify(
             if definition.adapter_type is None or not isinstance(adapter, definition.adapter_type):
                 adapter.close()
                 raise DeviceError("Model factory mismatch", "identity_conflict")
-            adapter.transport = QueryOnlyTransport(adapter.transport, allowed, transcript)
+            adapter.transport = audit_transport(adapter.transport, allowed, transcript)
             return adapter
 
         def probe(candidate):
@@ -319,6 +339,7 @@ def verify(
             "unsupported",
             "waveform_unavailable",
             "process_busy",
+            "remote_interface_mismatch",
             "acquisition_setup_blocked",
             "driver_missing",
             "connection_failed",
@@ -391,6 +412,7 @@ def main(
     record_summary: Callable[[Path], None] | None = None,
     *,
     capture_request: Callable[[ScpiAdapter], AcquisitionRequest] | None = None,
+    audit_transport: type[QueryOnlyTransport] = QueryOnlyTransport,
 ) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -425,6 +447,7 @@ def main(
         extra_queries,
         record_summary=record_summary,
         capture_request=capture_request,
+        audit_transport=audit_transport,
     )
     print(folder, flush=True)
     print(json.dumps(result["stages"], ensure_ascii=False), flush=True)

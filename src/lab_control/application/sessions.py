@@ -308,6 +308,11 @@ class SessionManager:
                 **getattr(adapter, "capability_details", {}),
                 "configured_options": list(session.config.options),
                 **(
+                    {"single_acquisition": callable(getattr(adapter, "single_acquisition", None))}
+                    if schema.category == "oscilloscope"
+                    else {}
+                ),
+                **(
                     {"capability_revision": adapter.capability_revision}
                     if hasattr(adapter, "capability_revision")
                     else {}

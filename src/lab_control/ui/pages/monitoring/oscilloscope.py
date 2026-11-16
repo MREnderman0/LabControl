@@ -455,6 +455,8 @@ class OscilloscopeMonitoringPage(QWidget):
         self.single_action.setEnabled(
             bool(
                 connected
+                and snapshot
+                and snapshot.details.get("single_acquisition", True)
                 and self.controls
                 and self.controls.channels()
                 and not busy
