@@ -74,9 +74,10 @@ def _envelope(x: np.ndarray, y: np.ndarray, target: int = 12000) -> tuple[np.nda
     return np.asarray(xx), np.asarray(yy)
 
 
-def _ticks(lo: float, hi: float) -> np.ndarray:
-    step = 10 ** math.floor(math.log10((hi - lo) / 4))
-    step *= next(value for value in (1, 2, 2.5, 5, 10) if step * value >= (hi - lo) / 4)
+def _ticks(lo: float, hi: float, intervals: int = 4) -> np.ndarray:
+    minimum_step = (hi - lo) / intervals
+    step = 10 ** math.floor(math.log10(minimum_step))
+    step *= next(value for value in (1, 2, 2.5, 5, 10) if step * value >= minimum_step)
     return np.arange(math.ceil(lo / step), math.floor(hi / step) + 1) * step
 
 
@@ -84,6 +85,29 @@ def axis_ticks(lo, hi, log):
     if log and hi - lo >= 1:
         return range(math.ceil(lo), math.floor(hi) + 1, max(1, math.ceil((hi - lo) / 7)))
     return _ticks(lo, hi)
+
+
+def _frequency_ticks(lo, hi, width, metrics):
+    """Place ticks in Hz coordinates and label them in one engineering unit."""
+    magnitude = max(abs(lo), abs(hi))
+    scale, unit = next(
+        ((s, u) for s, u in ((1e9, "GHz"), (1e6, "MHz"), (1e3, "kHz")) if magnitude >= s),
+        (1.0, "Hz"),
+    )
+    if lo == hi:
+        return unit, [(lo, np.format_float_positional(lo / scale, trim="-"))]
+    for intervals in (8, 6, 4, 2):
+        values = _ticks(lo, hi, intervals)
+        # One extra decimal covers the 2.5 steps. Keep narrow sweeps around
+        # a high carrier distinguishable without exponential notation.
+        digits = max(1, 1 - math.floor(math.log10((hi - lo) / intervals / scale)))
+        labels = [f"{value / scale:.{digits}f}".rstrip("0").rstrip(".") for value in values]
+        if len(values) < 2:
+            break
+        spacing = (values[1] - values[0]) / (hi - lo) * width
+        if spacing >= max(metrics.horizontalAdvance(label) for label in labels) + 8:
+            break
+    return unit, list(zip(values, labels, strict=True))
 
 
 def _limits(lo: float, hi: float) -> tuple[float, float]:
@@ -160,7 +184,9 @@ def export_figure(
         valid = [
             (x[np.isfinite(x) & np.isfinite(y)], y[np.isfinite(x) & np.isfinite(y)]) for _, x, y in finite
         ]
-        xlo, xhi = _limits(min(float(x.min()) for x, _ in valid), max(float(x.max()) for x, _ in valid))
+        xmin = min(float(x.min()) for x, _ in valid)
+        xmax = max(float(x.max()) for x, _ in valid)
+        xlo, xhi = _limits(xmin, xmax)
         ylo, yhi = _limits(min(float(y.min()) for _, y in valid), max(float(y.max()) for _, y in valid))
         # Large carrier frequencies retain readable variation without duplicate tick labels.
         offset = float(valid[0][1][0]) if not log_y and max(abs(ylo), abs(yhi)) > (yhi - ylo) * 1e4 else 0.0
@@ -176,13 +202,19 @@ def export_figure(
         painter.setPen(QPen(QColor("#222222"), 0.65))
         painter.drawLine(chart.bottomLeft(), chart.bottomRight())
         painter.drawLine(chart.bottomLeft(), chart.topLeft())
-        for value in axis_ticks(xlo, xhi, log_x):
+        metrics = painter.fontMetrics()
+        if not log_x and x_label.endswith("(Hz)"):
+            unit, x_ticks = _frequency_ticks(xmin, xmax, xp(xmax) - xp(xmin), metrics)
+            x_label = x_label.removesuffix("(Hz)") + f"({unit})"
+        else:
+            x_ticks = [(v, f"{10.0**v if log_x else v:.5g}") for v in axis_ticks(xlo, xhi, log_x)]
+        for value, label in x_ticks:
             x = xp(value)
             painter.drawLine(QPointF(x, chart.bottom()), QPointF(x, chart.bottom() + 3))
+            label_width = metrics.horizontalAdvance(label) + 4
+            left = min(max(0, x - label_width / 2), width - label_width)
             painter.drawText(
-                QRectF(x - 28, chart.bottom() + 5, 56, 12),
-                Qt.AlignmentFlag.AlignHCenter,
-                f"{10.0**value if log_x else value:.5g}",
+                QRectF(left, chart.bottom() + 5, label_width, 12), Qt.AlignmentFlag.AlignHCenter, label
             )
         for delta in axis_ticks(ylo - offset, yhi - offset, log_y):
             y = yp(delta + offset)

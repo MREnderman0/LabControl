@@ -20,7 +20,7 @@ from lab_control.storage.processing_paths import filesystem_path
 from lab_control.storage.processing_results import ResultReader, plot_series
 from lab_control.storage.recording_catalog import linked, read_json
 
-FIGURE_VERSION = 4
+FIGURE_VERSION = 5
 LABELS = {
     "power": "Power",
     "frequency": "Frequency",
@@ -156,7 +156,9 @@ def generate_pngs(
         x_label = (
             "Elapsed time (s)"
             if info["kind"] == "scalar"
-            else {"nm": "Wavelength (nm)", "s": "Time (s)"}.get(axis, f"X ({axis})" if axis else "Point")
+            else {"Hz": "Frequency (Hz)", "nm": "Wavelength (nm)", "s": "Time (s)"}.get(
+                axis, f"X ({axis})" if axis else "Point"
+            )
         )
         relative = Path(f"CH{filename_part(str(group[3]))}") if separate and len(channels) > 1 else Path()
         if is_sequence:

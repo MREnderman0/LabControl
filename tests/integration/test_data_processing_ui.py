@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import xml.etree.ElementTree as ET
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -309,6 +310,37 @@ def test_navigation_offers_offline_tabs_without_connected_devices(qtbot, tmp_pat
         window.environment_panel.shutdown()
         window.bridge.worker.shutdown(wait=True)
         runtime.close()
+
+
+@pytest.mark.parametrize(
+    "bounds, unit, first, last",
+    [
+        ((0, 500), "Hz", "0", "500"),
+        ((0, 20_000), "kHz", "0", "20"),
+        ((0, 2_000_000), "MHz", "0", "2"),
+        ((2_399_999_000, 2_400_001_000), "GHz", "2.399999", "2.400001"),
+        ((100_000_000, 100_000_000), "MHz", "100", "100"),
+    ],
+)
+@pytest.mark.parametrize("width_mm", [89, 183])
+def test_exported_frequency_axis_labels(qapp, tmp_path, bounds, unit, first, last, width_mm):
+    output = tmp_path / "frequency.svg"
+    x = np.linspace(*bounds, num=5)
+    before = x.copy()
+    export_figure(output, [("CH 1", x, np.arange(5))], "频率 (Hz)", "幅度 (dBm)", width_mm=width_mm)
+    texts = [node.text for node in ET.parse(output).iter("{http://www.w3.org/2000/svg}text")]
+    assert f"频率 ({unit})" in "".join(texts)  # Qt may split the title across font runs.
+    # The X tick labels precede the Y labels in the exported vector figure.
+    labels = texts[: texts.index(last) + 1]
+    assert labels[0] == first
+    assert len(labels) == len(set(labels))
+    assert all("e" not in label.lower() for label in labels)
+    if unit == "MHz" and first == "0":
+        if width_mm == 183:
+            assert labels == ["0", "0.25", "0.5", "0.75", "1", "1.25", "1.5", "1.75", "2"]
+        else:
+            assert "1" in labels and 5 <= len(labels) <= 9
+    np.testing.assert_array_equal(x, before)
 
 
 @pytest.mark.parametrize("extension", ["png", "svg", "pdf"])
