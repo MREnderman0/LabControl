@@ -33,6 +33,10 @@ class MonitoringPlotItem(pg.PlotItem):
 
 
 class LivePlot(QWidget):
+    y_axis_label: str | None = None
+    canvas_type = PublicationPlotWidget
+    trace_view_type = TraceView
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -41,7 +45,7 @@ class LivePlot(QWidget):
         layout.addWidget(self.value)
         self.plot_item = MonitoringPlotItem(viewBox=PublicationViewBox())
         self.plot_item.fit_requested.connect(self.fit_current)
-        self.plot = PublicationPlotWidget(background="#131c21", plotItem=self.plot_item)
+        self.plot = self.canvas_type(background="#131c21", plotItem=self.plot_item)
         self.plot.showGrid(x=True, y=True, alpha=0.16)
         self.plot.addLegend(offset=(8, 8))
         self.plot.setMinimumSize(150, 170)
@@ -60,7 +64,7 @@ class LivePlot(QWidget):
         self.displayed_frame: MonitorFrame | None = None
         self.readout_context: tuple | None = None
         self.readout_quantities: tuple[str, ...] = ()
-        self.trace_view = TraceView(self.plot)
+        self.trace_view = self.trace_view_type(self.plot)
 
     def reset(self) -> None:
         self.plot.clear()
@@ -78,6 +82,9 @@ class LivePlot(QWidget):
         self.plot.enableAutoRange()
         self.value.clear()
         self.meta.setText("尚无数据")
+
+    def display_measurement(self, measurement):
+        return measurement
 
     def show_frame(self, frame: MonitorFrame, source: DataSource, channels: tuple[int, ...]) -> None:
         token = (
@@ -115,6 +122,8 @@ class LivePlot(QWidget):
                 return
             valid = False  # Preserve the existing "unknown" scalar display.
         self.last_token = token
+        if valid:
+            wanted = [self.display_measurement(m) for m in wanted]
         stable_trace = source.kind in {"spectrum", "waveform"}
         self.plot_item.one_shot_fit = stable_trace
         if stable_trace and valid:
@@ -174,17 +183,18 @@ class LivePlot(QWidget):
             self.curves[key].show()
             used.add(key)
             log_x = source.quantity in {"phase_noise", "am_noise", "stability"} and bool(np.all(x > 0))
+            y_label = self.y_axis_label or source.label
             axis_signature = (
                 axis_label,
                 axis_unit,
-                source.label,
+                y_label,
                 unit,
                 log_x,
                 source.quantity == "stability",
             )
             if axis_signature != self.axis_signature:
                 self.plot.setLabel("bottom", axis_label, units=axis_unit or None)
-                self.plot.setLabel("left", source.label, units=unit or None)
+                self.plot.setLabel("left", y_label, units=unit or None)
                 self.plot.setLogMode(x=log_x, y=source.quantity == "stability")
                 self.axis_signature = axis_signature
             digits = 12 if measurement.quantity == "frequency" else 6

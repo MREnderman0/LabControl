@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 
 import pyqtgraph as pg
@@ -12,14 +13,17 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QLabel,
+    QMenu,
     QPushButton,
     QVBoxLayout,
 )
 
-from lab_control.domain.instruments import Parameter, Quality
+from lab_control.domain.instruments import Parameter
 from lab_control.domain.spectrum import MarkerReading, SpectrumMarker, locate_marker
+from lab_control.domain.spectrum_display import display_values
 from lab_control.ui.pages.device_control.editors import ParameterEditor
 from lab_control.ui.pages.monitoring.plot import LivePlot
+from lab_control.ui.pages.monitoring.spectrum_view import SpectrumCanvas, SpectrumView
 
 
 def frequency_text(value: float) -> str:
@@ -109,7 +113,13 @@ class MarkerLabel(pg.TextItem):
 
 
 class SpectrumPlot(LivePlot):
+    trace_view: SpectrumView
+    y_axis_label = "幅度"
+    canvas_type = SpectrumCanvas
+    trace_view_type = SpectrumView
     edit_marker = Signal(int)
+    add_frequency = Signal(float)
+    save_frame = Signal(object)
     readings_changed = Signal()
 
     def __init__(self, parent=None) -> None:
@@ -119,16 +129,55 @@ class SpectrumPlot(LivePlot):
         self.overlays: dict[int, tuple[MarkerLine, MarkerLabel, Any]] = {}
         self.trace = None
         self.amplitude_unit = ""
+        self.save_enabled = False
+        self.plot.menu_requested.connect(self.open_menu)
+        self.plot_item.hideButtons()
         self.plot.setBackground("#111719")
         self.plot.getPlotItem().legend.hide()
         self.plot.getViewBox().sigRangeChanged.connect(self.position_labels)
 
     def reset(self) -> None:
+        for menu in self.plot.findChildren(QMenu):
+            menu.close()
         super().reset()
+        self.plot_item.hideButtons()
+        self.plot.disableAutoRange()
         self.overlays.clear()
         self.readings.clear()
         self.trace = None
         self.value.hide()
+
+    def build_menu(self, position):
+        menu = QMenu(self.plot)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        frame = self.displayed_frame
+        fit = menu.addAction("适应 Y 轴", self.fit_current)
+        restore = menu.addAction("恢复 Y 轴（全部）", self.trace_view.restore)
+        fit.setEnabled(frame is not None)
+        restore.setEnabled(frame is not None)
+        menu.addSeparator()
+        box = self.plot.getViewBox()
+        scene_pos = self.plot.mapToScene(position)
+        frequency = box.mapSceneToView(scene_pos).x()
+        marker = menu.addAction("在此频率添加标记")
+        marker.setEnabled(
+            bool(
+                self.trace
+                and self.trace.axis_unit == "Hz"
+                and box.rect().contains(box.mapFromScene(scene_pos))
+            )
+        )
+        marker.triggered.connect(lambda: self.add_frequency.emit(frequency))
+        menu.addSeparator()
+        save = menu.addAction("保存当前帧数据", lambda: self.save_frame.emit(frame))
+        save.setEnabled(frame is not None and self.save_enabled)
+        snapshot = self.plot.export_snapshot()
+        png = menu.addAction("导出 PNG", lambda: self.plot.save_image(snapshot))
+        png.setEnabled(frame is not None and bool(snapshot.curves))
+        return menu
+
+    def open_menu(self, position):
+        self.build_menu(position).popup(self.plot.viewport().mapToGlobal(position))
 
     def set_markers(self, markers: list[SpectrumMarker]) -> None:
         self.markers = list(markers)
@@ -152,21 +201,27 @@ class SpectrumPlot(LivePlot):
             self.overlays[marker.number] = (line, label, point)
         self.update_markers()
 
+    def display_measurement(self, measurement):
+        scale = measurement.metadata.get("spectrum_display")
+        if scale and scale["unit"] != measurement.unit:
+            measurement = replace(
+                measurement,
+                values=display_values(measurement.values, measurement.unit, scale),
+                unit=scale["unit"],
+            )
+        self.trace = measurement
+        return measurement
+
     def show_frame(self, frame, source, channels) -> None:
         previous = self.last_token
         super().show_frame(frame, source, channels)
         if self.last_token == previous:
             return
         self.meta.setToolTip(self.meta.text())
-        self.meta.setText("最新频谱 · " + frame.batch.timestamp[11:19])
-        self.trace = next(
-            (
-                m
-                for m in frame.batch.measurements
-                if m.channel in channels and m.quality in {Quality.GOOD, Quality.SIMULATED}
-            ),
-            None,
-        )
+        stamp = datetime.fromisoformat(frame.batch.timestamp).astimezone()
+        self.meta.setText(f"最新频谱 · {stamp:%H:%M:%S}")
+        if self.displayed_frame is None:
+            self.trace = None
         if self.trace and self.trace.metadata.get("axis_kind") == "transfer_sample_index":
             settings = self.trace.metadata.get("settings", {})
             start, stop = settings.get("start_frequency"), settings.get("stop_frequency")

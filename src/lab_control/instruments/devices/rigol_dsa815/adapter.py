@@ -19,7 +19,8 @@ from lab_control.domain.instruments import (
     ValidationError,
     utc_now,
 )
-from lab_control.instruments.base import ScpiAdapter
+from lab_control.domain.spectrum_display import panel_scale
+from lab_control.instruments.spectrum_panel import SpectrumPanelAdapter
 from lab_control.transport.diagnostics import parsing
 from lab_control.transport.scpi import scalar_query_message, scalar_response_fields
 
@@ -92,7 +93,7 @@ def agrees(operation: str, expected: Any, actual: Any) -> bool:
     )
 
 
-class Dsa815Adapter(ScpiAdapter):
+class Dsa815Adapter(SpectrumPanelAdapter):
     supports_live_acquisition = True
     supports_stream_acquisition = True
     acquisition_revision = "dsa815-acquisition-v6"
@@ -170,6 +171,7 @@ class Dsa815Adapter(ScpiAdapter):
         return values
 
     def invalidate_acquisition_context(self, reason: str) -> None:
+        super().invalidate_acquisition_context(reason)
         self._acquisition_context = None
         self._context_at = 0.0
         self._context_timestamp = ""
@@ -407,7 +409,12 @@ class Dsa815Adapter(ScpiAdapter):
             if name in batch.configuration and (batch.validation != "live" or name in LIVE_SETTINGS)
         )
 
-    def acquire(self, request: AcquisitionRequest) -> MeasurementBatch:
+    def read_panel_scale(self, config, unit):
+        mode = self.read_scale_mode("DISP:WIN:TRAC:Y:SPAC?")
+        span = 10 * self.scale_value("DISP:WIN:TRAC:Y:PDIV?") if mode == "log" else None
+        return panel_scale(unit, config["reference_level"], span_db=span)
+
+    def acquire_trace(self, request: AcquisitionRequest) -> MeasurementBatch:
         try:
             return self._acquire(request)
         except Exception:

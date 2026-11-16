@@ -53,34 +53,34 @@ def render(scale: str, output: Path) -> None:
         try:
             pump(0.8)
             assert page.plot.displayed_frame is not None
-            for cadence in ("fastest", "interval"):
-                page.timing.cadence.setCurrentIndex(page.timing.cadence.findData(cadence))
+            for interval in (0.0, 0.5):
+                page.interval.setValue(interval)
                 for width, height in ((1280, 760), (1440, 900)):
                     window.resize(width, height)
                     pump(0.65)
-                    fields = [page.timing.cadence, page.interval, page.timing.actual]
+                    fields = [page.record_button, page.interval]
                     centers = [f.geometry().center().y() for f in fields]
                     assert max(centers) - min(centers) <= 2
-                    assert len(page.timing.findChildren(QDoubleSpinBox)) == 1
-                    assert page.timing.actual.toolTip() == ""
+                    assert len(page.chart.findChildren(QDoubleSpinBox)) == 1
+                    assert page.actual.toolTip() == ""
                     assert window.width() == width and window.height() == height
                     for widget in fields:
                         position = widget.mapTo(window, QPoint(0, 0))
                         assert position.x() >= 0 and position.x() + widget.width() <= width
-                    name = f"spectrum-{cadence}-{width}x{height}-{scale}.png"
+                    name = f"spectrum-{interval:g}s-{width}x{height}-{scale}.png"
                     assert window.grab().save(str(output / name))
                     rows.append(
                         dict(
                             file=name,
                             logical_size=[width, height],
                             dpr=window.devicePixelRatioF(),
-                            cadence=cadence,
+                            interval=interval,
                             one_row=True,
                             numeric_fields=1,
                             tooltip="",
-                            options=page.timing.options(),
+                            options=page.interval.options(),
                             y_range=page.plot.plot.viewRange()[1],
-                            save_label=page.save_action.text(),
+                            actual=page.actual.text(),
                         )
                     )
             assert not (Path(root) / "data").exists()

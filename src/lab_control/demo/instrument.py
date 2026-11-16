@@ -375,6 +375,9 @@ class SimulatedInstrument:
                 x = np.linspace(center - span / 2, center + span / 2, request.points)
                 values = -95 + 65 * np.exp(-(((x - center) / (max(span, 1) * 0.05)) ** 2))
                 unit, axis_unit = "dBm", "Hz"
+                if request.spectrum_display:
+                    top = self._value(1, "reference_level", -10)
+                    metadata["spectrum_display"] = dict(lower=top - 100.0, upper=top, unit=unit)
                 if span == 0:
                     x = np.linspace(0, self._value(1, "sweep_time", 0.1), request.points)
                     values = -35 + 2 * np.sin(2 * np.pi * 30 * x)

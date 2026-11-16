@@ -3,13 +3,14 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtWidgets import QWidget
 
+from lab_control.application.acquisition_pipeline import SPECTRUM_INTERVAL
 from lab_control.application.catalog import instrument_category
 from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.pages.monitoring.dashboard import MonitoringDashboard
-from lab_control.ui.pages.monitoring.timing import MonitoringTiming, monitoring_options
+from lab_control.ui.pages.monitoring.timing import MonitoringTiming, SpectrumInterval, monitoring_options
 
 POLLING_ADAPTERS = sorted(
     key
@@ -28,9 +29,10 @@ def test_device_timing_survives_restarts_and_stays_isolated(tmp_path, qtbot, ada
                 runtime.add(ConnectionConfig(f"mock://startup/{index}", adapter, "mock"))
                 for index in range(2)
             ]
-            controller = SimpleNamespace(
-                runtime=runtime, records={r["id"]: r for r in runtime.inventory.all()}
-            )
+            parent = QWidget()
+            qtbot.addWidget(parent)
+            controller = WorkspaceController(runtime, parent)
+            controller.timer.stop()
             category = instrument_category(controller.records[keys[0]])
             default_interval = (
                 1 if category == "power_supply" else 10 if category == "optical_spectrometer" else 0.5
@@ -40,8 +42,11 @@ def test_device_timing_survives_restarts_and_stays_isolated(tmp_path, qtbot, ada
                 if category in {"power_supply", "oscilloscope", "spectrum_analyzer", "optical_spectrometer"}
                 else "fastest"
             )
-            widget = MonitoringTiming(controller)
-            qtbot.addWidget(widget)
+            if category == "spectrum_analyzer":
+                default_cadence = SPECTRUM_INTERVAL
+                widget = SpectrumInterval(controller, parent)
+            else:
+                widget = MonitoringTiming(controller, parent)
             for index, key in enumerate(keys):
                 widget.bind(key, "general")
                 interval, saved_cadence = expected.get(key, (default_interval, default_cadence))
@@ -51,12 +56,18 @@ def test_device_timing_survives_restarts_and_stays_isolated(tmp_path, qtbot, ada
                 if launch < 2:
                     interval = (5, 10, 60)[index + launch]
                     saved_cadence = "interval" if category == "power_supply" else cadence
-                    if category == "power_supply":
+                    if category == "spectrum_analyzer":
+                        saved_cadence = SPECTRUM_INTERVAL
+                        if cadence == "fastest":
+                            interval = (0, 0.01, 0.02)[index + launch]
+                        widget.setValue(interval)
+                    elif category == "power_supply":
                         widget.presets.setCurrentIndex(widget.presets.findData(interval))
                     else:
                         widget.interval.setValue(interval)
                         widget.cadence.setCurrentIndex(widget.cadence.findData(saved_cadence))
-                    widget.commit()
+                    if category != "spectrum_analyzer":
+                        widget.commit()
                     expected[key] = interval, saved_cadence
                 saved = runtime.repository.load_workspace(f"monitor-timing/general/{key}")
                 assert (saved["interval"], saved["cadence"]) == expected[key]
@@ -65,7 +76,7 @@ def test_device_timing_survives_restarts_and_stays_isolated(tmp_path, qtbot, ada
             widget.bind(keys[0], "general")
             assert widget.options()["interval"] == expected[keys[0]][0]
             assert not runtime.sessions.sessions and not runtime.monitoring.tasks
-            widget.deleteLater()
+            controller.close()
 
 
 @pytest.mark.parametrize(
@@ -124,16 +135,23 @@ def test_overview_restores_device_timing_before_legacy_card_value(
             runtime.monitoring.enable_settings_sync(False)
             try:
                 dashboard = MonitoringDashboard(controller, parent=parent)
-                timing = MonitoringTiming(controller, parent)
+                is_spectrum = instrument_category(controller.records[key]) == "spectrum_analyzer"
+                timing = (
+                    SpectrumInterval(controller, parent)
+                    if is_spectrum
+                    else MonitoringTiming(controller, parent)
+                )
                 timing.bind(key, "general")
                 card = dashboard.cards[key]
                 assert card.interval.value() == timing.options()["interval"] == expected
-                assert timing.options()["cadence"] == "interval"
+                assert timing.options()["cadence"] == (SPECTRUM_INTERVAL if is_spectrum else "interval")
                 assert not card.enabled.isChecked()
                 # Both editors must write the same persistent device preference.
                 card.interval.setValue(60)
                 assert timing.options()["interval"] == 60
-                if timing.power:
+                if is_spectrum:
+                    timing.setValue(10)
+                elif timing.power:
                     timing.presets.setCurrentIndex(timing.presets.findData(10))
                 else:
                     timing.interval.setValue(10)

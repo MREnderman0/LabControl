@@ -52,7 +52,11 @@ def merge_requests(requests: tuple[AcquisitionRequest, ...]) -> tuple[Acquisitio
             for channel in channels:
                 grouped[(*key, channel)] = replace(request, channels=(channel,))
         else:
-            grouped[key] = replace(request, channels=channels)
+            grouped[key] = replace(
+                request,
+                channels=channels,
+                spectrum_display=request.spectrum_display or bool(previous and previous.spectrum_display),
+            )
     return tuple(grouped.values())
 
 
@@ -142,10 +146,11 @@ class MonitoringService:
         preparation = None
         if batch is not None and not recording:
             raise ValidationError("A batch save context requires recording")
-        if not requests or not 0.05 <= interval <= 60 or mode not in WORKSPACE_MODES:
-            raise ValidationError("Choose data sources, a 0.05..60 s interval and a valid mode")
-        self.validate_intervals(interval, record_interval)
-        validate_cadence(interval, cadence)
+        if not requests or mode not in WORKSPACE_MODES:
+            raise ValidationError("Choose data sources and a valid mode")
+        self.validate_intervals(
+            interval, record_interval, cadence, spectrum=all(r.kind == "spectrum" for r in requests)
+        )
         Recording.validate_csv_interval(csv_interval)
         merged = merge_requests(requests)
         if any(request.waveform_extent == "memory" for request in merged):
@@ -449,18 +454,12 @@ class MonitoringService:
             return tuple(dict(r) for r in self.recording_results if r["id"] > cursor)
 
     @staticmethod
-    def validate_intervals(interval: float, record_interval: float | None) -> None:
-        if (
-            any(
-                isinstance(value, bool) or not isinstance(value, (int, float))
-                for value in (interval, record_interval)
-                if value is not None
-            )
-            or interval is None
-            or not 0.05 <= interval <= 60
-            or (record_interval is not None and not 0.05 <= record_interval <= 86400)
+    def validate_intervals(interval, record_interval, cadence=None, *, spectrum=False) -> None:
+        validate_cadence(interval, cadence, spectrum=spectrum)
+        if record_interval is not None and (
+            type(record_interval) not in (int, float) or not 0.05 <= record_interval <= 86400
         ):
-            raise ValidationError("Refresh interval must be 0.05..60 s; save interval must be 0.05..86400 s")
+            raise ValidationError("Save interval must be 0.05..86400 s")
 
     def set_intervals(
         self,
@@ -472,12 +471,16 @@ class MonitoringService:
         csv_interval: float | None = None,
     ) -> None:
         """Local scheduling only; does not start acquisition, recording, or device I/O."""
-        self.validate_intervals(interval, record_interval)
-        validate_cadence(interval, cadence)
         if csv_interval is not None:
             Recording.validate_csv_interval(csv_interval)
         with self.lock:
             task = self.tasks.get(device_id)
+            self.validate_intervals(
+                interval,
+                record_interval,
+                cadence,
+                spectrum=not task or all(r.kind == "spectrum" for r in task.requests),
+            )
             if task:
                 task.interval, task.record_interval = interval, record_interval
                 if cadence is not None:

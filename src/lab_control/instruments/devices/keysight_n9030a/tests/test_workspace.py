@@ -25,6 +25,8 @@ def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch):
         "POW:ATT?": b"10",
         "POW:ATT:AUTO?": b"0",
         "DISP:WIND:TRAC:Y:RLEV?": b"-20",
+        "DISP:WIND:TRAC:Y:SPAC?": b"LOG",
+        "DISP:WIND:TRAC:Y:PDIV?": b"5",
         "FREQ:STAR?": b"100000",
         "FREQ:STOP?": b"500000",
         "FREQ:CENT?": b"300000",
@@ -70,6 +72,7 @@ def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch):
             qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
             (trace,) = page.plot.displayed_frame.batch.measurements
             assert (trace.unit, trace.axis_unit, trace.axis[1], trace.values[1]) == ("dBm", "Hz", 150000, -47)
+            assert page.plot.plot.viewRange()[1] == [-70.0, -20.0]
             page.save()
             qtbot.waitUntil(lambda: bool(list(runtime.repository.data_root.rglob("samples.npz"))))
         finally:

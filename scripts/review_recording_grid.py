@@ -130,7 +130,7 @@ def render(output: Path, scale: str) -> None:
                 if category == "oscilloscope":
                     wait(lambda: len(page.controls.values) == len(page.controls.keys()))
                     assert page.controls.channels() == (1, 2, 3, 4)
-                page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
+                    page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
                 page.toggle_monitoring()
                 wait(lambda: page.plot.displayed_frame is not None)
                 if category == "oscilloscope":
@@ -165,7 +165,11 @@ def render(output: Path, scale: str) -> None:
                         else:
                             page = pages[location]
                             assert page.chart.property("recordingPhase") == phase
-                            tools = page.findChild(QToolButton, "curveTools")
+                            tools = (
+                                page.interval
+                                if location == "spectrum_analyzer"
+                                else page.findChild(QToolButton, "curveTools")
+                            )
                             assert page.record_button.geometry().right() < tools.geometry().left()
                             if location == "oscilloscope":
                                 page.plot.plot.plotItem.autoBtnClicked()

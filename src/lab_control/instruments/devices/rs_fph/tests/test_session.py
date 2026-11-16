@@ -42,6 +42,9 @@ class StateTransport:
         extra = {
             "*IDN?": f"Rohde&Schwarz,FPH,{self.product}/TEST,{self.firmware}".encode(),
             "*OPT?": self.options,
+            "DISP:TRAC1:Y:SPAC?": b"LOG",
+            "DISP:TRAC1:Y?": b"100",
+            "DISP:TRAC1:Y:RPOS?": b"7",
             "SYST:ERR?": b'0,"No error"',
         }
         if payload in extra:

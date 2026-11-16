@@ -74,12 +74,14 @@ def test_record_button_card_outline_switching_and_real_binary_drain(
     try:
         qtbot.waitUntil(ready, timeout=6000)
         assert not page.record_button.isEnabled()
-        tools = page.findChild(QToolButton, "curveTools")
-        assert page.record_button.geometry().right() < tools.geometry().left()
-        assert page.record_button.height() == tools.height() == 30
-        assert not any("记录" in action.text() for action in tools.menu().actions())
-        # Exercise user-stop drain, separately from the queue-full pause tests.
-        page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
+        if category == "spectrum_analyzer":
+            companion = page.interval
+        else:
+            companion = page.findChild(QToolButton, "curveTools")
+            assert not any("记录" in action.text() for action in companion.menu().actions())
+            page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
+        assert page.record_button.geometry().right() < companion.geometry().left()
+        assert page.record_button.height() == companion.height() == 30
         page.toggle_monitoring()
         qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
         window.controller.poll()
@@ -137,7 +139,8 @@ def test_record_button_card_outline_switching_and_real_binary_drain(
         assert "分析 CSV 已完成" in card.detail_state.text()
         assert str(recorder.folder) in card.detail_path.text()
         assert "已保存帧数" in card.detail_frames.text()
-        assert str(recorder.folder) in page.status.text()
+        detail = page.status.toolTip() if category == "spectrum_analyzer" else page.status.text()
+        assert str(recorder.folder) in detail
         assert (recorder.folder / "数据_00001.csv").is_file()
         runtime.monitoring.stop(key).result(5)
     finally:

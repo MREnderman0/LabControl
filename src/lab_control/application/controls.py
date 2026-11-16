@@ -455,6 +455,7 @@ class AcquisitionDefaults(TypedDict, total=False):
     duration: float | None
     sample_rate: float | None
     allow_setup: bool
+    spectrum_display: bool
 
 
 @dataclass(frozen=True)
@@ -518,7 +519,11 @@ def data_sources(config: ConnectionConfig) -> tuple[DataSource, ...]:
             sources.append(DataSource("streaming", "Streaming 波形", "streaming"))
         return tuple(sources)
     if category == "spectrum_analyzer":
-        return (DataSource("spectrum", "频谱 / 零跨度轨迹", "spectrum"),)
+        return (
+            DataSource(
+                "spectrum", "频谱 / 零跨度轨迹", "spectrum", request_defaults={"spectrum_display": True}
+            ),
+        )
     if category == "network_analyzer":
         return (
             DataSource("magnitude", "当前 S 参数幅度", "s_parameters", view="magnitude"),

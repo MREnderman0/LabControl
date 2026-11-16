@@ -177,8 +177,10 @@ def test_official_fph_page_applies_and_saves_trace_one(qtbot, tmp_path, monkeypa
             assert trace.axis_unit == "Hz" and trace.unit == "dBm" and len(trace.values) == 711
             np.testing.assert_array_equal(trace.axis, np.linspace(99e6, 101e6, 711))
             np.testing.assert_allclose(trace.values, np.linspace(-100, -20, 711), atol=1e-5)
-            qtbot.waitUntil(page.save_action.isEnabled)
-            page.save_action.trigger()
+            scale = trace.metadata["spectrum_display"]
+            assert scale["unit"] == "dBm"
+            assert (scale["lower"], scale["upper"]) == pytest.approx((-87, 13))
+            page.save(frame)
             qtbot.waitUntil(lambda: bool(list(app.repository.data_root.rglob("snapshot.json"))))
             (snapshot,) = app.repository.data_root.rglob("snapshot.json")
             (saved,) = json.loads(snapshot.read_text("utf8"))["measurements"]

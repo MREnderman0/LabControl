@@ -214,10 +214,8 @@ def test_both_curve_tool_menus_default_closed_and_keep_cadence_local(scope, qtbo
     window.controller.poll()
     window.navigate("实时监测", "spectrum_analyzer", spec_key)
     spectrum = window.stack.currentWidget()
-    assert not spectrum.timing.isVisible()
-    spectrum.timing_action.trigger()
-    assert spectrum.timing.isVisible()
-    assert spectrum.timing.interval.minimum() == 0.5
+    assert spectrum.interval.isVisible()
+    assert spectrum.interval.minimum() == 0
 
 
 def test_smaller_point_limit_preserves_already_valid_value(scope, qtbot, monkeypatch):

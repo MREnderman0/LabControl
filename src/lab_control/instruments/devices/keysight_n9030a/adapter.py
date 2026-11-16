@@ -16,7 +16,8 @@ from lab_control.domain.instruments import (
 )
 from lab_control.domain.readback import boolean_value
 from lab_control.domain.spectrum import FREQUENCY
-from lab_control.instruments.base import ScpiAdapter
+from lab_control.domain.spectrum_display import panel_scale
+from lab_control.instruments.spectrum_panel import SpectrumPanelAdapter
 from lab_control.transport.diagnostics import parsing
 
 from .profile import TRACE_QUERY
@@ -35,7 +36,7 @@ FRAME_SETTINGS = (
 )
 
 
-class N9030aAdapter(ScpiAdapter):
+class N9030aAdapter(SpectrumPanelAdapter):
     acquisition_revision = "n9030a-swept-sa-xy-v1"
 
     def frequency_bounds(self):
@@ -107,7 +108,13 @@ class N9030aAdapter(ScpiAdapter):
         if op in {"rbw", "vbw", "attenuation"} and boolean_value(super().read(op + "_auto")) is not False:
             raise ValidationError("请先关闭对应参数的自动模式")
 
-    def acquire(self, request: AcquisitionRequest) -> MeasurementBatch:
+    def read_panel_scale(self, config, unit):
+        mode = self.read_scale_mode("DISP:WIND:TRAC:Y:SPAC?")
+        reference = self.scale_value("DISP:WIND:TRAC:Y:RLEV?")
+        span = 10 * self.scale_value("DISP:WIND:TRAC:Y:PDIV?") if mode == "log" else None
+        return panel_scale(unit, reference, span_db=span)
+
+    def acquire_trace(self, request: AcquisitionRequest) -> MeasurementBatch:
         request.validate()
         if request.kind != "spectrum" or request.initiate:
             raise Unsupported("N9030A supports passive spectrum acquisition")

@@ -19,7 +19,9 @@ from lab_control.domain.instruments import (
     utc_now,
 )
 from lab_control.domain.readback import boolean_value
-from lab_control.instruments.base import Profile, ScpiAdapter, command, number, parameter, read_command
+from lab_control.domain.spectrum_display import panel_scale
+from lab_control.instruments.base import Profile, command, number, parameter, read_command
+from lab_control.instruments.spectrum_panel import SpectrumPanelAdapter
 
 SOURCE = "https://www.ceyear.com/Public/Uploads/uploadfile/files/20260709/4959chengkongshouce.pdf"
 MAX_HZ = 26.5e9
@@ -111,7 +113,7 @@ def ascii_trace(raw: bytes, points: int, detector: str) -> np.ndarray:
     return values
 
 
-class MicrowaveAnalyzer(ScpiAdapter):
+class MicrowaveAnalyzer(SpectrumPanelAdapter):
     # A firmware conflict on the optional query remains suppressed for this connection.
     _sweep_query_rejected = False
 
@@ -184,8 +186,26 @@ class MicrowaveAnalyzer(ScpiAdapter):
         settings["measurement_mode"] = mode
         return settings
 
-    def acquire(self, request: AcquisitionRequest) -> MeasurementBatch:
-        batch = super().acquire(request)
+    def read_panel_scale(self, config, unit):
+        # TRAC1:DATA? always returns dBm. Reference level is in the front-panel
+        # amplitude unit; the SA offset query returns dB (not VSA RPOS).
+        mode = token(self.transport.query(":AMPL:SCAL?"))
+        if mode not in {"0", "LOG", "1", "LINE", "LIN"}:
+            raise ValueError("Unknown 4959E scale type")
+        units = ("dBm", "dBmV", "dBµV", "V", "W", "A", "dBW", "dBV", "dBA", "dBmA", "dBµA")
+        names = ("DBM", "DBMV", "DBUV", "V", "W", "A", "DBW", "DBV", "DBA", "DBMA", "DBUA")
+        key = token(self.transport.query(":AMPL:UNIT?"))
+        name = key if key in names else next((n for i, n in enumerate(names) if str(i) == key), "")
+        if not name:
+            raise ValueError("Unknown 4959E amplitude unit")
+        panel_unit = units[names.index(name)]
+        level = self.scale_value(":DISP:WIND:TRAC:Y:RLEV?")
+        offset = self.scale_value(":DISP:WIND:TRAC:Y:OFFS?")
+        span = 10 * self.scale_value(":DISP:WIND:TRAC:Y:PDIV?") if mode in {"0", "LOG"} else None
+        return panel_scale(panel_unit, level, span_db=span, offset_db=offset, impedance=50)
+
+    def acquire_trace(self, request: AcquisitionRequest) -> MeasurementBatch:
+        batch = super().acquire_trace(request)
         settings = batch.measurements[0].metadata["settings"]
         return replace(
             batch,

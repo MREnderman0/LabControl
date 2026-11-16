@@ -19,9 +19,17 @@ from lab_control.domain.frames import (
 )
 from lab_control.domain.instruments import ValidationError
 
+SPECTRUM_INTERVAL = "spectrum_interval"
 
-def validate_cadence(interval: float, cadence: str | None = None, *, minimum: float = 0.05) -> None:
+
+def validate_cadence(
+    interval: float, cadence: str | None = None, *, minimum: float = 0.05, spectrum: bool = False
+) -> None:
     # Omitted cadence is the legacy API, whose shorter intervals remain supported.
+    if spectrum and cadence == SPECTRUM_INTERVAL:
+        if type(interval) not in (int, float) or not 0 <= interval <= 60:
+            raise ValidationError("频谱采集间隔必须在 0～60 秒内")
+        return
     if cadence not in {None, "fastest", "interval"}:
         raise ValidationError("Unknown acquisition cadence")
     lower = minimum if cadence is None else 0.5

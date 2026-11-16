@@ -219,7 +219,16 @@ def test_record_interval_is_separate_and_slow_writer_does_not_stall_display(tmp_
         assert runtime.monitoring.snapshots()[key]["sequence"] > len(paths) * 2
 
 
-def test_completed_slow_frame_starts_new_period_without_catchup(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "cadence,interval,completed,expected",
+    [
+        ("interval", 0.5, 11.5, 12.0),
+        ("spectrum_interval", 1.0, 10.3, 11.0),
+        ("spectrum_interval", 1.0, 11.2, 11.2),
+        ("spectrum_interval", 0.0, 10.3, 10.3),
+    ],
+)
+def test_next_frame_deadline(tmp_path, monkeypatch, cadence, interval, completed, expected):
     runtime, key = connected(tmp_path)
     with runtime:
         request = AcquisitionRequest("spectrum")
@@ -227,12 +236,18 @@ def test_completed_slow_frame_starts_new_period_without_catchup(tmp_path, monkey
         future = Future()
         future.set_result(batch)
         task = MonitorTask(
-            (request,), "electronic", 0.5, pending=future, pending_request=request, last_started_at=10
+            (request,),
+            "electronic",
+            interval,
+            cadence=cadence,
+            pending=future,
+            pending_request=request,
+            last_started_at=10,
         )
         with runtime.monitoring.lock:
-            monkeypatch.setattr("lab_control.application.monitor_scheduler.time.monotonic", lambda: 11.5)
+            monkeypatch.setattr("lab_control.application.monitor_scheduler.time.monotonic", lambda: completed)
             runtime.monitoring._finish_batch(key, task)
-            assert task.next_at == 12 and task.acquisition_seconds == 1.5
+            assert task.next_at == expected and task.acquisition_seconds == pytest.approx(completed - 10)
             monkeypatch.undo()
 
 

@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from lab_control.application.acquisition_pipeline import (
+    SPECTRUM_INTERVAL,
     FrozenDict,
     immutable_batch,
     validate_displayed_batch,
@@ -92,7 +93,7 @@ class MonitorScheduler:
             if not task.configuration_wait_deadline:
                 task.configuration_wait_deadline = now + 30
             task.notice = "仪器正在自动调整或配置变化 · 等待稳定曲线（最多 30 秒）"
-            task.next_at = min(now + task.interval, task.configuration_wait_deadline)
+            task.next_at = min(now + max(0.05, task.interval), task.configuration_wait_deadline)
             return
         if task.waiting_for_first_waveform:
             task.waiting_for_first_waveform = False
@@ -191,10 +192,13 @@ class MonitorScheduler:
                 callback(device_id)
             except Exception as exc:
                 owner.audit.try_record("frame_listener_failed", device_id=device_id, error=str(exc))
-        # Keep normal start-to-start cadence. After an overrun, start a new
-        # period from receipt instead of immediately sending a catch-up read.
+        # Spectrum reads can resume immediately after an overrun; legacy interval
+        # tasks wait a full interval from receipt when their deadline has passed.
         due = task.last_started_at + task.interval
-        task.next_at = 0 if task.cadence == "fastest" else (due if due > now else now + task.interval)
+        if task.cadence == SPECTRUM_INTERVAL:
+            task.next_at = max(now, due)
+        else:
+            task.next_at = 0 if task.cadence == "fastest" else (due if due > now else now + task.interval)
         if task.once:
             task.running = False
 

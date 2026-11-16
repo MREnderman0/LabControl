@@ -41,6 +41,39 @@ def enqueue(a, values, fields=FRAME_SETTINGS, raw=None):
     a.transport.exchanges.extend([*reads, ("TRAC:DATA? TRACE1", raw or b",".join([b"-100"] * 601)), *reads])
 
 
+def test_panel_readback_fallback_cached_frame_and_recovery():
+    a, values = adapter(), state()
+    req = AcquisitionRequest("spectrum", consistency="live", spectrum_display=True)
+    enqueue(a, values)
+    a.transport.exchanges.append(("DISP:WIN:TRAC:Y:SPAC?", b"unsupported"))
+    initial = a.acquire(req)
+    assert initial.measurements[0].values.size == 601
+    assert "spectrum_display" not in initial.measurements[0].metadata
+    a._display_until = 0
+    a.transport.exchanges.extend(
+        (a.profile.commands[field].query, str(values[field]).encode())
+        for field in (
+            "start_frequency",
+            "stop_frequency",
+            "amplitude_unit",
+            "reference_level",
+            "reference_offset",
+        )
+    )
+    a.transport.exchanges.append(("TRAC:DATA? TRACE1", b",".join([b"-100"] * 601)))
+    a.transport.exchanges.extend([("DISP:WIN:TRAC:Y:SPAC?", b"LOG"), ("DISP:WIN:TRAC:Y:PDIV?", b"5")])
+    fresh = a.acquire(req)
+    assert fresh.measurements[0].metadata["spectrum_display"] == dict(unit="dBm", lower=-70.0, upper=-20.0)
+    a.transport.exchanges.append(("TRAC:DATA? TRACE1", b",".join([b"-100"] * 601)))
+    cached = a.acquire(req)
+    assert cached.validation == "cached"
+    assert (
+        cached.measurements[0].metadata["spectrum_display"]
+        == fresh.measurements[0].metadata["spectrum_display"]
+    )
+    assert not a.transport.exchanges
+
+
 def test_full_live_query_budget_and_original_metadata_times(monkeypatch):
     a, values = adapter(), state()
     enqueue(a, values)

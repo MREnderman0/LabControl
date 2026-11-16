@@ -48,6 +48,31 @@ def device(exchanges, idn=IDN, options=("no_list_sweep",)):
     return adapter, transport
 
 
+@pytest.mark.parametrize(
+    "mode,unit,level,expected",
+    [
+        (b"LOG", b"DBM", b"-20", ("dBm", -66.0, -16.0)),
+        (b"LINE", b"V", b"1", ("V", 0.0, 10**0.2)),
+    ],
+)
+def test_panel_coordinates_preserve_native_dbm_samples(mode, unit, level, expected):
+    settings = snapshot()
+    reads = [
+        (":AMPL:SCAL?", mode),
+        (":AMPL:UNIT?", unit),
+        (":DISP:WIND:TRAC:Y:RLEV?", level),
+        (":DISP:WIND:TRAC:Y:OFFS?", b"4"),
+    ]
+    if mode == b"LOG":
+        reads.append((":DISP:WIND:TRAC:Y:PDIV?", b"5"))
+    adapter, transport = device([*settings, (TRACE_QUERY, TRACE), *settings, *reads])
+    (trace,) = adapter.acquire(AcquisitionRequest("spectrum", spectrum_display=True)).measurements
+    scale = trace.metadata["spectrum_display"]
+    assert scale["unit"] == expected[0]
+    assert (scale["lower"], scale["upper"]) == pytest.approx(expected[1:])
+    assert trace.unit == "dBm" and trace.values[0] == -100 and not transport.exchanges
+
+
 @pytest.mark.parametrize("stop,last,unit", [(2e6, 2e6, "Hz"), (1e6, 0.125, "s")])
 def test_trace_coordinates_and_guarded_commands(stop, last, unit):
     settings = snapshot(stop=stop)

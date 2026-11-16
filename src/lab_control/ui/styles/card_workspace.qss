@@ -240,6 +240,11 @@ QFrame#spectrumChart QLabel { border: 0; background: transparent; }
 QFrame#spectrumChart[recordingFrame="true"], QFrame#monitorCard[recordingFrame="true"] { border-width: 2px; }
 QFrame#spectrumChart[recordingPhase="recording"], QFrame#monitorCard[recordingPhase="recording"],
 QFrame#spectrumChart[recordingPhase="draining"], QFrame#monitorCard[recordingPhase="draining"] { border-color: #b96360; }
+QDoubleSpinBox#spectrumInterval {
+    padding: 0 4px; min-height: 28px; max-height: 28px;
+    background: #1a2224; border: 1px solid #455254; border-radius: 6px;
+}
+QDoubleSpinBox#spectrumInterval:focus { border-color: #e3a252; }
 QToolButton#curveTools, QToolButton#recordButton {
     background: #1a2224; border: 1px solid #455254; border-radius: 6px;
     padding-left: 8px; padding-right: 8px; font-size: 12px;

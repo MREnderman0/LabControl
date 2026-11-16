@@ -19,7 +19,8 @@ from lab_control.domain.instruments import (
     utc_now,
 )
 from lab_control.domain.spectrum import SpectrumSpan
-from lab_control.instruments.base import ScpiAdapter
+from lab_control.domain.spectrum_display import panel_scale
+from lab_control.instruments.spectrum_panel import SpectrumPanelAdapter
 from lab_control.transport.diagnostics import parsing
 
 from .protocol import POINTS, RBW, UNITS, VBW, boolean, trace, trace_format, trace_values
@@ -76,7 +77,7 @@ def agrees(operation: str, expected: Any, actual: Any) -> bool:
     )
 
 
-class FphAdapter(ScpiAdapter):
+class FphAdapter(SpectrumPanelAdapter):
     supports_live_acquisition = True
     supports_stream_acquisition = True
     acquisition_revision = "fph02-v140-acquisition-v1"
@@ -124,6 +125,7 @@ class FphAdapter(ScpiAdapter):
         return identity
 
     def invalidate_acquisition_context(self, reason: str) -> None:
+        super().invalidate_acquisition_context(reason)
         self._acquisition_context = None
         self._context_timestamp = ""
         self._context_key = ("", "")
@@ -404,7 +406,15 @@ class FphAdapter(ScpiAdapter):
             if op in batch.configuration
         )
 
-    def acquire(self, request: AcquisitionRequest) -> MeasurementBatch:
+    def read_panel_scale(self, config, unit):
+        mode = self.read_scale_mode("DISP:TRAC1:Y:SPAC?")
+        if mode == "linear":
+            return panel_scale(unit, config["reference_level"], percent=True)
+        span = self.scale_value("DISP:TRAC1:Y?")
+        position = self.scale_value("DISP:TRAC1:Y:RPOS?") / 10
+        return panel_scale(unit, config["reference_level"], span_db=span, reference_position=position)
+
+    def acquire_trace(self, request: AcquisitionRequest) -> MeasurementBatch:
         try:
             return self._acquire(request)
         except Exception:

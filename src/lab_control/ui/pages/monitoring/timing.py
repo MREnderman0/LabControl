@@ -2,10 +2,11 @@
 
 import math
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QLabel, QWidget
 
-from lab_control.application.acquisition_pipeline import validate_cadence
+from lab_control.application.acquisition_pipeline import SPECTRUM_INTERVAL, validate_cadence
 from lab_control.application.catalog import instrument_category
 from lab_control.domain.instruments import ValidationError
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
@@ -65,11 +66,18 @@ def monitoring_options(controller, device_id: str, mode: str) -> dict:
     values = task if task.get("running") else stored
     try:
         raw = float(values.get("interval", default_interval))
-        interval = 0.5 if raw < 0.5 else raw
         cadence = values.get("cadence", "interval" if "interval" in values else default_cadence)
-        validate_cadence(interval, cadence)
+        if category == "spectrum_analyzer":
+            interval = 0.0 if cadence == "fastest" else raw
+            cadence = SPECTRUM_INTERVAL
+        else:
+            interval = 0.5 if raw < 0.5 else raw
+        validate_cadence(interval, cadence, spectrum=category == "spectrum_analyzer")
     except (AttributeError, TypeError, ValueError, ValidationError):
-        interval, cadence = default_interval, default_cadence
+        interval, cadence = (
+            default_interval,
+            SPECTRUM_INTERVAL if category == "spectrum_analyzer" else default_cadence,
+        )
     if category == "power_supply":
         interval = interval if interval in POWER_INTERVALS else 1.0
         cadence = "interval"
@@ -110,6 +118,8 @@ def save_monitoring_interval(
         if cadence is not None
         else options.get("cadence", "interval")
     )
+    if category == "spectrum_analyzer":
+        options["cadence"] = SPECTRUM_INTERVAL
     controller.runtime.monitoring.set_intervals(device_id, **options)
     key = f"monitor-timing/{mode}/{device_id}"
     controller.runtime.monitoring_preferences[key] = dict(options)
@@ -117,6 +127,51 @@ def save_monitoring_interval(
     if notify and hasattr(controller, "monitoring_interval_changed"):
         controller.monitoring_interval_changed.emit(device_id, interval)
     return interval
+
+
+class SpectrumInterval(MonitoringIntervalSpinBox):
+    """Single numeric control shared with the overview's per-device preference."""
+
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.device_id, self.mode = "", controller.mode
+        self.setRange(0, 60)
+        self.setSingleStep(0.05)
+        self.setObjectName("spectrumInterval")
+        self.setButtonSymbols(self.ButtonSymbols.NoButtons)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setPrefix("采集间隔 ")
+        self.setSuffix(" s")
+        self.setAccessibleName("采集间隔（秒）")
+        self.setToolTip("采集间隔（秒）。0 表示收完即采；正数为相邻两帧的目标开始间隔。")
+        self.valueChanged.connect(self._save)
+        controller.monitoring_interval_changed.connect(self._sync)
+
+    @property
+    def key(self):
+        return f"monitor-timing/{self.mode}/{self.device_id}"
+
+    def bind(self, device_id, mode):
+        self.device_id, self.mode = device_id, mode
+        self._sync(device_id, self.options()["interval"])
+
+    def options(self):
+        return monitoring_options(self.controller, self.device_id, self.mode)
+
+    def _sync(self, device_id, value):
+        if device_id == self.device_id and value != self.value():
+            blocked = self.blockSignals(True)
+            self.setValue(value)
+            self.blockSignals(blocked)
+
+    def _save(self, value):
+        if self.device_id:
+            try:
+                save_monitoring_interval(self.controller, self.device_id, self.mode, value)
+            except Exception as exc:
+                self._sync(self.device_id, self.options()["interval"])
+                self.controller.message.emit(str(exc))
 
 
 class MonitoringTiming(QWidget):

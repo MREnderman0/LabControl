@@ -148,10 +148,16 @@ class RecordingDeviceCard(QFrame):
         controls.addStretch()
         controls.addWidget(QLabel("采样间隔"))
         self.interval = MonitoringIntervalSpinBox()
+        if spec.get("category") == "spectrum_analyzer":
+            self.interval.setMinimum(0)
         self.interval.setSingleStep(0.5)
         self.interval.setSuffix(" 秒")
         self.interval.valueChanged.connect(lambda _value: self._changed(interval_edited=True))
-        self.interval.setToolTip("修改采样间隔会切换为自定义间隔，并按设备保存。")
+        self.interval.setToolTip(
+            "频谱采集间隔，0 秒为最快。"
+            if spec.get("category") == "spectrum_analyzer"
+            else "修改采样间隔会切换为自定义间隔，并按设备保存。"
+        )
         controls.addWidget(self.interval)
         layout.addLayout(controls)
 
@@ -560,7 +566,9 @@ class MonitoringDashboard(QWidget):
             interval = 1.0
         # Once migrated, device timing is authoritative even when a slot's
         # old overview preference still contains a different interval.
-        interval = min(60.0, max(0.5, interval))
+        interval = min(
+            60.0, max(0.0 if instrument_category(record) == "spectrum_analyzer" else 0.5, interval)
+        )
         if instrument_category(record) == "power_supply":
             interval = min(POWER_INTERVALS, key=lambda option: abs(option - interval))
         saved["interval"] = interval
@@ -742,7 +750,11 @@ class MonitoringDashboard(QWidget):
                 # setting into the overview preference before the card is
                 # persisted.  This avoids reviving an older overview value on
                 # the next stop/start cycle.
-                target["interval"] = float(task["interval"])
+                target["interval"] = (
+                    0.0
+                    if target["category"] == "spectrum_analyzer" and task.get("cadence") == "fastest"
+                    else float(task["interval"])
+                )
             target.update(
                 source=source,
                 channels=list(channels),

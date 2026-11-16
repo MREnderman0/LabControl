@@ -258,8 +258,11 @@ class AcquisitionRequest:
     allow_setup: bool = True
     # Operator verified the analyzer is in linear sweep for this monitoring run.
     panel_linear_sweep: bool = False
+    spectrum_display: bool = False
 
     def validate(self) -> None:
+        if not isinstance(self.spectrum_display, bool) or (self.spectrum_display and self.kind != "spectrum"):
+            raise ValidationError("Spectrum panel scale requires a spectrum request")
         if not isinstance(self.panel_linear_sweep, bool) or (
             self.panel_linear_sweep and self.kind != "spectrum"
         ):

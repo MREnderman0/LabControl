@@ -1,7 +1,7 @@
 from dataclasses import asdict, replace
 
 import pytest
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QMessageBox
 
@@ -87,6 +87,11 @@ def test_recording_locks_parameters_and_auto_but_monitoring_keeps_them_editable(
     runtime.monitoring.stop(key).result(3)
 
 
+def menu_actions(page):
+    menu = page.plot.build_menu(QPoint(0, 0))
+    return {a.text(): a for a in menu.actions() if not a.isSeparator()}
+
+
 def test_save_displayed_frame_without_reading_and_preserve_draft(spectrum, qtbot, monkeypatch):
     _, page, runtime, key, adapter = spectrum
     adapter.supports_live_acquisition = True
@@ -107,15 +112,36 @@ def test_save_displayed_frame_without_reading_and_preserve_draft(spectrum, qtbot
     field = edit(qtbot, page, "reference_level", "-17")
     field.input.setFocus()
     page.refresh()
-    assert page.save_action.text() == "保存当前帧"
-    assert page.timing.actual.toolTip() == ""
+    actions = menu_actions(page)
+    assert list(actions) == [
+        "适应 Y 轴",
+        "恢复 Y 轴（全部）",
+        "在此频率添加标记",
+        "保存当前帧数据",
+        "导出 PNG",
+    ]
+    assert page.actual.toolTip() == ""
     displayed = page.plot.displayed_frame
     # A newer frame can already exist in the service while Qt still shows this one.
     task = runtime.monitoring.tasks[key]
     frame_key = next(iter(task.frames))
     task.frames[frame_key] = replace(displayed, batch=replace(displayed.batch, timestamp="later"))
+    # Even if Qt displays another valid frame while the menu is open, both
+    # actions still use the captured frame.
+    next_batch = replace(
+        displayed.batch,
+        measurements=tuple(replace(m, values=m.values + 12) for m in displayed.batch.measurements),
+    )
+    page.plot.show_frame(
+        replace(displayed, batch=next_batch, sequence=displayed.sequence + 1), page.source, (1,)
+    )
+    exports = []
+    monkeypatch.setattr(page.plot.plot, "save_image", exports.append)
+    actions["导出 PNG"].trigger()
+    assert len(exports[0].curves) == 1
+    assert list(exports[0].curves[0][2]) == list(displayed.batch.measurements[0].values)
     before = len(requested)
-    page.save_action.trigger()
+    actions["保存当前帧数据"].trigger()
     qtbot.waitUntil(lambda: bool(saved))
     assert saved[0] is displayed.batch and saved[0].validation == "live"
     assert len(requested) == before
@@ -127,8 +153,8 @@ def test_save_old_display_after_parameter_change_and_single_row(spectrum, qtbot,
     _, page, runtime, key, _ = spectrum
     from PySide6.QtWidgets import QDoubleSpinBox
 
-    assert len(page.timing.findChildren(QDoubleSpinBox)) == 1
-    assert not page.save_action.isEnabled()
+    assert page.chart.findChildren(QDoubleSpinBox) == [page.interval]
+    assert not menu_actions(page)["保存当前帧数据"].isEnabled()
     page.toggle_monitoring()
     qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
     runtime.monitoring.stop(key).result(3)
@@ -137,21 +163,20 @@ def test_save_old_display_after_parameter_change_and_single_row(spectrum, qtbot,
     runtime.sessions.submit(key, "apply", DeviceCommand("center_frequency", {"value": 2e6})).result(3)
     page.refresh()
     assert runtime.monitoring.latest(key, "spectrum") is None
-    assert page.save_action.isEnabled()
+    assert menu_actions(page)["保存当前帧数据"].isEnabled()
     saved = []
     monkeypatch.setattr(
         runtime.repository, "export", lambda batch, mode, **options: saved.append(batch) or "mock-path"
     )
-    page.save_action.trigger()
+    menu_actions(page)["保存当前帧数据"].trigger()
     qtbot.waitUntil(lambda: bool(saved))
     assert saved[0] is displayed.batch
     assert (
         saved[0].configuration["_session_configuration_version"]
         < runtime.sessions.snapshots()[0]["configurationVersion"]
     )
-    controls = [page.timing.cadence, page.interval, page.timing.actual]
-    page.timing_action.setChecked(True)
-    qtbot.waitUntil(page.timing.isVisible)
+    controls = [page.record_button, page.interval]
+    assert page.interval.isVisible()
     qtbot.wait(30)
     assert (
         max(w.geometry().center().y() for w in controls) - min(w.geometry().center().y() for w in controls)
@@ -362,15 +387,15 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     window, page, runtime, key, adapter = spectrum
     writes = []
     monkeypatch.setattr(adapter, "apply", writes.append)
-    assert page.timing.cadence.currentData() == "interval" and page.interval.isEnabled()
+    assert page.interval.minimum() == 0 and page.interval.isEnabled()
     assert page.interval.value() == 0.5
     page.interval.setValue(0.75)
     page.interval.editingFinished.emit()
     assert not writes and key not in runtime.monitoring.tasks
-    assert runtime.repository.load_workspace(page.timing.key) == {
+    assert runtime.repository.load_workspace(page.interval.key) == {
         "interval": 0.75,
         "record_interval": None,
-        "cadence": "interval",
+        "cadence": "spectrum_interval",
         "csv_interval": 5,
     }
     second = runtime.add(ConnectionConfig("mock://timing-second", "rs.fph", "mock"))
@@ -378,7 +403,7 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     qtbot.waitUntil(lambda: second in window.controller.records)
     page.selector.select(second)
     assert page.interval.value() == 0.5
-    assert page.timing.cadence.currentData() == "interval"
+    assert page.interval.options()["cadence"] == "spectrum_interval"
     page.selector.select(key)
     assert page.interval.value() == 0.75
     window.controller.set_mode("optical")
@@ -391,8 +416,8 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     assert page.interval.value() == 3
     page.toggle_monitoring()
     qtbot.waitUntil(lambda: runtime.monitoring.snapshots()[key]["frame_interval"] is not None)
-    qtbot.waitUntil(lambda: "—" not in page.timing.actual.text())
-    assert "实际" in page.timing.actual.text() and "—" not in page.timing.actual.text()
+    qtbot.waitUntil(lambda: "—" not in page.actual.text())
+    assert "实际" in page.actual.text() and "—" not in page.actual.text()
     page.interval.setValue(0.5)
     page.interval.editingFinished.emit()
     task = runtime.monitoring.snapshots()[key]
@@ -403,7 +428,7 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     # Overview start must not reset either an active cadence or a saved preference.
     window.dashboard.start()
     assert runtime.monitoring.snapshots()[key]["interval"] == 0.5
-    assert runtime.monitoring.snapshots()[key]["cadence"] == "interval"
+    assert runtime.monitoring.snapshots()[key]["cadence"] == "spectrum_interval"
     assert runtime.monitoring.snapshots()[key]["record_interval"] is None
     runtime.monitoring.stop(key).result(3)
     window.dashboard.start()
@@ -430,25 +455,31 @@ def test_spectrum_pool_has_only_one_monitor_entry_and_other_categories_keep_cont
     assert window.action_buttons["manage"].text() == "设备控制"
 
 
-def test_legacy_timing_migrates_and_fastest_retains_custom_value(spectrum):
+@pytest.mark.parametrize(
+    "stored,expected",
+    [
+        ({"cadence": "fastest", "interval": 3}, 0),
+        ({"cadence": "interval", "interval": 1.25}, 1.25),
+        ({"interval": 0.1}, 0.1),
+    ],
+)
+def test_spectrum_numeric_timing_migration(spectrum, stored, expected):
     window, page, runtime, key, _ = spectrum
-    from lab_control.ui.pages.monitoring.timing import monitoring_options
-
-    runtime.repository.save_workspace(
-        page.timing.key, {"interval": 0.1, "record_interval": 2, "csv_interval": 30}
-    )
-    options = monitoring_options(window.controller, key, "electronic")
-    assert options == {"interval": 0.5, "record_interval": None, "cadence": "interval", "csv_interval": 5}
-    page.timing.bind("", "electronic")
-    page.timing.bind(key, "electronic")
-    page.interval.setValue(1.25)
-    page.interval.editingFinished.emit()
-    page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("fastest"))
-    assert not page.interval.isEnabled() and page.interval.value() == 1.25
-    assert runtime.repository.load_workspace(page.timing.key)["cadence"] == "fastest"
-    page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
-    assert page.interval.isEnabled() and page.interval.value() == 1.25
+    runtime.repository.save_workspace(page.interval.key, stored)
+    runtime.monitoring_preferences.pop(page.interval.key, None)
+    page.interval.bind(key, page.mode)
+    assert page.interval.value() == expected
+    page.interval.setValue(0.01)
+    assert runtime.repository.load_workspace(page.interval.key)["interval"] == 0.01
     assert key not in runtime.monitoring.tasks
+    window.dashboard.add(key, page.source.key, (1,))
+    card = window.dashboard.cards[key]
+    assert card.interval.value() == 0.01
+    card.interval.setValue(0)
+    assert page.interval.value() == 0
+    window.dashboard.start()
+    assert runtime.monitoring.snapshots()[key]["interval"] == 0
+    runtime.monitoring.stop(key).result(3)
 
 
 def test_frame_notification_draws_without_general_poll_and_hidden_page_skips(spectrum, qtbot, monkeypatch):
