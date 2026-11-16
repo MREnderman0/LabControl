@@ -72,7 +72,8 @@ def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch):
             qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
             (trace,) = page.plot.displayed_frame.batch.measurements
             assert (trace.unit, trace.axis_unit, trace.axis[1], trace.values[1]) == ("dBm", "Hz", 150000, -47)
-            assert page.plot.plot.viewRange()[1] == [-70.0, -20.0]
+            assert page.plot.plot.viewRange()[1] == [-120.0, -20.0]
+            assert page.plot.trace_view.panel_y == (-70.0, -20.0)
             page.save()
             qtbot.waitUntil(lambda: bool(list(runtime.repository.data_root.rglob("samples.npz"))))
         finally:

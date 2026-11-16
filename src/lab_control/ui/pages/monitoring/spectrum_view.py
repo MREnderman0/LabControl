@@ -2,14 +2,31 @@
 
 import math
 
+import pyqtgraph as pg
 from PySide6.QtCore import QPoint, Qt, Signal
 
 from lab_control.ui.pages.monitoring.trace_view import TraceView
 from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 
 
+class SpectrumAmplitudeAxis(pg.AxisItem):
+    def __init__(self, label_margin):
+        self.label_margin = label_margin
+        super().__init__("left")
+
+    def boundingRect(self):  # noqa: N802
+        # With the grid enabled, AxisItem clips labels to the ViewBox ends.
+        return super().boundingRect().adjusted(0, -self.label_margin, 0, self.label_margin)
+
+
 class SpectrumCanvas(PublicationPlotWidget):
     menu_requested = Signal(QPoint)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        margin = math.ceil(self.fontMetrics().height() / 2) + 1
+        self.plotItem.setAxisItems({"left": SpectrumAmplitudeAxis(margin)})
+        self.plotItem.layout.setContentsMargins(1, margin, 1, 1)
 
     def mousePressEvent(self, event):  # noqa: N802
         if event.button() == Qt.MouseButton.RightButton:
@@ -40,6 +57,7 @@ class SpectrumView(TraceView):
         super().reset()
         self.follow_panel = True
         self.panel_y = None
+        self.default_dbm: tuple[float | None, float | None] = (None, None)
         self.unit_key = None
 
     def _manual_zoom(self, axes):
@@ -96,5 +114,13 @@ class SpectrumView(TraceView):
         self.follow_panel = True
         if self.panel_y is None:
             self._fit_data()
-        else:
-            self.plot.setYRange(*self.panel_y, padding=0)
+            return
+        lower, upper = self.panel_y
+        if self.unit_key[-1] == "dBm":
+            bottom, top = self.default_dbm
+            lower = lower if bottom is None else bottom
+            upper = upper if top is None else top
+            if lower >= upper:
+                # A reference level can be set below the preferred display floor.
+                lower, upper = self.panel_y
+        self.plot.setYRange(lower, upper, padding=0)

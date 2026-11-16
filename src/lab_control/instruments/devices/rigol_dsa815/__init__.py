@@ -17,6 +17,7 @@ DEFINITION = DeviceDefinition(
     ),
     Path(__file__).parent,
     offline_processing=ProcessingProfile("frames"),
+    spectrum_view_dbm=(-80.0, None),
     deployment_components=("rs-visa",),
     socket_port=5555,
     metric_profiles=(SPECTRUM_PEAK_AND_SNR_PROFILE,),

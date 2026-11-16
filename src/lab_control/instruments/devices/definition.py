@@ -103,6 +103,9 @@ class DeviceDefinition:
 
     export_recorded_frame: Callable[[Path, dict[str, Any]], None] | None = None
 
+    # Optional fixed edges of the default live dBm viewport (bottom, top).
+    spectrum_view_dbm: tuple[float | None, float | None] = (None, None)
+
     def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
         return self.manual_usb_id is None or self.manual_usb_id == (
             descriptor.get("vid"),

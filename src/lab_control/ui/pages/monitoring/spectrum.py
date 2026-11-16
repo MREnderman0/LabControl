@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import DataSource, data_sources
 from lab_control.domain.spectrum import SpectrumMarker
+from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.recording_state import (
@@ -133,6 +134,9 @@ class SpectrumMonitoringPage(QWidget):
         self.empty.setVisible(not device_id)
         if device_id:
             config = config_from_record(self.controller.records[device_id])
+            definition = DEVICE_DEFINITIONS.get(config.adapter)
+            if definition:
+                self.plot.trace_view.default_dbm = definition.spectrum_view_dbm
             self.source = next((s for s in data_sources(config) if s.kind == "spectrum"), None)
             self.controls = SpectrumControls(self.controller, device_id, self.right)
             self.right_layout.addWidget(self.controls)

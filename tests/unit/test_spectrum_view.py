@@ -7,6 +7,7 @@ from lab_control.application.acquisition_pipeline import immutable_batch
 from lab_control.application.controls import DataSource
 from lab_control.application.monitoring import MonitorFrame
 from lab_control.domain.instruments import AcquisitionRequest, DeviceIdentity, Measurement, MeasurementBatch
+from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.pages.monitoring.plot import LivePlot
 from lab_control.ui.pages.monitoring.spectrum_markers import SpectrumPlot
 
@@ -139,6 +140,61 @@ def test_spectrum_panel_follow_zoom_fit_and_restore(qtbot):
     plot.fit_current()
     show(5, unit="dBmV")
     assert plot.plot.viewRange()[1] == pytest.approx([-95, 5])
+
+
+@pytest.mark.parametrize(
+    "adapter, panel, expected",
+    [
+        ("keysight.n9030a", (-88, 12), (-120, 12)),
+        ("ceyear.4959e", (-60, 40), (-60, 30)),
+        ("rigol.dsa815", (-91, 9), (-80, 9)),
+        ("rigol.dsa815", (-190, -90), (-190, -90)),
+        ("rs.fph", (-110, -10), (-110, -10)),
+    ],
+)
+def test_model_dbm_view_on_first_frame_fit_and_restore(qtbot, adapter, panel, expected):
+    plot = SpectrumPlot()
+    qtbot.addWidget(plot)
+    plot.trace_view.default_dbm = DEVICE_DEFINITIONS[adapter].spectrum_view_dbm
+    source = DataSource("spectrum", "频谱", "spectrum")
+
+    def show(unit, version):
+        f = frame(y=(-115, -5), unit=unit, version=version)
+        m = f.batch.measurements[0]
+        scale = {"lower": panel[0], "upper": panel[1], "unit": unit}
+        m = replace(m, metadata={"spectrum_display": scale})
+        plot.show_frame(replace(f, batch=replace(f.batch, measurements=(m,))), source, (1,))
+
+    show("dBm", 0)
+    assert plot.plot.viewRange()[1] == pytest.approx(expected)
+    assert plot.trace_view.panel_y == panel
+    plot.fit_current()
+    fitted = (-126, 6)
+    assert plot.plot.viewRange()[1] == pytest.approx(fitted)
+    show("dBm", 1)
+    assert plot.plot.viewRange()[1] == pytest.approx(fitted)
+    plot.trace_view.restore()
+    assert plot.plot.viewRange()[1] == pytest.approx(expected)
+    show("dBmV", 2)
+    assert plot.plot.viewRange()[1] == pytest.approx(panel)
+
+
+def test_dbm_endpoint_labels_are_drawn_with_the_grid(qtbot):
+    from PySide6.QtGui import QImage, QPainter
+
+    plot = SpectrumPlot()
+    qtbot.addWidget(plot)
+    plot.resize(700, 420)
+    plot.show()
+    source = DataSource("spectrum", "频谱", "spectrum")
+    plot.show_frame(frame(), source, (1,))
+    plot.plot.setYRange(-120, 30, padding=0)
+    qtbot.wait(20)
+    axis = plot.plot.getAxis("left")
+    image = QImage(plot.size(), QImage.Format.Format_ARGB32)
+    with QPainter(image) as painter:
+        _, _, text_specs = axis.generateDrawSpecs(painter)
+    assert {"-120", "30"} <= {label for _, _, label in text_specs}
 
 
 def test_menu_marker_uses_clicked_frequency_and_requires_a_frequency_position(qtbot):

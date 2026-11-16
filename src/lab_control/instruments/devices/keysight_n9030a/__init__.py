@@ -31,6 +31,7 @@ DEFINITION = DeviceDefinition(
     acquisition_kinds=("spectrum",),
     acquisition_initiate_editable=False,
     offline_processing=ProcessingProfile("frames"),
+    spectrum_view_dbm=(-120.0, None),
     metric_profiles=(SPECTRUM_PEAK_AND_SNR_PROFILE,),
     readonly_check=_readonly_check,
 )
