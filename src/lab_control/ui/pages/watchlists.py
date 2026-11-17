@@ -159,10 +159,12 @@ class WatchlistsPage(QWidget):
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         dialog.setWindowTitle(p.name + " · 监视列表")
         dialog.setObjectName("watchWindow")
-        dialog.resize(1150, 520)
         table = PresetTable(self.hub, dialog, detached=True)
         table.bind(key)
         QVBoxLayout(dialog).addWidget(table)
+        available = self.screen().availableGeometry()
+        width = table.table.horizontalHeader().length() + 48
+        dialog.resize(min(width, available.width() - 32), min(680, available.height() - 64))
         self.windows[key] = dialog
         dialog.finished.connect(lambda _: self.windows.pop(key, None))
         dialog.show()

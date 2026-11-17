@@ -95,9 +95,11 @@ QTableView#watchReadings::item:selected { background: #443723; }
 QTableView#watchReadings QHeaderView::section { font-size: 12px; padding: 7px; }
 QTableView#watchReadings QLineEdit { padding: 0 4px; min-height: 0; }
 QTreeWidget#watchSignalTree { font-size: 14px; }
-QDialog#watchWindow QTableView#watchReadings, QDialog#watchWindow QLineEdit { font-size: 17px; }
-QDialog#watchWindow QHeaderView::section { font-size: 14px; }
-QDialog#watchWindow QPushButton { font-size: 15px; }
+QDialog#watchWindow QTableView#watchReadings,
+QDialog#watchWindow QTableView#watchReadings QLineEdit { font-size: 34px; }
+QDialog#watchWindow QTableView#watchReadings QHeaderView,
+QDialog#watchWindow QTableView#watchReadings QHeaderView::section { font-size: 28px; }
+QDialog#watchWindow > QWidget > QPushButton { font-size: 30px; }
 
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox { background: #171c1e; border: 1px solid #485054; border-radius: 3px; padding: 6px 10px; min-height: 23px; selection-background-color: #685035; }
 QComboBox { padding-right: 6px; border-radius: 6px; }

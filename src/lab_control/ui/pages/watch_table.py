@@ -227,7 +227,7 @@ class PresetTable(QWidget):
         self.table.setAlternatingRowColors(True)
         header = self.table.horizontalHeader()
         widths = (
-            (152, 258, 145, 120, 55, 80, 80, 100, 106)
+            (192, 362, 146, 228, 106, 132, 132, 162, 156)
             if detached
             else (140, 226, 130, 102, 52, 70, 70, 88, 115)
         )
@@ -236,7 +236,7 @@ class PresetTable(QWidget):
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(42 if detached else 34)
+        self.table.verticalHeader().setDefaultSectionSize(64 if detached else 34)
         layout.addWidget(self.table)
         self.add.clicked.connect(self.pick)
         self.remove.clicked.connect(self.remove_rows)
