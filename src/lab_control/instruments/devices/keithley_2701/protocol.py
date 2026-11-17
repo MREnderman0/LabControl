@@ -41,7 +41,7 @@ def channel_list(text: str) -> tuple[int, ...]:
 
 def tagged_reading(raw: str, channel: int, function: str) -> Measurement:
     match = re.fullmatch(
-        r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[+-]?\d+)?)([A-Z][A-Z0-9]*),\s*\+?(\d{3})(?:INTCHAN|CHAN)?",
+        r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[+-]?\d+)?)[ \t]*([A-Z][A-Z0-9]*)?,\s*\+?(\d{3})(?:INTCHAN|CHAN)?",
         raw.strip().upper(),
     )
     if not match or int(match[3]) != channel:

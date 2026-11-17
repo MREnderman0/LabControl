@@ -224,16 +224,47 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
         self.refresh()
 
     def _reflow_readout_cards(self) -> None:
-        for index, channel in enumerate(sorted(self.cards)):
+        width = self.readout_scroll.viewport().width()
+        columns = 2
+        # Two compact groups share the viewport. Give a named sensor the full row
+        # when its checkbox and the aligned numeric columns cannot fit side by side.
+        named = self.plot.names
+        for channel, card in self.cards.items():
+            if str(channel) in named and isinstance(card, ScanReadoutCard):
+                cell_width = (width - self.readout_grid.horizontalSpacing()) // 2
+                available = (
+                    cell_width - 8 - 3 * card.heading.spacing() - card.unit.width() - card.peak.width()
+                )
+                if card.check.sizeHint().width() > min(
+                    available * 2 // 3, available - card.value.minimumWidth()
+                ):
+                    columns = 1
+                    break
+        order = self.cards if named else sorted(self.cards)
+        for index, channel in enumerate(order):
             card = self.cards[channel]
-            self.readout_grid.addWidget(card, index // 2, index % 2)
+            self.readout_grid.addWidget(card, index // columns, index % columns)
             card.show()
-        for column in range(2):
-            self.readout_grid.setColumnStretch(column, 1)
+        self.readout_grid.setColumnStretch(0, 1)
+        self.readout_grid.setColumnStretch(1, int(columns == 2))
         if self.readout_heading is not None:
+            grid = self.readout_heading.layout()
+            assert isinstance(grid, QGridLayout)
+            second_group = grid.itemAtPosition(0, 1)
+            assert second_group is not None
+            heading = second_group.widget()
+            assert heading is not None
+            heading.setVisible(columns == 2)
+            grid.setColumnStretch(1, int(columns == 2))
             self.readout_heading.setContentsMargins(
                 0, 0, max(0, self.readout_scroll.width() - self.readout_scroll.viewport().width()), 0
             )
+
+    def refresh_channel_names(self) -> None:
+        previous = self._names_key
+        super().refresh_channel_names()
+        if self._names_key != previous:
+            self._reflow_readout_cards()
 
     def available_channels(self, device_id: str) -> tuple[int, ...]:
         return instrument_scan_channels(self.controller, device_id) or ()

@@ -147,7 +147,10 @@ def verify(config, channels=()):
         )
         report["stages"][stage] = "passed"
         stage = "acquisition"
-        request = AcquisitionRequest(channels=tuple(channels) or tuple(before["functions"]), confirmed=True)
+        request = AcquisitionRequest(
+            channels=tuple(channels) or tuple(session.adapter.capability_details["acquisition_channels"]),
+            confirmed=True,
+        )
         try:
             frame = app.sessions.submit(device, "acquire", request).result()
             report["stages"][stage] = "passed"
@@ -161,9 +164,12 @@ def verify(config, channels=()):
                 )
         stage = "recording"
         report["traces"] = record_trace(frame, folder)
+        context = app.repository.new_save_context(
+            "general", "single_frame", device_id=device, channels=request.channels
+        )
         with (folder / "channels.csv").open("w", newline="", encoding="utf-8-sig") as stream:
             writer = csv.writer(stream)
-            writer.writerow(("slot", "channel", "function", "value", "unit", "received_at"))
+            writer.writerow(("slot", "channel", "function", "value", "unit", "received_at", "channel_name"))
             for m in frame.measurements:
                 writer.writerow(
                     (
@@ -173,6 +179,7 @@ def verify(config, channels=()):
                         m.values[0],
                         m.unit,
                         m.metadata["received_at"],
+                        context.channel_names.get(str(m.channel), ""),
                     )
                 )
         report["stages"][stage] = "passed"

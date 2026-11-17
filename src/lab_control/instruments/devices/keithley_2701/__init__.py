@@ -27,6 +27,8 @@ DEFINITION = DeviceDefinition(
     socket_port=1394,
     deployment_components=("rs-visa",),
     monitoring_only=True,
+    # Actual inputs are discovered from the installed cards and scan list on connection.
+    nameable_channels=lambda config: (),
     multi_channel_sources=("reading",),
     acquisition_requires_confirmation=True,
     acquisition_initiate_editable=False,
