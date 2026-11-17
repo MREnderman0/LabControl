@@ -37,6 +37,7 @@ class WatchPicker(QDialog):
         self.search.setPlaceholderText("搜索仪器、通道、测点或监视量")
         layout.addWidget(self.search)
         self.tree = QTreeWidget()
+        self.tree.setObjectName("watchSignalTree")
         self.tree.setHeaderLabels(["仪器／通道／监视量", "单位"])
         self.tree.setColumnWidth(0, 455)
         layout.addWidget(self.tree)
@@ -68,7 +69,7 @@ class WatchPicker(QDialog):
                             (label + " " + channel.text(0) + " " + spec.label + " " + spec.metric).casefold(),
                         )
                     )
-        self.tree.expandToDepth(0)
+        self.tree.collapseAll()
         self.message = QLabel("" if self.entries else "当前没有已连接且提供监视量的仪器")
         layout.addWidget(self.message)
         buttons = QDialogButtonBox(
@@ -90,7 +91,7 @@ class WatchPicker(QDialog):
                 ch.setHidden(all(leaf.isHidden() for leaf in children(ch)))
                 ch.setExpanded(bool(words) and not ch.isHidden())
             dev.setHidden(all(ch.isHidden() for ch in children(dev)))
-            dev.setExpanded(True)
+            dev.setExpanded(bool(words) and not dev.isHidden())
 
     def accept(self):
         rows = []

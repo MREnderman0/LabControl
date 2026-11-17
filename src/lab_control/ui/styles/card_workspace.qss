@@ -78,6 +78,27 @@ QTableWidget#loadChannels { border: 1px solid #343b3e; alternate-background-colo
 QTableWidget#loadChannels::item { padding: 0 9px; border-bottom: 1px solid #282f31; }
 QTableWidget#loadChannels::item:selected { background: #443723; color: #ffda9f; }
 
+QSplitter#watchSplit::handle { background: #0b0d0f; }
+QListWidget#watchPresets {
+    background: #13191b; border: 1px solid #354042; border-radius: 4px;
+    padding: 2px; outline: 0; selection-background-color: #443723; selection-color: #ffda9f;
+}
+QListWidget#watchPresets::item { min-height: 24px; padding: 4px 9px; border-left: 2px solid transparent; }
+QListWidget#watchPresets::item:hover { background: #22282a; }
+QListWidget#watchPresets::item:selected { background: #443723; color: #ffda9f; border-left-color: #d99342; }
+QTableView#watchReadings {
+    border: 1px solid #343b3e; border-radius: 4px; selection-background-color: #443723;
+    alternate-background-color: #181d1f;
+}
+QTableView#watchReadings::item { padding: 0 7px; border-bottom: 1px solid #282f31; }
+QTableView#watchReadings::item:selected { background: #443723; }
+QTableView#watchReadings QHeaderView::section { font-size: 12px; padding: 7px; }
+QTableView#watchReadings QLineEdit { padding: 0 4px; min-height: 0; }
+QTreeWidget#watchSignalTree { font-size: 14px; }
+QDialog#watchWindow QTableView#watchReadings, QDialog#watchWindow QLineEdit { font-size: 17px; }
+QDialog#watchWindow QHeaderView::section { font-size: 14px; }
+QDialog#watchWindow QPushButton { font-size: 15px; }
+
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox { background: #171c1e; border: 1px solid #485054; border-radius: 3px; padding: 6px 10px; min-height: 23px; selection-background-color: #685035; }
 QComboBox { padding-right: 6px; border-radius: 6px; }
 QComboBox:hover { background: #22282a; border-color: #788286; }

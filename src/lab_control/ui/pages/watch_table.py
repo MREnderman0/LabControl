@@ -4,12 +4,14 @@ from dataclasses import replace
 from datetime import datetime
 
 from PySide6.QtCore import QAbstractTableModel, QMimeData, QModelIndex, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QHeaderView,
     QPushButton,
+    QStyledItemDelegate,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -18,6 +20,14 @@ from PySide6.QtWidgets import (
 from lab_control.application.watchlists import WatchRow
 from lab_control.domain.workspace import channel_label
 from lab_control.ui.pages.watch_picker import WatchPicker
+
+
+class WatchReadingDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        color = index.data(Qt.ItemDataRole.ForegroundRole)
+        if color is not None:
+            option.palette.setColor(QPalette.ColorRole.HighlightedText, color)
 
 
 class WatchTableModel(QAbstractTableModel):
@@ -39,16 +49,29 @@ class WatchTableModel(QAbstractTableModel):
     def reload(self):
         p = self.hub.presets.get(self.preset)
         rows = p.rows if p else ()
-        if rows != self.rows:
+        if rows == self.rows:
+            return
+        if tuple(r.id for r in rows) != tuple(r.id for r in self.rows):
             self.beginResetModel()
             self.rows = rows
             self.endResetModel()
+            return
+        old, self.rows = self.rows, rows
+        for i, (before, after) in enumerate(zip(old, rows, strict=True)):
+            for column, changed in ((5, before.lower != after.lower), (6, before.upper != after.upper)):
+                if changed:
+                    cell = self.index(i, column)
+                    self.dataChanged.emit(cell, cell)
+        self.refresh()
 
     def refresh(self):
-        if self.rows:
+        if not self.rows:
+            return
+        # Qt reloads an open editor whenever its cell lies in a dataChanged range.
+        for first, last in ((0, 4), (7, 8)):
             self.dataChanged.emit(
-                self.index(0, 0),
-                self.index(len(self.rows) - 1, 8),
+                self.index(0, first),
+                self.index(len(self.rows) - 1, last),
                 [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ForegroundRole],
             )
 
@@ -59,6 +82,9 @@ class WatchTableModel(QAbstractTableModel):
         return len(self.columns)
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.TextAlignmentRole and orientation == Qt.Orientation.Horizontal:
+            side = Qt.AlignmentFlag.AlignRight if section in (3, 5, 6) else Qt.AlignmentFlag.AlignLeft
+            return side | Qt.AlignmentFlag.AlignVCenter
         if role == Qt.ItemDataRole.DisplayRole:
             return self.columns[section] if orientation == Qt.Orientation.Horizontal else section + 1
         return None
@@ -98,7 +124,11 @@ class WatchTableModel(QAbstractTableModel):
             return reading.unit if reading else row.unit
         if col in (5, 6):
             v = row.lower if col == 5 else row.upper
-            return "" if v is None else str(v)
+            if role == Qt.ItemDataRole.ToolTipRole:
+                return f"单击设置{self.columns[col]}，留空可清除"
+            if v is None:
+                return "" if role == Qt.ItemDataRole.EditRole else "—"
+            return str(v)
         if col == 7:
             if not reading:
                 return "—"
@@ -168,7 +198,7 @@ class WatchTableModel(QAbstractTableModel):
 
 
 class PresetTable(QWidget):
-    def __init__(self, hub, parent=None):
+    def __init__(self, hub, parent=None, *, detached=False):
         super().__init__(parent)
         self.hub = hub
         layout = QVBoxLayout(self)
@@ -182,8 +212,10 @@ class PresetTable(QWidget):
         bar.addStretch()
         layout.addLayout(bar)
         self.table = QTableView()
+        self.table.setObjectName("watchReadings")
         self.model = WatchTableModel(hub, self.table)
         self.table.setModel(self.model)
+        self.table.setItemDelegate(WatchReadingDelegate(self.table))
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
@@ -191,19 +223,26 @@ class PresetTable(QWidget):
         self.table.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table.setAlternatingRowColors(True)
         header = self.table.horizontalHeader()
-        for i, width in enumerate((155, 175, 140, 95, 55, 65, 65, 90, 130)):
+        widths = (
+            (152, 258, 145, 120, 55, 80, 80, 100, 106)
+            if detached
+            else (140, 226, 130, 102, 52, 70, 70, 88, 115)
+        )
+        for i, width in enumerate(widths):
             self.table.setColumnWidth(i, width)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(31)
+        self.table.verticalHeader().setDefaultSectionSize(42 if detached else 34)
         layout.addWidget(self.table)
         self.add.clicked.connect(self.pick)
         self.remove.clicked.connect(self.remove_rows)
         self.once.clicked.connect(self.capture)
         self.table.selectionModel().selectionChanged.connect(self.buttons)
+        self.table.clicked.connect(self.edit_limit)
         hub.updated.connect(self.buttons)
         self.bind("")
 
@@ -213,6 +252,14 @@ class PresetTable(QWidget):
         self.buttons()
         if self.isVisible():
             self.hub.subscribe(self, key)
+
+    def edit_limit(self, index):
+        if (
+            index.column() in (5, 6)
+            and QApplication.keyboardModifiers() == Qt.KeyboardModifier.NoModifier
+            and self.table.state() != QAbstractItemView.State.EditingState
+        ):
+            self.table.edit(index)
 
     def buttons(self, *_args):
         rows = self.selection()

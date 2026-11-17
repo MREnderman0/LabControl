@@ -269,3 +269,84 @@ def test_scalar_matches_correct_measurement_on_shared_channel():
     batch = MeasurementBatch(DeviceIdentity("example", "supply", "1", "1"), (current, voltage), {})
     assert select_sample(batch, 1, DataSource("voltage", "电压", "scalar", measurement="voltage")) is voltage
     assert select_sample(batch, 1, DataSource("current", "电流", "scalar", quantity="current")) is current
+
+
+def test_threshold_editor_keeps_draft_as_readings_refresh(workspace, qtbot):
+    from PySide6.QtWidgets import QLineEdit, QStyleOptionViewItem
+
+    from lab_control.ui.pages.watch_table import PresetTable
+
+    win, rt, page, meter, _ = workspace
+    hub = page.hub
+    row = hub.catalog(meter)[1][("reading", "", "")].row(win.controller.records[meter], 204, {})
+    preset = Preset("测温", (row,))
+    hub.save([preset])
+    popup = page.open_window(preset.id)
+    detached = popup.findChild(PresetTable)
+    qtbot.waitUntil(lambda: row.id in hub.values)
+
+    def enter(view, column, first, rest, *, click=False, cancel=False):
+        idx = view.model().index(0, column)
+        view.scrollTo(idx)
+        if click:
+            qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.visualRect(idx).center())
+        else:
+            view.edit(idx)
+        editor = view.focusWidget()
+        assert isinstance(editor, QLineEdit)
+        editor.selectAll()
+        qtbot.keyClicks(editor, first)
+        hub.updated.emit()
+        assert editor.text() == first
+        qtbot.keyClicks(editor, rest)
+        qtbot.keyClick(editor, Qt.Key.Key_Escape if cancel else Qt.Key.Key_Return)
+        qtbot.waitUntil(lambda: view.state() != view.State.EditingState)
+
+    enter(detached.table, 5, "-", "25.75")
+    assert page.table.model.rows[0].lower == -25.75
+    enter(page.table.table, 6, "3.", "125", click=True)
+    assert detached.model.rows[0].upper == 3.125
+    qtbot.waitUntil(lambda: hub.status[row.id] == "高于上限")
+    option = QStyleOptionViewItem()
+    detached.table.itemDelegate().initStyleOption(option, detached.model.index(0, 3))
+    assert option.palette.highlightedText().color() == detached.model.index(0, 3).data(
+        Qt.ItemDataRole.ForegroundRole
+    )
+    enter(detached.table, 6, "4", "0", click=True, cancel=True)
+    assert Presets(rt.repository).get(preset.id).rows[0].upper == 3.125
+    # A draft on one bound survives saving the other bound in another view.
+    idx = detached.model.index(0, 5)
+    detached.table.edit(idx)
+    editor = detached.table.focusWidget()
+    assert isinstance(editor, QLineEdit)
+    editor.selectAll()
+    qtbot.keyClick(editor, Qt.Key.Key_Backspace)
+    assert page.table.model.setData(page.table.model.index(0, 6), "42")
+    assert editor.isVisible() and editor.text() == ""
+    qtbot.keyClick(editor, Qt.Key.Key_Return)
+    qtbot.waitUntil(lambda: detached.table.state() != detached.table.State.EditingState)
+    saved = Presets(rt.repository).get(preset.id).rows[0]
+    assert saved.lower is None and saved.upper == 42
+
+
+def test_signal_picker_starts_collapsed_and_search_preserves_checks(workspace, qtbot):
+    from lab_control.ui.pages.watch_picker import WatchPicker, children
+
+    _, _, page, _, _ = workspace
+    picker = WatchPicker(page.hub, page)
+    qtbot.addWidget(picker)
+    picker.show()
+    devices = list(children(picker.tree.invisibleRootItem()))
+    assert len(devices) == 2 and all(not d.isExpanded() for d in devices)
+    picker.search.setText("RMS")
+    (device,) = [d for d in devices if not d.isHidden()]
+    assert device.isExpanded()
+    channel = device.child(0)
+    assert channel.isExpanded()
+    (signal,) = [s for s in children(channel) if not s.isHidden()]
+    signal.setCheckState(0, Qt.CheckState.Checked)
+    picker.search.clear()
+    assert all(not d.isHidden() and not d.isExpanded() for d in devices)
+    assert signal.checkState(0) == Qt.CheckState.Checked
+    picker.accept()
+    assert len(picker.result_rows) == 1 and picker.result_rows[0].metric == "rms"
