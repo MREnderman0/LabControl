@@ -89,7 +89,7 @@ def test_scan_curve_selection_keeps_full_recording_and_snapshot(qtbot, tmp_path,
         assert isinstance(outer, MonitoringPage)
         page = outer.scan_page
         assert page is not None and page.isVisible()
-        assert window.current_module == "实时监测"
+        assert window.current_module == "仪器测控"
         assert "multimeter" not in window._submenu_categories("设备管理")
         assert outer.form.editors == {} and outer.splitter.isHidden()
         assert tuple(page.cards) == CHANNELS
@@ -199,7 +199,7 @@ def test_switch_scan_and_multimeter_preserves_management_controls(qtbot, tmp_pat
         assert tuple(scan.cards) == CHANNELS
         window.navigate("设备管理", "multimeter", meter_id)
         management = window.stack.currentWidget()
-        assert window.current_module == "设备管理"
+        assert window.current_module == "仪器测控"
         assert management.selector.device_id == meter_id
         assert management.go_monitor.isEnabled()
         assert management.selector.combo.findData(scan_id) == -1

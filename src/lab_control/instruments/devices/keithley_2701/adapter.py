@@ -110,6 +110,8 @@ class Keithley2701Adapter(ScpiAdapter):
 
     def refresh_capabilities(self) -> None:
         channels = self._inputs(self._slots(self._query("*OPT?")), self._query("ROUT:SCAN?"))
+        if self.pt100 is not None:
+            self.capability_details.update(reading_quantity="temperature", reading_unit="°C")
         if self.capability_details.get("acquisition_channels") != list(channels):
             self.profile = replace(self.profile, channels=channels or (1,))
             self.capability_details.update(

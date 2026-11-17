@@ -92,7 +92,7 @@ def test_measured_voltage_and_current_columns_do_not_move_with_text_length(power
 
 def test_navigation_one_read_feeds_both_trends_and_no_parameter_polling(power, qtbot, monkeypatch):
     window, page, runtime, key, adapter = power
-    assert window.current_module == "实时监测"
+    assert window.current_module == "仪器测控"
     assert page.channels() == (1, 2, 3, 4)
     assert page.controls.output.operation == "all_outputs"
     assert all(panel.output is None for panel in page.controls.panels.values())

@@ -166,6 +166,7 @@ class MonitoringService:
             if task and task.running and once:
                 raise DeviceError("Monitoring is already running", "task_busy")
             if task and task.running:
+                was_watch_owned = task.watch_owned
                 previous = (
                     task.requests,
                     task.request_revision,
@@ -175,7 +176,8 @@ class MonitoringService:
                     task.csv_interval,
                     task.recording,
                 )
-                task.requests = merge_requests((*task.requests, *merged))
+                task.requests = merged if was_watch_owned else merge_requests((*task.requests, *merged))
+                task.watch_owned = False
                 task.request_revision += 1
                 task.interval = interval
                 task.record_interval = record_interval
@@ -186,6 +188,7 @@ class MonitoringService:
                 def restore_task() -> None:
                     # A later user edit owns its new request revision.
                     if task.request_revision == revision:
+                        task.watch_owned = was_watch_owned
                         (
                             task.requests,
                             task.request_revision,
@@ -206,6 +209,7 @@ class MonitoringService:
                             device_id, True, bool(task.recording or task.recording_preparation)
                         )
                 except Exception:
+                    task.watch_owned = was_watch_owned
                     (
                         task.requests,
                         task.request_revision,
@@ -267,7 +271,49 @@ class MonitoringService:
             preparation.result()
         return preparation
 
-    def replace_requests(self, device_id: str, requests: tuple[AcquisitionRequest, ...]) -> None:
+    def sync_watch(self, device_id, requests, interval, cadence, stop_revision):
+        """Share an existing task, or own an idle device until the last subscriber leaves."""
+        with self.lock:
+            task = self.tasks.get(device_id)
+            if not requests:
+                if task and task.watch_owned:
+                    if task.running:
+                        self.stop(device_id, preserve_intent=True)
+                    task.watch_owned = False
+                    task.watch_session = ""
+                return
+            if self.closing or self.stop_revision(device_id) != stop_revision:
+                return
+            if task and task.running:
+                if task.watch_owned and task.requests != merge_requests(requests):
+                    self.replace_requests(device_id, requests, watch_owned=True)
+                return
+            if task and task.stopping:
+                return
+            with self.sessions.lock:
+                session = self.sessions.sessions.get(device_id)
+                if (
+                    not session
+                    or session.state != "connected"
+                    or session.closing
+                    or session.monitoring
+                    or session.controls_locked
+                    or session.pending
+                    or session.control_pending
+                    or session.control_group
+                    or session.single_capture
+                    or (session.stream_future and not session.stream_future.done())
+                    or device_id in self.capture_saves
+                    or (task and task.watch_owned and task.error and task.watch_session == session.session_id)
+                ):
+                    return
+                self.start(device_id, requests, interval=interval, cadence=cadence, record_interval=None)
+                self.tasks[device_id].watch_owned = True
+                self.tasks[device_id].watch_session = session.session_id
+
+    def replace_requests(
+        self, device_id: str, requests: tuple[AcquisitionRequest, ...], *, watch_owned=False
+    ) -> None:
         """Replace a running task's acquisition set without stopping monitoring.
 
         A request already in flight is allowed to finish at the session worker, but
@@ -295,6 +341,7 @@ class MonitoringService:
                 for ch in request.channels
             }
             task.power_window.mark_gap(previous_channels ^ next_channels)
+            task.watch_owned = watch_owned
             task.requests = merged
             task.request_revision += 1
             task.frames.clear()
@@ -583,6 +630,7 @@ class MonitoringService:
             if enabled:
                 if not task.recording:
                     preparation = self._begin_recording_locked(device_id, task, mode=mode)
+                task.watch_owned = False
             else:
                 task.recording = False
                 task.recording_cancelled = True

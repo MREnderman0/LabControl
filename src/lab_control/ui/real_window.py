@@ -151,7 +151,7 @@ class RealWindow(QMainWindow):
         self.overview_page = self.takeCentralWidget()
         assert self.overview_page is not None
         self.page_map: dict[tuple[str, str], QWidget] = {}
-        self.current_module = "设备管理"
+        self.current_module = "首页"
         root = QWidget()
         root.setObjectName("cardWorkspace")
         row = QHBoxLayout(root)
@@ -174,7 +174,7 @@ class RealWindow(QMainWindow):
         self.sidebar_section.setObjectName("sidebarSection")
         side.addWidget(self.sidebar_section)
         self.nav_buttons = {}
-        for module in ("设备管理", "实时监测", "数据处理", "操作日志", "系统设置"):
+        for module in ("首页", "仪器测控", "监视列表", "数据处理", "操作日志", "系统设置"):
             button = QPushButton(module)
             button.setObjectName("workspaceNav")
             button.setCheckable(True)
@@ -201,7 +201,7 @@ class RealWindow(QMainWindow):
         header_heading.setSpacing(3)
         self.breadcrumb = QLabel()
         self.breadcrumb.setObjectName("commandEyebrow")
-        self.section_title = QLabel("设备管理")
+        self.section_title = QLabel("首页")
         self.section_title.setObjectName("commandModuleTitle")
         header_heading.addWidget(self.section_title)
         header_heading.addWidget(self.breadcrumb)
@@ -220,7 +220,13 @@ class RealWindow(QMainWindow):
         self.submenu.setUsesScrollButtons(True)
         self.submenu.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.submenu.currentChanged.connect(self.show_page)
-        content_layout.addWidget(self.submenu)
+        subnav = QHBoxLayout()
+        subnav.addWidget(self.submenu, 1)
+        self.surface_picker = WorkspaceComboBox()
+        self.surface_picker.setAccessibleName("仪器页面")
+        self.surface_picker.activated.connect(lambda _index: self.show_page())
+        subnav.addWidget(self.surface_picker)
+        content_layout.addLayout(subnav)
         self.stack = WorkspaceStack()
         stack_layout = self.stack.layout()
         assert stack_layout is not None
@@ -258,7 +264,7 @@ class RealWindow(QMainWindow):
         settings.addWidget(self.environment_panel, 1)
         self.stack.addWidget(self.settings_page)
         self.setCentralWidget(root)
-        self.navigate("设备管理", "", "")
+        self.navigate("首页", "", "")
 
     def toggle_sidebar(self) -> None:
         self._manual_sidebar_collapsed = not self._manual_sidebar_collapsed

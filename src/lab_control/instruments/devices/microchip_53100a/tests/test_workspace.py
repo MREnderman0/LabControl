@@ -42,7 +42,7 @@ def test_fixed_capture_is_management_only_and_navigation_never_writes(workspace,
     runtime.repository.save_workspace(
         f"phase-acquisition/{window.controller.mode}/{key}", {"sample_rate": 1, "duration": 999}
     )
-    assert window.current_module == "设备管理"
+    assert window.current_module == "仪器测控"
     assert "phase_noise_analyzer" in window._submenu_categories("设备管理")
     assert "phase_noise_analyzer" not in window._submenu_categories("实时监测")
     assert not surface_applicable(window.controller.records[key], "monitoring")
@@ -50,7 +50,7 @@ def test_fixed_capture_is_management_only_and_navigation_never_writes(workspace,
     assert key not in window.dashboard.cards
     assert not page.findChildren(QSpinBox) and not hasattr(page, "editors")
     window.navigate("实时监测", "phase_noise_analyzer", key)
-    assert window.current_module == "设备管理" and window.stack.currentWidget() is page
+    assert window.current_module == "仪器测控" and window.stack.currentWidget() is page
     qtbot.wait(50)
     assert not writes and not runtime.sessions.sessions[key].adapter.started
     assert not page.stop_button.isEnabled()

@@ -63,7 +63,7 @@ def test_load_management_readback_and_export(qtbot, tmp_path, monkeypatch, selec
         assert window.action_buttons["monitor"].isHidden()
         assert not window.action_buttons["manage"].isHidden()
         window.navigate("实时监测", "electronic_load", key)
-        assert window.stack.currentWidget() is page and window.current_module == "设备管理"
+        assert window.stack.currentWidget() is page and window.current_module == "仪器测控"
         assert page.table.rowCount() == 8
         assert page.table.verticalScrollBar().maximum() == 0
         visible = [editor for editor in page.editors.values() if editor.isVisible()]

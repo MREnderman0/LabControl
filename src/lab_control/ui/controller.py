@@ -13,6 +13,7 @@ from lab_control.application.catalog import instrument_category, mode_applicable
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import control_capabilities
 from lab_control.application.runtime import ApplicationRuntime
+from lab_control.application.watch_measurements import RecordedWindows
 from lab_control.discovery.presence import LIVE_CONNECTIONS
 from lab_control.domain.instruments import DeviceCommand, DeviceError
 from lab_control.domain.workspace import GENERAL, WORKSPACE_MODES
@@ -46,6 +47,7 @@ class WorkspaceController(QObject):
         self._frame_lock = threading.Lock()
         self._frame_devices: set[str] = set()
         self.recorded_frames: dict[str, dict[str, Any]] = {}
+        self.recorded_windows: dict[str, RecordedWindows] = {}
         self._recording_result_cursor = 0
         self._frame_wakeup.connect(self._deliver_frames, Qt.ConnectionType.QueuedConnection)
         self._job_wakeup.connect(self._deliver_jobs, Qt.ConnectionType.QueuedConnection)
@@ -61,16 +63,32 @@ class WorkspaceController(QObject):
     def _recorded_frame(self, event: dict[str, Any]) -> None:
         if event["event"] == "measurement":
             with self._frame_lock:
-                self.recorded_frames[event["device_id"]] = event
+                device_id = event["device_id"]
+                self.recorded_frames[device_id] = event
+                request = event.get("request")
+                if request and request.kind == "scalar":
+                    session, version = event["session_id"], event["configuration_version"]
+                    window = self.recorded_windows.get(device_id)
+                    if window is None or (window.session, window.version) != (session, version):
+                        window = self.recorded_windows[device_id] = RecordedWindows(session, version)
+                    window.add(event)
             self._queue_frame(event["device_id"])
 
     def recorded_frame(self, device_id: str) -> dict[str, Any] | None:
         with self._frame_lock:
             return self.recorded_frames.get(device_id)
 
+    def recorded_window(self, device_id, frame, optical):
+        with self._frame_lock:
+            window = self.recorded_windows.get(device_id)
+            if window and (window.session, window.version) == (frame.session_id, frame.configuration_version):
+                return window.snapshot(optical)
+            return None
+
     def clear_recorded_frame(self, device_id: str) -> None:
         with self._frame_lock:
             self.recorded_frames.pop(device_id, None)
+            self.recorded_windows.pop(device_id, None)
 
     def _queue_frame(self, device_id: str) -> None:
         with self._frame_lock:

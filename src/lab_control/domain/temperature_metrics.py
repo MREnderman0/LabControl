@@ -58,6 +58,7 @@ TEMPERATURE_STABILITY_PROFILE = MetricProfile(
     description="单通道温控稳定性",
     parameters=MetricParameters,
     metrics=(MetricDefinition("peak_to_peak", "", "最大读数减最小读数"),),
+    watch_sources=("reading",),
     process=process_temperature_stability,
     supports_multiple_recordings=True,
 )

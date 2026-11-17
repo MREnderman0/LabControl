@@ -68,7 +68,7 @@ def test_jw8105_all_channel_monitoring_records_and_filters(qapp, qtbot, tmp_path
         window.navigate("设备管理", "optical_power_meter", device)
         page = window.stack.currentWidget()
         assert isinstance(page, OpticalPowerMonitoringPage)
-        assert window.current_module == "实时监测"
+        assert window.current_module == "仪器测控"
         assert runtime.monitoring.settings_sync.focus == device
         assert runtime.monitoring.settings_sync.advanced == ()
         assert not hasattr(page, "parameter_card")

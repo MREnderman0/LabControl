@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from lab_control.ui.pages.watchlists import WatchlistsPage
+
 if TYPE_CHECKING:
     from lab_control.ui.real_window import RealWindow
 
@@ -23,6 +25,9 @@ class WindowShutdown:
         window._shutdown_started = True
         window.timer.stop()
         window.agent_panel.timer.stop()
+        watchlists = window.page_map.get(("监视列表", ""))
+        if isinstance(watchlists, WatchlistsPage):
+            watchlists.shutdown()
         window.controller.close()
         window.message.setText("正在停止扫描和采集并释放本软件会话…")
         central = window.centralWidget()

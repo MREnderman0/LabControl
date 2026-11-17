@@ -71,5 +71,6 @@ PHASE_NOISE_AT_OFFSET_PROFILE = MetricProfile(
     description="读取指定偏频的相位噪声",
     parameters=PhaseNoiseOffsetParameters,
     metrics=(MetricDefinition("phase_noise", "dBc/Hz", "指定偏频处的相噪值，按 Hz 轴线性插值"),),
+    watch_sources=("phase_noise_trace", "phase_noise_capture"),
     process=process_phase_noise_at_offset,
 )

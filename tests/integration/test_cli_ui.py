@@ -156,14 +156,14 @@ def test_power_surfaces_route_coremorrow_to_management_and_other_supplies_to_mon
         assert "power_supply" in window._submenu_categories("实时监测")
 
         window.navigate("设备管理", "power_supply", coremorrow)
-        assert window.current_module == "设备管理"
+        assert window.current_module == "仪器测控"
         management = window.stack.currentWidget()
         assert isinstance(management, PowerSupplyPage)
         assert management.selector.combo.findData(coremorrow) >= 0
         assert management.selector.combo.findData(generic) == -1
 
         window.navigate("设备管理", "power_supply", generic)
-        assert window.current_module == "实时监测"
+        assert window.current_module == "仪器测控"
         monitoring = window.stack.currentWidget()
         assert isinstance(monitoring, PowerMonitoringPage)
         assert monitoring.selector.combo.findData(generic) >= 0

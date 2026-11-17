@@ -80,5 +80,6 @@ SPECTRUM_PEAK_AND_SNR_PROFILE = MetricProfile(
         MetricDefinition("snr", "dB", "峰值减去距主峰超过 2 MHz 的 dBm 读数均值"),
         MetricDefinition("spur_rejection", "dB", "峰值减去距主峰超过 2 MHz 的最高 dBm 读数"),
     ),
+    watch_sources=("spectrum",),
     process=process_spectrum_peak_and_snr,
 )

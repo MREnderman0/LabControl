@@ -100,6 +100,9 @@ class MonitorTask:
     recovery: Recovery | None = None
     recovery_pending: Future[Any] | None = None
 
+    watch_owned: bool = False
+    watch_session: str = ""
+
     @property
     def stopping(self) -> bool:
         """A stopped task still owns I/O or binary data; CSV alone does not block restart."""

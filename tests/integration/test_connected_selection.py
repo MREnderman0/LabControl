@@ -100,7 +100,7 @@ def test_disconnect_clears_open_popup_and_returns_to_overview(workspace, qtbot, 
         assert not page.monitor_button.isEnabled()
         assert window.controller.sync_device == ""
     elif category == "power_supply":
-        assert window.current_module == "实时监测"
+        assert window.current_module == "仪器测控"
         assert page.controls is None and not page.channel_checks
         assert page.splitter.isHidden()
         assert page.empty.isVisible() and window.controller.sync_device == ""
@@ -120,7 +120,7 @@ def test_disconnect_clears_open_popup_and_returns_to_overview(workspace, qtbot, 
     else:
         assert window.submenu.tabData(window.submenu.currentIndex()) == ""
         assert window.stack.currentWidget() is (
-            window.overview_page if window.current_module == "设备管理" else window.dashboard
+            window.overview_page if window.current_module == "首页" else window.dashboard
         )
     for _ in range(3):
         window.controller.poll()
@@ -137,8 +137,8 @@ def test_submenus_only_show_connected_categories_and_restore_after_reconnect(wor
         window.navigate(module)
         return [window.submenu.tabData(index) for index in range(window.submenu.count())]
 
-    assert tabs("设备管理") == ["", "signal_generator"]
-    assert tabs("实时监测") == ["", "power_supply"]
+    assert tabs("首页") == [""]
+    assert set(tabs("仪器测控")) == {"", "power_supply", "signal_generator"}
 
     original_snapshots = runtime.sessions.snapshots
 
@@ -156,12 +156,12 @@ def test_submenus_only_show_connected_categories_and_restore_after_reconnect(wor
     for state in ("busy", "degraded"):
         monkeypatch.setattr(runtime.sessions, "snapshots", with_states({ids["first"]: state}))
         window.refresh()
-        assert "signal_generator" in tabs("设备管理")
-        assert "signal_generator" not in tabs("实时监测")
+        assert "signal_generator" in tabs("仪器测控")
+        assert "signal_generator" not in tabs("首页")
 
     window.navigate("实时监测", "signal_generator", ids["first"])
     assert window.stack.currentWidget().selector.device_id == ids["first"]
-    assert not window.submenu.isTabVisible(window.submenu.currentIndex())
+    assert window.submenu.isTabVisible(window.submenu.currentIndex())
     monkeypatch.setattr(
         runtime.sessions,
         "snapshots",
@@ -182,8 +182,8 @@ def test_submenus_only_show_connected_categories_and_restore_after_reconnect(wor
         with_states({ids["first"]: "connected", ids["second"]: "connected"}),
     )
     window.refresh()
-    assert "signal_generator" in tabs("设备管理")
-    assert "signal_generator" not in tabs("实时监测")
+    assert "signal_generator" in tabs("仪器测控")
+    assert "signal_generator" not in tabs("首页")
 
 
 @pytest.mark.parametrize("module", ["设备管理", "实时监测"])

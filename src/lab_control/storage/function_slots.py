@@ -55,3 +55,4 @@ class FunctionSlots:
     def save(self, category: str, mode: str, definitions: dict[str, str]) -> None:
         # An explicitly empty dictionary must not restore the built-in slots.
         self.repository.save_workspace(self.key(category, mode), definitions)
+        self.names_revision += 1

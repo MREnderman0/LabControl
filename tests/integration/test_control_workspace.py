@@ -240,7 +240,7 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
             page = window.stack.currentWidget()
             assert page.selector.combo.count() >= 2
             if category == "optical_power_meter":
-                assert window.current_module == "实时监测"
+                assert window.current_module == "仪器测控"
                 assert isinstance(page, OpticalPowerMonitoringPage)
                 window.navigate("设备管理")
                 assert not any(
@@ -269,7 +269,7 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
                 elif category == "electronic_load":
                     assert set(page.fallback.editors) == {c.name for c in caps.operations}
                     window.navigate("实时监测", category)
-                    assert window.current_module == "设备管理" and window.stack.currentWidget() is page
+                    assert window.current_module == "仪器测控" and window.stack.currentWidget() is page
                     continue
                 else:
                     assert set(page.form.editors) == {c.name for c in caps.operations}
@@ -313,7 +313,7 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
                 assert not hasattr(monitor, "form")
             elif category == "phase_noise_analyzer":
                 assert not hasattr(monitor, "form")
-                assert window.current_module == "设备管理"
+                assert window.current_module == "仪器测控"
                 assert not hasattr(monitor, "duration")
                 assert not runtime.monitoring.snapshots()
             elif category in MEASUREMENT_CATEGORIES:

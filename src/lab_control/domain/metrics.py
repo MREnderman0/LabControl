@@ -89,6 +89,7 @@ class MetricProfile:
     supports_partial: bool = False
     per_channel_metrics: bool = False
     supports_multiple_recordings: bool = False
+    watch_sources: tuple[str, ...] = ()
 
     def result_metrics(self, channels: list[int]) -> tuple[MetricDefinition, ...]:
         if not self.per_channel_metrics:

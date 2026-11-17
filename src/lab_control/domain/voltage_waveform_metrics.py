@@ -86,6 +86,7 @@ VOLTAGE_WAVEFORM_STATISTICS_PROFILE = MetricProfile(
         MetricDefinition("rms", "V", "整段波形的均方根，包含直流分量"),
         MetricDefinition("std", "V", "整段波形相对均值的总体标准差（ddof=0）"),
     ),
+    watch_sources=("waveform",),
     process=process_voltage_waveform_statistics,
     per_channel_metrics=True,
 )

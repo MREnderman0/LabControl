@@ -140,7 +140,16 @@ class RecordedAcquisitionRunner:
                             recording.outcome(), "recording_failed" if recording.error else "recording_paused"
                         )
                     next_save = started + (record_interval or 0)
-                manager.emit("measurement", device_id, batch=batch, path=recording.last_path)
+                manager.emit(
+                    "measurement",
+                    device_id,
+                    batch=batch,
+                    path=recording.last_path,
+                    request=request,
+                    session_id=session.session_id,
+                    configuration_version=session.configuration_version,
+                    received_at=time.perf_counter(),
+                )
                 last_valid_at = batch.timestamp
                 index += 1
                 now = time.monotonic()

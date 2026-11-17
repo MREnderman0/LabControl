@@ -185,9 +185,10 @@ def test_pool_is_bounded_by_overview_and_closes_on_every_navigation(workspace, q
             assert isinstance(button, QPushButton)
             top_left = button.mapTo(window.device_pool.panel, QPoint())
             assert window.device_pool.panel.rect().contains(button.rect().translated(top_left))
-    window.submenu.setCurrentIndex(1)
+    assert window.submenu.count() == 1
+    window.nav_buttons["仪器测控"].click()
     assert window.device_pool.isHidden()
-    window.submenu.setCurrentIndex(0)
+    window.nav_buttons["首页"].click()
     assert window.device_pool.isHidden()
     window.open_category("signal_generator")
     window.navigate("实时监测")

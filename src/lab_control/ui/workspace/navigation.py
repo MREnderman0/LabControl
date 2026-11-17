@@ -79,6 +79,10 @@ class WorkspaceNavigation:
         window = self.window
         if module == "数据处理":
             return ("single_device", "batch")
+        if module == "仪器测控":
+            control = self._submenu_categories("设备管理", records, states)
+            monitor = self._submenu_categories("实时监测", records, states)
+            return tuple(c for c in CATEGORY_LABELS if c in control or c in monitor)
         if module not in {"设备管理", "实时监测"}:
             return ()
         monitoring_only = {
@@ -103,15 +107,10 @@ class WorkspaceNavigation:
             for value in CATEGORY_LABELS
             if value in available
             and not (module == "设备管理" and value in monitoring_only)
-            and (
-                any(
-                    surface_applicable(
-                        record,
-                        "management" if module == "设备管理" else "monitoring",
-                    )
-                    for record in connected
-                    if instrument_category(record) == value
-                )
+            and any(
+                surface_applicable(record, "management" if module == "设备管理" else "monitoring")
+                for record in connected
+                if instrument_category(record) == value
             )
         )
 
@@ -128,18 +127,12 @@ class WorkspaceNavigation:
         window.submenu.blockSignals(True)
         while window.submenu.count():
             window.submenu.removeTab(0)
-        if module in {"设备管理", "实时监测"}:
+        if module in {"首页", "仪器测控"}:
             window.submenu.addTab("总览")
             window.submenu.setTabData(0, "")
             selected_index = 0
             for value in categories:
-                # Keep source detail links from overview cards without a monitoring tab.
-                source_detail = module == "实时监测" and value == "signal_generator"
-                if source_detail and value != selected_category:
-                    continue
                 index = window.submenu.addTab(CATEGORY_LABELS[value])
-                if source_detail:
-                    window.submenu.setTabVisible(index, False)
                 window.submenu.setTabData(index, value)
                 if value == selected_category:
                     selected_index = index
@@ -158,12 +151,22 @@ class WorkspaceNavigation:
 
     def _sync_submenu(self) -> None:
         window = self.window
-        if window.current_module not in {"设备管理", "实时监测"}:
+        if window.current_module != "仪器测控":
             return
         categories = window._submenu_categories(window.current_module, window.records, window.states)
         current_category = window.submenu.tabData(window.submenu.currentIndex()) or ""
-        if (window.current_module, categories) != window._submenu_signature or (
-            current_category and current_category not in categories
+        options = tuple(
+            s
+            for s in ("设备管理", "实时监测")
+            if current_category in self._submenu_categories(s, window.records, window.states)
+        )
+        visible_options = tuple(
+            window.surface_picker.itemData(i) for i in range(window.surface_picker.count())
+        )
+        if (
+            (current_category and options != visible_options)
+            or (window.current_module, categories) != window._submenu_signature
+            or (current_category and current_category not in categories)
         ):
             window.navigate(
                 window.current_module,
@@ -172,48 +175,11 @@ class WorkspaceNavigation:
 
     def navigate(self, module: str, category: str = "", device_id: str = "") -> None:
         window = self.window
-        requested = window.controller.records.get(device_id)
-        if module == "实时监测" and category in {"phase_noise_analyzer", "electronic_load"}:
-            # Retain old navigation targets while keeping this finite capture in management.
-            module = "设备管理"
-        if module == "设备管理" and requested and not surface_applicable(requested, "management"):
-            module = "实时监测"
-        if (
-            module == "设备管理"
-            and category not in {"", "electronic_load"}
-            and not any(
-                instrument_category(record) == category and surface_applicable(record, "management")
-                for record in window.controller.connected_records(category)
-            )
-        ):
-            module = "实时监测"
-        if module == "设备管理" and category in {
-            "spectrum_analyzer",
-            "oscilloscope",
-            "optical_power_meter",
-            "optical_spectrometer",
-            "frequency_counter",
-        }:
-            module = "实时监测"
-        elif module == "设备管理" and category == "power_supply":
-            records = window.controller.records
-            states = window.controller.states
-            requested = records.get(device_id)
-            has_management_supply = (
-                requested is not None
-                and states.get(device_id, {}).get("connectionState") in LIVE_CONNECTIONS
-                and instrument_category(requested) == "power_supply"
-                and surface_applicable(requested, "management")
-                if device_id
-                else any(
-                    states.get(record_id, {}).get("connectionState") in LIVE_CONNECTIONS
-                    and instrument_category(record) == "power_supply"
-                    and surface_applicable(record, "management")
-                    for record_id, record in records.items()
-                )
-            )
-            if not has_management_supply:
-                module = "实时监测"
+        preferred = module if category and module in {"设备管理", "实时监测"} else ""
+        if module == "设备管理":
+            module = "仪器测控" if category else "首页"
+        elif module == "实时监测":
+            module = "仪器测控"
         if module not in window.nav_buttons:
             return
         window.device_pool.hide()
@@ -222,17 +188,50 @@ class WorkspaceNavigation:
             button.setChecked(name == module)
         window.section_title.setText(module)
         window._rebuild_submenu(module, category)
-        window.show_page(device_id=device_id)
+        self.show_page(device_id=device_id, preferred=preferred)
 
-    def show_page(self, *_args, device_id: str = "") -> None:
+    def show_page(self, *_args, device_id: str = "", preferred: str = "") -> None:
         window = self.window
         window.device_pool.hide()
         module, category = window.current_module, window.submenu.tabData(window.submenu.currentIndex()) or ""
+        window.submenu.setVisible(module != "监视列表")
+        window.breadcrumb.setVisible(module != "监视列表")
         window.breadcrumb.setText(f"{module} / {window.submenu.tabText(window.submenu.currentIndex())}")
-        if module == "设备管理" and not category:
+        picker = window.surface_picker
+        picker.hide()
+        if module == "仪器测控" and category:
+            options = [s for s in ("设备管理", "实时监测") if category in self._submenu_categories(s)]
+            requested = window.controller.records.get(device_id)
+            available = [
+                s
+                for s in options
+                if not requested
+                or surface_applicable(requested, "management" if s == "设备管理" else "monitoring")
+            ]
+            previous = picker.currentData() if picker.property("category") == category else ""
+            choices = available or options
+            surface = next((s for s in (preferred, previous, *choices) if s in choices), "")
+            picker.blockSignals(True)
+            picker.clear()
+            for s in options:
+                picker.addItem("控制" if s == "设备管理" else "监测", s)
+            picker.setProperty("category", category)
+            picker.setCurrentIndex(picker.findData(surface))
+            picker.blockSignals(False)
+            picker.setVisible(len(options) > 1)
+            module = surface
+        if module == "首页":
             page = window.overview_page
-        elif module == "实时监测" and not category:
+        elif module == "仪器测控" and not category:
             page = window.dashboard
+        elif module == "监视列表":
+            from lab_control.ui.pages.watchlists import WatchlistsPage
+
+            page = window.page_map.get((module, ""))
+            if page is None:
+                page = WatchlistsPage(window.controller, window)
+                window.page_map[(module, "")] = page
+                window.stack.addWidget(page)
         elif module == "系统设置":
             page = window.settings_page
         elif module == "数据处理":
@@ -285,7 +284,7 @@ class WorkspaceNavigation:
                         "操作日志": "设备操作、监测与异常按日保存在软件运行目录的 logs 文件夹。",
                     }[module]
                     layout.addWidget(QLabel(message))
-                    button = QPushButton("进入实时监测")
+                    button = QPushButton("进入仪器测控")
                     button.clicked.connect(lambda: window.navigate("实时监测"))
                     layout.addWidget(button)
                     layout.addStretch()
