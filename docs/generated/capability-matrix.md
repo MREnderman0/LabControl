@@ -21,6 +21,7 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 | Siglent SDG6032X | `siglent.sdg6032x` | 36 | 外部仪器测量输出 | [型号卡片](../devices/signal-sources/sdg6032x.md) |
 | Siglent SDG6032X-E | `siglent.sdg6032xe` | 13 | 外部仪器测量输出 | [型号卡片](../devices/signal-sources/sdg6032xe.md) |
 | Keithley 2231A-30-3 | `keithley.2231a` | 15 | power | [型号卡片](../devices/power-supplies/keithley-2231a.md) |
+| Keithley 2701 | `keithley.2701` | 4 | scalar | [型号卡片](../devices/measurement-analyzers/keithley-2701.md) |
 | Keysight E36313A | `keysight.e36313a` | 5 | power | [型号卡片](../devices/power-supplies/keysight-e36313a.md) |
 | Siglent SPD4306X | `siglent.spd4306x` | 22 | power | [型号卡片](../devices/power-supplies/spd4306x.md) |
 | SIGLENT SPS5000X 系列 | `siglent.sps5000x` | 6 | power | [型号卡片](../devices/power-supplies/sps5000x.md) |

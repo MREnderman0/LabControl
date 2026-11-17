@@ -1,0 +1,14 @@
+{
+  "fixture_origin": "Synthetic 2701 read-only configuration exchange",
+  "adapter": "keithley.2701",
+  "operation": "scan_list",
+  "access": "read",
+  "channel": 1,
+  "expected": "(@101:104,201:204)",
+  "exchanges": [
+    [
+      "ROUT:SCAN?",
+      "(@101:104,201:204)"
+    ]
+  ]
+}

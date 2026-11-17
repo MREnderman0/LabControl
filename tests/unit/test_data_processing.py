@@ -103,6 +103,7 @@ def test_qualified_model_processing_profiles_are_registered():
         "gwinstek.gpd4303s": "scalar",
         "itech.it6322": "scalar",
         "keithley.2231a": "scalar",
+        "keithley.2701": "scalar",
         "keysight.3458a": "scalar",
         "keysight.53220a": "scalar",
         "lecroy.9254": "frames",

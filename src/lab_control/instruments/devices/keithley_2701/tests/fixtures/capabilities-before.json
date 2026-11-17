@@ -1,0 +1,122 @@
+{
+  "capabilities": {
+    "category": "multimeter",
+    "channels": [
+      1
+    ],
+    "operations": [
+      {
+        "name": "cards",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://download.tek.com/manual/2701-900-01G_Feb_2016.pdf",
+        "section": "*OPT?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "scan_list",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://download.tek.com/manual/2701-900-01G_Feb_2016.pdf",
+        "section": "ROUT:SCAN?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "scan_state",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://download.tek.com/manual/2701-900-01G_Feb_2016.pdf",
+        "section": "ROUT:SCAN:LSEL?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "trigger_source",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": false,
+        "source": "https://download.tek.com/manual/2701-900-01G_Feb_2016.pdf",
+        "section": "TRIG:SOUR?",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      }
+    ]
+  },
+  "profile": {
+    "adapter_id": "keithley.2701",
+    "manufacturer": [
+      "KEITHLEY"
+    ],
+    "models": [
+      "MODEL 2701",
+      "2701"
+    ],
+    "category": "multimeter",
+    "channels": [
+      1
+    ],
+    "source": "https://download.tek.com/manual/2701-900-01G_Feb_2016.pdf",
+    "revision": "2701 User’s Manual §§2, 3, 7, 14, 15; 7708 measurement inputs",
+    "status": [
+      "cards",
+      "scan_list",
+      "scan_state",
+      "trigger_source"
+    ],
+    "identity_query": "*IDN?",
+    "error_query": "SYST:ERR?",
+    "acquisition": "scalar",
+    "channel_limits": {}
+  },
+  "commands": {
+    "cards": {
+      "writes": [],
+      "query": "*OPT?",
+      "select": [],
+      "compare": false
+    },
+    "scan_list": {
+      "writes": [],
+      "query": "ROUT:SCAN?",
+      "select": [],
+      "compare": false
+    },
+    "scan_state": {
+      "writes": [],
+      "query": "ROUT:SCAN:LSEL?",
+      "select": [],
+      "compare": false
+    },
+    "trigger_source": {
+      "writes": [],
+      "query": "TRIG:SOUR?",
+      "select": [],
+      "compare": false
+    }
+  }
+}

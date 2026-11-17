@@ -49,6 +49,7 @@
 | Siglent SDG6032X | `siglent.sdg6032x` | USB / LAN VXI-11 / 已配置 TCP Socket | [卡片](devices/signal-sources/sdg6032x.md) |
 | Siglent SDG6032X-E | `siglent.sdg6032xe` | USB / LAN VXI-11 / explicitly configured VISA SOCKET | [卡片](devices/signal-sources/sdg6032xe.md) |
 | Keithley 2231A-30-3 | `keithley.2231a` | 2231A-001 USB 适配器 / 虚拟串口 | [卡片](devices/power-supplies/keithley-2231a.md) |
+| Keithley 2701 | `keithley.2701` | 以太网 / VISA SOCKET 1394 | [卡片](devices/measurement-analyzers/keithley-2701.md) |
 | Keysight E36313A | `keysight.e36313a` | LAN / VXI-11 | [卡片](devices/power-supplies/keysight-e36313a.md) |
 | Siglent SPD4306X | `siglent.spd4306x` | USB / LAN VISA / 已配置 TCP Socket | [卡片](devices/power-supplies/spd4306x.md) |
 | SIGLENT SPS5000X 系列 | `siglent.sps5000x` | USB-TMC / LAN VXI-11 / TCP Socket 5025 | [卡片](devices/power-supplies/sps5000x.md) |
