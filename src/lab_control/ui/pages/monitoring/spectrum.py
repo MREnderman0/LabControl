@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import DataSource, data_sources
 from lab_control.domain.spectrum import SpectrumMarker
+from lab_control.domain.spectrum_display import amplitude_unit
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
@@ -307,13 +308,21 @@ class SpectrumMonitoringPage(QWidget):
             else "—",
         )
         reference = number("reference_level")
-        unit = (
-            (frame.batch.measurements[0].metadata.get("spectrum_display") or {}).get("unit")
-            if frame and frame.batch.measurements
-            else None
-        )
+        unit = None
+        if frame and frame.batch.configuration.get("reference_level") is not None:
+            unit = amplitude_unit(frame.batch.configuration.get("amplitude_unit"))
+        elif reference is not None and self.controls:
+            editor = self.controls.editors.get("reference_level")
+            state = self.controller.states.get(self.device_id, {})
+            context = (
+                (frame.session_id, frame.configuration_version)
+                if frame
+                else (state.get("sessionId"), state.get("configurationVersion"))
+            )
+            if editor and editor.sync_token and editor.sync_token[:2] == context:
+                unit = amplitude_unit(editor.cap.parameters["value"].unit)
         self.readouts.set(
-            "ref", f"{reference:g} {unit or 'dBm'}".replace("-", "−") if reference is not None else "—"
+            "ref", f"{reference:g} {unit}".replace("-", "−") if reference is not None and unit else "—"
         )
         marker = self.markers[0] if self.markers else None
         reading = self.plot.readings.get(marker.number) if marker else None

@@ -6,7 +6,7 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QTransform
-from PySide6.QtWidgets import QLabel, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QGraphicsItem, QLabel, QVBoxLayout
 
 from lab_control.application.acquisition_pipeline import validate_displayed_batch
 from lab_control.domain.instruments import DeviceError
@@ -22,34 +22,59 @@ def waveform_measurements(values, axis) -> tuple[float, float, float | None]:
     finite = np.isfinite(v)
     if not finite.any():
         return float("nan"), float("nan"), None
-    v_valid = v[finite]
-    vpp = float(v_valid.max() - v_valid.min())
+    v_valid = v if finite.all() else v[finite]
+    minimum = float(v_valid.min())
+    vpp = float(v_valid.max() - minimum)
     rms = float(np.sqrt(np.mean(v_valid**2)))
-    if v.size > 400_000:  # Frequency only needs the crossing structure.
-        step = v.size // 200_000
-        v, t = v[::step], t[::step]
-    if vpp <= 0 or v.size < 8 or t.size != v.size:
+    if vpp <= 0 or v.size < 8 or t.shape != v.shape or v_valid.size != v.size:
         return vpp, rms, None
-    middle = (np.nanmax(v) + np.nanmin(v)) / 2
-    high, low = v > middle + 0.2 * vpp, v < middle - 0.2 * vpp
-    defined = high | low
-    if not defined.any():
-        return vpp, rms, None
-    index = np.where(defined, np.arange(v.size), 0)
-    np.maximum.accumulate(index, out=index)
-    state = high[index] & defined[index]
-    start = int(np.argmax(defined))
-    edges = np.flatnonzero(np.diff(state[start:].astype(np.int8))) + start + 1
-    if len(edges) < 3 or len(edges) > v.size // 20:
-        return vpp, rms, None
-    half_period = (t[edges[-1]] - t[edges[0]]) / (len(edges) - 1)
-    return vpp, rms, (1 / (2 * half_period) if half_period > 0 else None)
+    low = minimum + 0.3 * vpp
+    return vpp, rms, crossing_frequency(v, t, low, low + 0.4 * vpp)
+
+
+def crossing_frequency(v, t, low: float, high: float) -> float | None:
+    """Time rising hysteresis crossings on native samples, carrying state across blocks."""
+    was_high = True  # Arm only after observing the lower threshold.
+    previous_crossing = None
+    count = 0
+    duration = squared_periods = 0.0
+    block_size = 65_536
+    for start in range(0, v.size, block_size):
+        block = v[start : start + block_size]
+        times = t[max(0, start - 1) : start + block.size]
+        if not np.isfinite(times).all() or np.any(np.diff(times) <= 0):
+            return None
+        outside = np.flatnonzero((block <= low) | (block >= high))
+        if not outside.size:
+            continue
+        states = block[outside] >= high
+        rising = outside[states & ~np.r_[was_high, states[:-1]]] + start
+        was_high = bool(states[-1])
+        if not rising.size:
+            continue
+        before = rising - 1
+        fraction = (high - v[before]) / (v[rising] - v[before])
+        crossings = t[before] + fraction * (t[rising] - t[before])
+        periods = np.diff(crossings if previous_crossing is None else np.r_[previous_crossing, crossings])
+        previous_crossing = crossings[-1]
+        count += periods.size
+        duration += float(periods.sum())
+        squared_periods += float(np.sum(periods**2))
+    if count < 3 or duration <= 0:
+        return None
+    mean = duration / count
+    # Suppress irregular crossings (noise); allow sampling jitter on short periods.
+    if squared_periods / count > mean**2 * (1 + 0.15**2):
+        return None
+    return 1 / mean
 
 
 class ScopeTag(pg.TextItem):
     """Screen tag in grid coordinates; vertical drags report the new level in divisions."""
 
     dragged = Signal(float, bool)
+    pressed = Signal()
+    cancelled = Signal()
 
     def __init__(self, text: str, color: str, anchor: tuple[float, float], font: QFont) -> None:
         super().__init__(text, anchor=anchor, color=tk.ACCENT_INK, fill=pg.mkBrush(color))
@@ -57,30 +82,72 @@ class ScopeTag(pg.TextItem):
         self.setZValue(20)
         self.draggable = False
         self.dragging = False
+        self.press_pos = None
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsFocusable)
 
     def set_draggable(self, draggable: bool) -> None:
         self.draggable = draggable
+        if not draggable:
+            self.cancel_drag()
         self.setCursor(Qt.CursorShape.SizeVerCursor if draggable else Qt.CursorShape.ArrowCursor)
 
-    def hoverEvent(self, event) -> None:  # noqa: N802
-        if self.draggable and not event.isExit():
-            event.acceptDrags(Qt.MouseButton.LeftButton)
-
-    def mouseDragEvent(self, event) -> None:  # noqa: N802
+    def mousePressEvent(self, event) -> None:  # noqa: N802
         if not self.draggable or event.button() != Qt.MouseButton.LeftButton:
             event.ignore()
             return
         event.accept()
-        view = self.getViewBox()
-        if view is None:
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
+        self.press_pos = event.scenePos()
+        self.press_level = self.pos().y()
+        self.pressed.emit()
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self.press_pos is None:
             return
-        y = max(-4.0, min(4.0, view.mapSceneToView(event.scenePos()).y()))
-        self.dragging = not event.isFinish()
-        self.setPos(self.pos().x(), y)
-        self.dragged.emit(y, event.isFinish())
+        if (
+            not self.dragging
+            and (event.scenePos() - self.press_pos).manhattanLength() < QApplication.startDragDistance()
+        ):
+            return
+        self.dragging = True
+        self.move_to(event.scenePos(), False)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self.press_pos is None or event.button() != Qt.MouseButton.LeftButton:
+            return
+        if not self.dragging or event.scenePos().y() == self.press_pos.y():
+            self.cancel_drag()
+            return
+        self.dragging = False
+        self.move_to(event.scenePos(), True)
+        self.press_pos = None
+
+    def move_to(self, position, finished: bool) -> None:
+        view = self.getViewBox()
+        if view is not None and self.press_pos is not None:
+            delta = view.mapSceneToView(position).y() - view.mapSceneToView(self.press_pos).y()
+            y = max(-4.0, min(4.0, self.press_level + delta))
+            self.setPos(self.pos().x(), y)
+            self.dragged.emit(y, finished)
+
+    def cancel_drag(self) -> None:
+        if self.press_pos is not None:
+            self.press_pos = None
+            self.dragging = False
+            self.cancelled.emit()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape and self.press_pos is not None:
+            self.cancel_drag()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class OscilloscopePlot(LivePlot):
+    tag_pressed = Signal(int, str)
+    tag_cancelled = Signal()
     # Offset target in the instrument's convention (channel, value, released).
     ground_dragged = Signal(int, float, bool)
     # Trigger level target in volts (value, released).
@@ -514,6 +581,8 @@ class OscilloscopePlot(LivePlot):
             tag = self.ground_tags.get(channel)
             if tag is None:
                 tag = ScopeTag("", COLORS[(channel - 1) % len(COLORS)], (0, 0.5), self._tag_font())
+                tag.pressed.connect(lambda c=channel: self.tag_pressed.emit(c, "offset"))
+                tag.cancelled.connect(self.tag_cancelled)
                 tag.dragged.connect(lambda y, done, c=channel: self._ground_dragged(c, y, done))
                 self.plot.addItem(tag, ignoreBounds=True)
                 self.ground_tags[channel] = tag
@@ -539,6 +608,10 @@ class OscilloscopePlot(LivePlot):
             return
         if self.trigger_tag is None:
             self.trigger_tag = ScopeTag("T", tk.TEXT_2, (1, 0.5), self._tag_font())
+            self.trigger_tag.pressed.connect(
+                lambda: self.tag_pressed.emit(self.trigger_state[0], "trigger_level")
+            )
+            self.trigger_tag.cancelled.connect(self.tag_cancelled)
             self.trigger_tag.dragged.connect(self._trigger_dragged)
             self.plot.addItem(self.trigger_tag, ignoreBounds=True)
         tag = self.trigger_tag

@@ -92,6 +92,7 @@ DEVICE_EVENTS = (
     "slot_",
     "capabilit",
 )
+APPLY_PROBLEMS = {"partial": "部分完成", "uncertain": "结果未确认", "rejected": "已拒绝"}
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,13 @@ class LogEntry:
         return "acquisition"
 
     @property
+    def apply_result(self) -> dict:
+        result = self.details.get("result")
+        if self.event == "operation_completed" and isinstance(result, dict) and "outcome" in result:
+            return result
+        return {}
+
+    @property
     def problem(self) -> bool:
         text = self.event.lower()
         status = str(self.details.get("status", "")).lower()
@@ -118,11 +126,16 @@ class LogEntry:
             "fail" in text
             or "error" in text
             or bool(self.details.get("error"))
+            or str(self.apply_result.get("outcome", "")) in APPLY_PROBLEMS
+            or bool(self.apply_result.get("error"))
             or status in {"failed", "error", "rejected"}
         )
 
     @property
     def label(self) -> str:
+        outcome = str(self.apply_result.get("outcome", ""))
+        if outcome in APPLY_PROBLEMS:
+            return "参数操作 · " + APPLY_PROBLEMS[outcome]
         if self.event in EVENT_LABELS:
             return EVENT_LABELS[self.event]
         if self.event.startswith("history_"):
@@ -140,6 +153,9 @@ class LogEntry:
 
     @property
     def summary(self) -> str:
+        result = self.apply_result
+        if result.get("error"):
+            return " · ".join(str(item) for item in (result.get("operation"), result["error"]) if item)
         if self.details.get("error"):
             return str(self.details["error"])
         parts = []

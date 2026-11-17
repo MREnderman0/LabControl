@@ -169,6 +169,7 @@ class ScopeSlider(QWidget):
         self.actual: float | None = None
         self.signature: tuple | None = None
         self.dirty = False
+        self.tag_active = False
         self.fine = False
         self.division = 1.0
         self.drag_value = 0.0
@@ -299,7 +300,7 @@ class ScopeSlider(QWidget):
 
     def commit(self) -> None:
         self.timer.stop()
-        if not self.dirty:
+        if self.tag_active or not self.dirty:
             return
         self.dirty = False
         if self.isEnabled() and self.actual is not None:
@@ -310,6 +311,7 @@ class ScopeSlider(QWidget):
 
     def cancel(self) -> None:
         self.timer.stop()
+        self.tag_active = False
         self.dirty = False
         self.slider.key_active = False
         self.slider.mouse_active = False
@@ -784,16 +786,6 @@ class OscilloscopeControls(QFrame):
         return frozenset(
             ch for (ch, name), field in self.sliders.items() if name == "offset" and field.isEnabled()
         )
-
-    def drag_field(self, field: ScopeSlider | None, value: float, finished: bool) -> None:
-        """Screen-tag drags reuse the slider's preview, range clamp and release-to-write path."""
-        if field is None or not field.isEnabled() or field.actual is None or self.running:
-            return
-        if not field.dirty:
-            field.begin_gesture()
-        field.set_target(value)
-        if finished:
-            field.commit()
 
     def preview_trigger_level(self, value: float) -> None:
         ch = self.trigger_channel()

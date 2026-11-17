@@ -62,6 +62,30 @@ def test_empty_log_folder_shows_guidance(qtbot, tmp_path):
     assert page.empty.isVisible() and "还没有操作日志" in page.empty.text()
 
 
+def test_nested_apply_results_show_reasons_and_filter_historical_entries(qtbot, tmp_path):
+    outcomes = {"rejected": "已拒绝", "partial": "部分完成", "uncertain": "结果未确认"}
+    rows = [
+        dict(
+            event="operation_completed",
+            operation="apply",
+            result=dict(
+                operation="offset", outcome=outcome, error=f"reason-{outcome}" if outcome in outcomes else ""
+            ),
+        )
+        for outcome in [*outcomes, "success"]
+    ]
+    write_day(tmp_path / "logs", "2026-11-17", rows)
+    page = OperationLogPage(SimpleNamespace(root=tmp_path))
+    qtbot.addWidget(page)
+    page.show()
+    assert page.model.rowCount() == 4 and "异常 3 条" in page.summary.text()
+    page.category.button(5).click()
+    assert page.model.rowCount() == 3
+    for entry in page.model.entries:
+        outcome = entry.details["result"]["outcome"]
+        assert outcomes[outcome] in entry.label and f"reason-{outcome}" in entry.summary
+
+
 def test_device_names_resolve_and_are_searchable(qtbot, tmp_path):
     write_day(tmp_path / "logs", "2026-11-17", ROWS)
     names = {"dev-a": "DSA815 · 频谱"}

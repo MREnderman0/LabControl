@@ -122,6 +122,16 @@ def test_poll_delivers_previously_finished_jobs_after_one_snapshot(workspace, mo
     assert inventory.call_count == sessions.call_count == 1
 
 
+def test_successful_shutdown_skips_the_action_refresh(workspace, monkeypatch, qtbot):
+    window, runtime = workspace
+    window.show()
+    refresh = Mock(wraps=window.refresh)
+    monkeypatch.setattr(window, "refresh", refresh)
+    window.close()
+    qtbot.waitUntil(lambda: runtime.closed and window.closing and not window.isVisible())
+    refresh.assert_not_called()
+
+
 def test_panel_shutdown_failure_still_closes_runtime(workspace, monkeypatch, qtbot):
     window, runtime = workspace
     calls = []

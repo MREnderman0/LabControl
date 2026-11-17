@@ -86,3 +86,12 @@ def test_software_measurements_and_noise_has_no_frequency():
     noise = np.random.default_rng(1).normal(0, 1, t.size)
     assert waveform_measurements(noise, t)[2] is None
     assert waveform_measurements(np.full(10, np.nan), np.arange(10.0))[2] is None
+
+
+@pytest.mark.parametrize("frequency", [199_000, 7.5])
+def test_native_crossings_across_blocks(frequency):
+    t = np.arange(1_000_000) / 1_000_000
+    trace = np.sin(2 * np.pi * frequency * t + 0.3)
+    assert waveform_measurements(trace, t)[2] == pytest.approx(frequency, rel=0.01)
+    assert waveform_measurements(np.ones(100), t[:100])[2] is None
+    assert waveform_measurements(trace[:8], t[:8])[2] is None

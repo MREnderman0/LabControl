@@ -29,6 +29,15 @@ LINEAR_UNITS = {
 }
 
 
+def amplitude_unit(token: object) -> str | None:
+    """Canonical unit of a raw reference-level setting, independent of the graticule."""
+    name = str(token).strip().replace("µ", "u").replace("μ", "u").upper()
+    for unit in (*LOG_UNITS, *LINEAR_UNITS):
+        if unit.replace("µ", "u").upper() == name:
+            return unit
+    return {"VOLT": "V", "WATT": "W", "AMP": "A"}.get(name)
+
+
 def convert_level(values, source, target, impedance=None):
     if source == target:
         return values

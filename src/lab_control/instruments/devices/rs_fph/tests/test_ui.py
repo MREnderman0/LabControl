@@ -129,6 +129,32 @@ def test_fph_readback_outside_rbw_choices_shows_instrument_value(qtbot, tmp_path
         controller.close()
 
 
+def test_fph_linear_graticule_preserves_reference_unit(qtbot, tmp_path, monkeypatch):
+    config = ConnectionConfig("mock://fph-percent", "rs.fph", "mock")
+    transport = StateTransport("V2.40")
+    query = transport.query
+    monkeypatch.setattr(transport, "query", lambda cmd: b"LIN" if cmd == "DISP:TRAC1:Y:SPAC?" else query(cmd))
+    with ApplicationRuntime((config,), root=tmp_path, hardware=False) as runtime:
+        runtime.sessions.factory = lambda _: FphAdapter(transport, fph(), config)
+        key = runtime.add(config)
+        runtime.connect(key, configure_acquisition=False).result(3)
+        parent = QWidget()
+        qtbot.addWidget(parent)
+        controller = WorkspaceController(runtime, parent)
+        page = SpectrumMonitoringPage(controller, lambda *args: None)
+        qtbot.addWidget(page)
+        try:
+            page.show()
+            page.select_device(key)
+            qtbot.waitUntil(lambda: page.controls.current().get("reference_level") == -20)
+            page.start_button.click()
+            qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
+            assert page.plot.amplitude_unit == "%"
+            assert page.readouts.cells["ref"].value.text() == "−20 dBm"
+        finally:
+            controller.close()
+
+
 def test_official_fph_page_applies_and_saves_trace_one(qtbot, tmp_path, monkeypatch):
     config = ConnectionConfig("mock://fph-panel", "rs.fph", "mock")
     transport = StateTransport("V2.40")

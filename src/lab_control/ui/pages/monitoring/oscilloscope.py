@@ -1,6 +1,6 @@
 """Oscilloscope workspace: passive monitoring and explicit instrument gestures."""
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -19,11 +19,12 @@ from lab_control.application.controls import DataSource, data_sources
 from lab_control.application.monitoring_state import MonitorFrame
 from lab_control.domain.frames import immutable_batch
 from lab_control.domain.instruments import AcquisitionRequest
+from lab_control.domain.oscilloscope import ScopeDisplay
 from lab_control.domain.waveform_coverage import mark_coverage
 from lab_control.instruments.scope_single import SingleCapture
 from lab_control.ui.controller import state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
-from lab_control.ui.pages.monitoring.oscilloscope_controls import OscilloscopeControls
+from lab_control.ui.pages.monitoring.oscilloscope_controls import OscilloscopeControls, ScopeSlider
 from lab_control.ui.pages.monitoring.oscilloscope_plot import OscilloscopePlot
 from lab_control.ui.pages.monitoring.pico_scope_controls import PicoScopeControls
 from lab_control.ui.pages.monitoring.recording_state import (
@@ -37,6 +38,17 @@ from lab_control.ui.widgets.device_selector import DeviceSelector
 from lab_control.ui.widgets.plot_export import PlotExport
 
 
+@dataclass(frozen=True)
+class TagDrag:
+    device: str
+    session: str
+    version: int
+    channel: int
+    operation: str
+    display: ScopeDisplay
+    field: ScopeSlider
+
+
 class OscilloscopeMonitoringPage(QWidget):
     def __init__(self, controller, add_card, parent=None) -> None:
         super().__init__(parent)
@@ -46,6 +58,7 @@ class OscilloscopeMonitoringPage(QWidget):
         self.controls: OscilloscopeControls | PicoScopeControls | None = None
         self.source: DataSource | None = None
         self.memory_busy = False
+        self.tag_drag: TagDrag | None = None
         self.plot: OscilloscopePlot
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 10, 14, 12)
@@ -116,6 +129,8 @@ class OscilloscopeMonitoringPage(QWidget):
         chart_layout.addWidget(self.timing)
         self.plot = OscilloscopePlot()
         self.plot.plot.snapshot_provider = self.export_snapshot
+        self.plot.tag_pressed.connect(self.begin_tag_drag)
+        self.plot.tag_cancelled.connect(self.cancel_tag_drag)
         self.plot.ground_dragged.connect(self.drag_offset)
         self.plot.trigger_dragged.connect(self.drag_trigger)
         chart_layout.addWidget(self.plot, 1)
@@ -154,6 +169,7 @@ class OscilloscopeMonitoringPage(QWidget):
             return
         if (self.device_id, self.mode) == (device_id, self.controller.mode) and self.controls:
             return
+        self.cancel_tag_drag()
         if isinstance(self.controls, PicoScopeControls):
             self.pico_drafts[self.mode, self.device_id] = self.controls.draft()
         self.single_notice = ""
@@ -195,13 +211,97 @@ class OscilloscopeMonitoringPage(QWidget):
         self.refresh()
         self.refresh_frame(device_id)
 
+    def frame_is_current(self, state: dict) -> bool:
+        frame = self.plot.displayed_frame
+        return bool(
+            frame
+            and frame.session_id == state.get("sessionId")
+            and frame.configuration_version == state.get("configurationVersion")
+        )
+
+    def tag_context(self, channel: int, operation: str, state: dict) -> TagDrag | None:
+        controls = self.controls
+        if not isinstance(controls, OscilloscopeControls) or not self.frame_is_current(state):
+            return None
+        if (
+            controls.running
+            or self.memory_busy
+            or self.single_job
+            or self.pausing_for_single
+            or state.get("connectionState") not in {"connected", "busy"}
+            or state.get("controlsLocked")
+            or state.get("controlGroup")
+            or state.get("controlPending")
+            or state.get("capabilityStale")
+        ):
+            return None
+        session, version = state["sessionId"], state["configurationVersion"]
+        if controls.last_context != (session, version):
+            return None
+        display = self.plot.display_specs.get(channel)
+        if operation == "trigger_level":
+            if controls.trigger_channel() != channel:
+                return None
+            field = controls.trigger_slider
+        else:
+            if display is None or display.vertical_offset_sign is None:
+                return None
+            field = controls.sliders.get((channel, "offset"))
+        if display is None or field is None or not field.isEnabled() or field.actual is None:
+            return None
+        return TagDrag(self.device_id, session, version, channel, operation, display, field)
+
+    def latest_tag_context(self, channel: int, operation: str) -> TagDrag | None:
+        # A worker can advance the configuration before the next controller poll.
+        states = self.controller.runtime.sessions.snapshots()
+        state: dict = next((s for s in states if s["stableDeviceId"] == self.device_id), {})
+        return self.tag_context(channel, operation, state)
+
+    def begin_tag_drag(self, channel: int, operation: str) -> None:
+        self.cancel_tag_drag()
+        drag = self.latest_tag_context(channel, operation)
+        if drag is not None:
+            drag.field.timer.stop()
+            if drag.field.dirty:
+                drag.field.restore_actual()  # Discard any pending keyboard edit on this field.
+            drag.field.tag_active = True
+            self.tag_drag = drag
+
+    def cancel_tag_drag(self) -> None:
+        drag, self.tag_drag = self.tag_drag, None
+        if drag is not None:
+            tag = (
+                self.plot.trigger_tag
+                if drag.operation == "trigger_level"
+                else self.plot.ground_tags.get(drag.channel)
+            )
+            if tag is not None:
+                tag.cancel_drag()
+            drag.field.restore_actual()
+
+    def move_tag(self, channel: int | None, operation: str, value: float, finished: bool) -> None:
+        drag = self.tag_drag
+        if drag is None:
+            return
+        if (
+            channel != drag.channel
+            or operation != drag.operation
+            or not drag.field.tag_active
+            or (finished and self.latest_tag_context(channel, operation) != drag)
+        ):
+            self.cancel_tag_drag()
+            return
+        drag.field.set_target(value)
+        if finished:
+            self.tag_drag = None
+            drag.field.tag_active = False
+            drag.field.commit()
+
     def drag_offset(self, channel: int, value: float, finished: bool) -> None:
-        if isinstance(self.controls, OscilloscopeControls):
-            self.controls.drag_field(self.controls.sliders.get((channel, "offset")), value, finished)
+        self.move_tag(channel, "offset", value, finished)
 
     def drag_trigger(self, value: float, finished: bool) -> None:
-        if isinstance(self.controls, OscilloscopeControls):
-            self.controls.drag_field(self.controls.trigger_slider, value, finished)
+        self.move_tag(self.plot.trigger_state[0], "trigger_level", value, finished)
 
     def control_busy_changed(self, busy):
         self.selector.setEnabled(not (busy or self.single_job or self.pausing_for_single))
@@ -227,6 +327,7 @@ class OscilloscopeMonitoringPage(QWidget):
 
     def hideEvent(self, event) -> None:  # noqa: N802
         super().hideEvent(event)
+        self.cancel_tag_drag()
         self.plot.clear_preview()
         if self.controller.sync_device == self.device_id:
             self.controller.focus_settings("")
@@ -520,15 +621,7 @@ class OscilloscopeMonitoringPage(QWidget):
         self.record_button.refresh(
             task, connected=connected, busy=busy, locked=bool(state.get("controlsLocked"))
         )
-        if isinstance(self.controls, OscilloscopeControls) and connected and not busy:
-            self.plot.set_drag_state(self.controls.offset_channels(), self.controls.trigger_state())
-        else:
-            channel, level, _enabled = (
-                self.controls.trigger_state()
-                if isinstance(self.controls, OscilloscopeControls)
-                else (None, None, False)
-            )
-            self.plot.set_drag_state(frozenset(), (channel, level, False))
+        self.refresh_tag_state(state)
         update_recording_frame(self.chart, task)
         self.save_action.setEnabled(
             self.plot.displayed_frame is not None
@@ -540,10 +633,7 @@ class OscilloscopeMonitoringPage(QWidget):
         self.actual.setText(self.timing.actual.text())
         old = self.plot.displayed_frame
         frozen = old is not None and old.batch.performance.get("instrument_running") is False
-        waiting = old is not None and (
-            old.session_id != state.get("sessionId")
-            or old.configuration_version != state.get("configurationVersion")
-        )
+        waiting = old is not None and not self.frame_is_current(state)
         self.status.setText(
             (self.single_job.phase if self.single_job else self.single_notice)
             or task.get("error")
@@ -571,6 +661,19 @@ class OscilloscopeMonitoringPage(QWidget):
             )
         )
 
+    def refresh_tag_state(self, state: dict) -> None:
+        drag = self.tag_drag
+        if drag and self.tag_context(drag.channel, drag.operation, state) != drag:
+            self.cancel_tag_drag()
+        controls = self.controls
+        if not isinstance(controls, OscilloscopeControls):
+            self.plot.set_drag_state(frozenset(), (None, None, False))
+            return
+        channel, level, enabled = controls.trigger_state()
+        offsets = frozenset(ch for ch in controls.offset_channels() if self.tag_context(ch, "offset", state))
+        trigger_enabled = bool(enabled and channel and self.tag_context(channel, "trigger_level", state))
+        self.plot.set_drag_state(offsets, (channel, level, trigger_enabled))
+
     def refresh_frame(self, device_id: str) -> None:
         if device_id != self.device_id or not self.isVisible() or not self.source or not self.controls:
             return
@@ -580,6 +683,7 @@ class OscilloscopeMonitoringPage(QWidget):
             pico = isinstance(self.controls, PicoScopeControls)
             channels = frame.request.channels if pico else self.controls.channels()
             self.plot.show_frame(frame, self.source, channels)
+            self.refresh_tag_state(self.controller.states.get(device_id, {}))
             if isinstance(self.controls, PicoScopeControls):
                 self.controls.show_sample_rate(frame)
             service.displayed(device_id, frame)
