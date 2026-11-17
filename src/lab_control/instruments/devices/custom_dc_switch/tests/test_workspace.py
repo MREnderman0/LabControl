@@ -45,7 +45,9 @@ def test_bulk_and_automatic_board_gui_verify_identity_without_switching_outputs(
         assert [(i["device_id"], i["status"]) for i in batch["items"]] == [(device_id, "connected")]
         assert manager.handles[0].writes == [b"*IDN?\n"]
         assert runtime.connect_all_discovered().result(8)["items"][0]["status"] == "already_connected"
-        runtime.sessions.disconnect(device_id)
+        # Simulate removing the board. An explicit disconnect suppresses hotplug until the next request.
+        runtime.serial_autoconnect.poll(())
+        assert device_id not in runtime.sessions.sessions
         with pytest.raises(DeviceError, match="USB"):
             runtime.connect_manual_serial(ADAPTER_ID, OTHER.config.resource)
         window = RealWindow(runtime)

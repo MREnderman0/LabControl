@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from lab_control.application.config import config_from_record
 from lab_control.discovery.addresses import identity_conflict_message
-from lab_control.discovery.presence import LIVE_CONNECTIONS, is_current
+from lab_control.discovery.presence import is_current
 from lab_control.domain.instruments import DeviceError, utc_now
 from lab_control.instruments.registry import describe, requires_manual_connection
 
@@ -63,7 +63,7 @@ class BulkConnectionService:
                 if is_current(r, states.get(r["id"]))
                 and not (runtime.hardware and requires_manual_connection(r["adapterId"]))
             )
-            self.cancelled.clear()
+            self.cancelled = threading.Event()
             self._progress = {
                 "state": "running",
                 "startedAt": utc_now(),
@@ -91,6 +91,7 @@ class BulkConnectionService:
                 "stopping",
             }:
                 self.cancelled.set()
+                self.runtime.connections.cancel_batch(self.cancelled)
                 self._progress["state"] = "stopping"
 
     def _start_one(self, record: dict[str, Any]) -> tuple[Future[Any] | None, str, str]:
@@ -99,11 +100,20 @@ class BulkConnectionService:
         states = {s["stableDeviceId"]: s for s in runtime.sessions.snapshots()}
         state = states.get(device_id)
         if state:
-            if state["connectionState"] in LIVE_CONNECTIONS:
+            if (
+                state.get("monitoring")
+                or state.get("recording")
+                or state.get("activeTask") == "continuous_acquisition"
+            ):
+                runtime.connections.adopt(device_id)
+                return None, "already_connected", "已有采集任务，保持当前会话"
+            if state["connectionState"] in {"connected", "busy"}:
+                runtime.connections.adopt(device_id)
                 return None, "already_connected", state.get("lastError", "") or "已有连接，保持当前会话"
-            return None, "skipped", "已有连接任务或异常会话，请在设备池中处理"
+            if not runtime.connections.can_retry(device_id, state):
+                return None, "skipped", state.get("lastError") or "需要处理当前会话"
         current = next((r for r in runtime.inventory.all() if r["id"] == device_id), None)
-        if current is None or not is_current(current):
+        if current is None or (not state and not is_current(current)):
             return None, "skipped", "设备已不在当前发现范围"
         if current.get("identityConflict") or current["discoveryState"] == "conflict":
             return None, "skipped", identity_conflict_message(current)
@@ -113,7 +123,7 @@ class BulkConnectionService:
             describe(config_from_record(current))
         except DeviceError as exc:
             return None, "skipped", str(exc)
-        return runtime._connect(device_id), "connected", "连接成功"
+        return runtime.connections.request(device_id, batch=self.cancelled), "connected", "连接成功"
 
     def _connect_one(self, record: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
         runtime = self.runtime
@@ -132,7 +142,13 @@ class BulkConnectionService:
                     reason = "连接已建立；" + state["lastError"]
             item.update(status=status, reason=reason)
         except Exception as exc:
-            item.update(status="failed", reason=str(exc), error_code=getattr(exc, "code", ""))
+            info = runtime.connections.snapshots().get(record["id"], {})
+            waiting = info.get("phase") in {"waiting", "retrying"}
+            item.update(
+                status="waiting" if waiting else "failed",
+                reason=str(exc),
+                error_code=getattr(exc, "code", ""),
+            )
         return item
 
     def _run(self, records: tuple[dict[str, Any], ...]) -> dict[str, Any]:

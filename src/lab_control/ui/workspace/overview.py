@@ -380,6 +380,8 @@ class WorkspaceOverview:
             key: record
             for key, record in window.records.items()
             if is_current(record, window.states.get(key))
+            or window.states.get(key, {}).get("connectionRetry", {}).get("phase")
+            in {"waiting", "retrying", "cleanup"}
         }
         progress = window.runtime.discovery.progress
         running = window.runtime.discovery.is_scanning
@@ -518,7 +520,9 @@ class WorkspaceOverview:
                 record["config"]["resource"],
                 "● "
                 + (
-                    "探测失败"
+                    state["connectionRetry"]["label"]
+                    if state.get("connectionRetry", {}).get("label")
+                    else "探测失败"
                     if connection == "disconnected" and record.get("presenceState") == "unreachable"
                     else status_labels.get(connection, connection)
                     if connection != "disconnected" or device_id in current_records
@@ -638,6 +642,12 @@ class WorkspaceOverview:
                     )
                 )
                 enabled &= bool(state) and (not busy or bool(drainable))
+                if key == "disconnect" and state.get("connectionRetry", {}).get("phase") in {
+                    "opening",
+                    "retrying",
+                    "waiting",
+                }:
+                    enabled = not state.get("monitoring") and not state.get("recording")
             elif key in {"identify", "status"}:
                 enabled &= state.get("connectionState") == "connected" and not busy
             elif key == "capabilities":
@@ -709,6 +719,7 @@ class WorkspaceOverview:
                 driver = "unconfirmed"
             configured_serial = config.get("expected_serial", "")
             displayed_serial = identity.get("serial") or configured_serial or "未提供"
+            retry = state.get("connectionRetry", {})
             fields = {
                 **{
                     key: displayed_serial if key == "serial" else identity.get(key) or "未提供"
@@ -718,7 +729,8 @@ class WorkspaceOverview:
                 if identity.get("confidence") == "simulated"
                 else identity.get("confidence") or "仅资源描述",
                 "acceptance": "待实机验证",
-                "connection": {
+                "connection": retry.get("label")
+                or {
                     "connected": "已连接",
                     "disconnected": "未连接",
                     "busy": "忙碌 / 采集中",
@@ -763,8 +775,17 @@ class WorkspaceOverview:
                 }.get(probe, probe or "尚未确认"),
                 "error": identity_conflict_message(record)
                 if record.get("identityConflict") or record["discoveryState"] == "conflict"
-                else str(state.get("lastError") or record.get("lastError") or "无"),
-                "notice": str(state.get("acquisitionPreparation", {}).get("message", "")),
+                else (
+                    f"{retry['label']} · 重试 {retry['attempts']} 次 · {retry['error']}"
+                    if retry.get("label")
+                    else str(state.get("lastError") or record.get("lastError") or "无")
+                ),
+                "notice": "\n".join(
+                    filter(
+                        None,
+                        (state.get("acquisitionPreparation", {}).get("message"), retry.get("lastRecovery")),
+                    )
+                ),
                 "readback": json.dumps(state["lastStatus"], ensure_ascii=False, indent=2)
                 if state.get("lastStatus")
                 else "暂无状态读回",

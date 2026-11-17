@@ -94,7 +94,8 @@ class PicoAdapter:
             types, args = [I16, *types], (self.handle, *args)
         result = self.sdk.function("ps6000a" + name, types, U32)(*args)
         if result and result not in accepted:
-            raise DeviceError(f"ps6000a{name} returned status {result:#x}", "sdk_error")
+            code = "device_not_present" if name == "OpenUnit" and result == 3 else "sdk_error"
+            raise DeviceError(f"ps6000a{name} returned status {result:#x}", code)
 
     def info(self, code: int) -> str:
         buffer, length = ct.create_string_buffer(256), I16()
@@ -440,7 +441,8 @@ class PicoAdapter:
                     self.opened = False
                     self.buffers.clear()
         finally:
-            self.sdk.close()
+            if not self.opened:
+                self.sdk.close()
 
 
 def enumerate_pico(config: ConnectionConfig) -> tuple[str, ...]:
@@ -450,6 +452,8 @@ def enumerate_pico(config: ConnectionConfig) -> tuple[str, ...]:
         result = sdk.function("ps6000aEnumerateUnits", [PTR, PTR, PTR], U32)(
             ct.byref(count), serials, ct.byref(length)
         )
+        if result == 3:  # PICO_NOT_FOUND: no units are currently listed.
+            return ()
         if result:
             raise DeviceError(f"Pico enumeration returned {result:#x}", "sdk_error")
         return tuple(

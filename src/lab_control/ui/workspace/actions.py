@@ -75,7 +75,7 @@ class WorkspaceActions:
                     from dataclasses import replace
 
                     window.runtime.add(replace(config, expected_serial=serial.strip()))
-                window.bridge.watch(window.runtime.connect(device_id), "connect")
+                window.bridge.watch(window.runtime.connections.request(device_id), "connect")
             elif key in {"disconnect", "reconnect"}:
                 if (
                     key == "reconnect"
@@ -85,12 +85,13 @@ class WorkspaceActions:
                     window._failed("请先断开原会话，再手动选择泵浦串口。")
                     return
 
-                def change():
-                    window.runtime.sessions.disconnect(device_id, drain_reads=True)
-                    if key == "reconnect":
-                        return window.runtime.connect(device_id).result()
-
-                window.bridge.watch(window.bridge.worker.submit(change), key)
+                connections = window.runtime.connections
+                future = (
+                    connections.disconnect(device_id)
+                    if key == "disconnect"
+                    else connections.request(device_id, reconnect=True)
+                )
+                window.bridge.watch(future, key)
             elif key in {"identify", "status"}:
                 window.bridge.watch(window.runtime.sessions.submit(device_id, key), key)
             elif key == "capabilities":
@@ -209,7 +210,13 @@ class WorkspaceActions:
         summary.setWordWrap(True)
         layout.addWidget(summary)
         text = QTextBrowser()
-        labels = {"connected": "成功", "already_connected": "已连接", "failed": "失败", "skipped": "跳过"}
+        labels = {
+            "connected": "成功",
+            "already_connected": "已连接",
+            "failed": "失败",
+            "skipped": "跳过",
+            "waiting": "等待恢复",
+        }
         text.setPlainText(
             "\n\n".join(
                 f"{item['label']}\n{labels[item['status']]}：{item['reason']}" for item in progress["items"]

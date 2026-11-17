@@ -123,13 +123,23 @@ class SerialAutoConnect:
             ):
                 continue  # Active acquisitions own their session and recovery.
             try:
-                app.sessions.disconnect(state["stableDeviceId"], drain_reads=True)
+                if app.connections.owns(state["stableDeviceId"]):
+                    if endpoint in by_port:
+                        continue
+                    cleanup = app.connections.serial_removed(state["stableDeviceId"])
+                    if cleanup is None:
+                        continue
+                    cleanup.result()
+                else:
+                    app.sessions.disconnect(state["stableDeviceId"], drain_reads=True)
             except (DeviceError, KeyError):
                 continue
             self.completed.discard(endpoint)
-        routes = serial_routes(ports, app.inventory.all())
+        records = app.inventory.all()
+        routes = serial_routes(ports, records)
         now = time.monotonic()
         pending = []
+        suppressed = app.connections.suppressed_devices()
         for key in routes:
             owner = app.leases.owner(by_port[key].config.resource)
             if owner:
@@ -138,6 +148,18 @@ class SerialAutoConnect:
                 ] in {"connected", "busy"}:
                     self.completed.add(key)
             elif key not in self.completed and self.retry_at.get(key, 0) <= now:
+                cfg = routes[key].config
+                if any(
+                    r["id"] in suppressed
+                    and r.get("adapterId") == cfg.adapter
+                    and (
+                        (cfg.expected_serial and r["config"].get("expected_serial") == cfg.expected_serial)
+                        or (cfg.usb_instance_id and r["config"].get("usb_instance_id") == cfg.usb_instance_id)
+                        or canonical_resource(r["config"]["resource"]) == key
+                    )
+                    for r in records
+                ):
+                    continue
                 pending.append(by_port[key])
         if not pending or self.stop.is_set():
             return
@@ -160,9 +182,11 @@ class SerialAutoConnect:
                 continue
             if canonical_resource(row["config"]["resource"]) != key or self.stop.is_set():
                 continue
+            if app.connections.owns(row["id"]):
+                continue
             if not app.leases.owner(item["resource"]):
                 try:
-                    app.connect(row["id"], configure_acquisition=False).result()
+                    app.connections.request(row["id"], configure=False, hotplug=True).result()
                 except Exception as exc:
                     app.sessions.audit.try_record(
                         "serial_autoconnect_failed",

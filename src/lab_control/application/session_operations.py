@@ -227,6 +227,7 @@ class SessionOperations:
                     )
                 if result.outcome in {"uncertain", "partial"}:
                     session.state = "degraded"
+                    session.connection_error_code = "operation_uncertain"
                 if result.outcome == "success" and session.state != "degraded" and result.control_update:
                     manager._cache_readings(session, result.control_update.readings)
                 elif result.outcome != "success":
@@ -308,21 +309,29 @@ class SessionOperations:
                     "acquisition_discarded", device_id=device_id, code=code, error=str(exc)
                 )
                 raise
-            if not audit_rejected and code not in {
-                "unsupported",
-                "invalid_parameter",
-                "confirmation_required",
-                "cancelled",
-                "task_busy",
-                "capture_timeout",
-                "incomplete_waveform",
-                "waveform_overload",
-                "waveform_unavailable",
-                "missing_option",
-                "acquisition_budget_exceeded",
-                "acquisition_setup_required",
-            }:
+            if (
+                not audit_rejected
+                and not (quiet and operation == "read_settings" and session.connection_managed)
+                and code
+                not in {
+                    "unsupported",
+                    "invalid_parameter",
+                    "confirmation_required",
+                    "cancelled",
+                    "task_busy",
+                    "capture_timeout",
+                    "incomplete_waveform",
+                    "waveform_overload",
+                    "waveform_unavailable",
+                    "missing_option",
+                    "acquisition_budget_exceeded",
+                    "acquisition_setup_required",
+                }
+            ):
                 session.state = "degraded"
+                session.connection_error_code = (
+                    code if operation not in {"apply", "single"} else "operation_uncertain"
+                )
             session.last_error = str(exc)
             if not quiet:
                 manager.audit.try_record(

@@ -30,6 +30,7 @@ class SyncTask:
     pending: Future[Any] | None = None
     keys: tuple[Key, ...] = ()
     errors: dict[Key, str] = field(default_factory=dict)
+    transport_timeouts: int = 0
     isolated: set[Key] = field(default_factory=set)
     retry_key_at: dict[Key, float] = field(default_factory=dict)
     retry_at: float = 0
@@ -43,6 +44,7 @@ class SettingsSync:
     def __init__(self, sessions: SessionManager, wake: Callable[[], None] = lambda: None) -> None:
         self.sessions = sessions
         self.wake = wake
+        self.on_disconnect: Callable[[str, str, Exception], None] = lambda *_: None
         self.enabled = False
         self.focus = ""
         self.advanced: tuple[Key, ...] = ()
@@ -157,7 +159,7 @@ class SettingsSync:
                 task.errors.clear()
                 task.isolated.clear()
                 task.retry_key_at.clear()
-                task.failures, task.retry_at = 0, 0
+                task.failures, task.retry_at, task.transport_timeouts = 0, 0, 0
             if task.pending and task.pending.done():
                 future, task.pending = task.pending, None
                 task.batches += 1
@@ -168,6 +170,9 @@ class SettingsSync:
                 try:
                     readings: tuple[ParameterReading, ...] = future.result()
                 except DeviceError as exc:
+                    task.transport_timeouts = task.transport_timeouts + 1 if exc.code == "timeout" else 0
+                    if exc.code == "disconnected" or task.transport_timeouts >= 2:
+                        self.on_disconnect(device_id, task.session_id, exc)
                     if exc.code != "unsupported":
                         self._back_off(device_id, task, now, exc)
                         continue
@@ -180,8 +185,10 @@ class SettingsSync:
                         task.retry_key_at[key] = now + self.poll_interval(device_id)
                         self._transition(device_id, task, "failed", str(exc))
                 except Exception as exc:
+                    task.transport_timeouts = 0
                     self._back_off(device_id, task, now, exc)
                 else:
+                    task.transport_timeouts = 0
                     wanted = self.wanted(device_id)
                     returned = {(r.channel, r.operation): r for r in readings}
                     for key in task.keys:

@@ -163,6 +163,10 @@ class ApplicationRuntime:
             from lab_control.application.serial_autoconnect import SerialAutoConnect
 
             self.serial_autoconnect = SerialAutoConnect(self)
+            from lab_control.application.connection_retry import ConnectionRetry
+
+            self.connections = ConnectionRetry(self)
+            self.monitoring.settings_sync.on_disconnect = self.connections.settings_failed
             if hardware:
                 self.sessions.recovery.serial_route = self.serial_autoconnect.recovery_route
                 self.sessions.recovery.serial_verified = self.serial_autoconnect.verified_route
@@ -170,6 +174,7 @@ class ApplicationRuntime:
             # Construction can fail after the scheduler or discovery worker starts.
             # Unwind every resource actually acquired, preserving the original error.
             for name in (
+                "connections",
                 "bulk_connection",
                 "monitoring",
                 "discovery",
@@ -618,6 +623,7 @@ class ApplicationRuntime:
             getattr(self, "_processing", None),
             getattr(self, "serial_autoconnect", None),
             self.bulk_connection,
+            self.connections,
             self.monitoring,
             self.discovery,
             self.sessions,
