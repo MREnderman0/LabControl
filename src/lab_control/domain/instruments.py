@@ -32,6 +32,7 @@ class ResourceCleanupError(DeviceError):
     def __init__(self, resource: Any, cleanup: Exception, primary: Exception | None = None):
         super().__init__(f"Resource release unconfirmed: {cleanup}", "cleanup_failed")
         self.resource = resource
+        self.primary = primary
         if primary is not None:
             self.add_note(f"Original operation failure: {primary}")
 

@@ -33,6 +33,20 @@ def pointer_write(pointer, dtype, value):
     ct.cast(pointer, ct.POINTER(dtype))[0] = value
 
 
+def test_not_found_on_open_and_empty_enumeration(monkeypatch):
+    from lab_control.transport.sdk import VendorLibrary
+
+    from .. import adapter
+
+    cfg = ConnectionConfig("PICO::FIXTURE", "pico.6404e", "pico")
+    fake = FakeLibrary({"ps6000aOpenUnit": lambda *_: 3, "ps6000aEnumerateUnits": lambda *_: 3})
+    with pytest.raises(DeviceError) as error:
+        PicoAdapter(cfg, fake)
+    assert error.value.code == "device_not_present"
+    monkeypatch.setattr(adapter, "VendorLibrary", lambda path: VendorLibrary(path, fake))
+    assert adapter.enumerate_pico(cfg) == ()
+
+
 def test_pico_identity_only_session_closes_without_stopping_capture():
     calls = []
 

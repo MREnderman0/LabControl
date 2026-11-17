@@ -74,12 +74,15 @@ class DeviceSession:
     identity: DeviceIdentity | None = None
     adapter: InstrumentAdapter | None = None
     cleanup_handle: Any = None
+    cleanup_claims: set[str] = field(default_factory=set)
     resource_state: str = "held"
     active_task: str = ""
     background_read: bool = False
     pending: int = 0
     last_status: dict[str, Any] = field(default_factory=dict)
     last_error: str = ""
+    connection_error_code: str = ""
+    connection_managed: bool = False
     stop: threading.Event = field(default_factory=threading.Event)
     stream_future: Future[Any] | None = None
     closing: bool = False
@@ -164,6 +167,7 @@ class SessionManager:
                     "pending": item.pending,
                     "lastStatus": dict(item.last_status),
                     "lastError": item.last_error,
+                    "connectionErrorCode": item.connection_error_code,
                     "identity": jsonable(item.identity),
                     "monitoring": item.monitoring,
                     "recording": item.recording,
@@ -431,6 +435,9 @@ class SessionManager:
                     # discovery and read-only hardware preflight never run setup.
                     try:
                         prepare()
+                    except Exception:
+                        session.connection_error_code = "recovery_initialization_failed"
+                        raise
                     finally:
                         session.acquisition_preparation = deepcopy(
                             getattr(adapter, "acquisition_preparation", {})
@@ -448,6 +455,7 @@ class SessionManager:
                     session.last_error = "能力读取失败：" + str(exc)
                     if getattr(exc, "code", "") in {"timeout", "disconnected"}:
                         session.state = "degraded"
+                        session.connection_error_code = getattr(exc, "code", "device_error")
                 self.audit.try_record("connected", device_id=device_id, identity=identity, config=config)
                 self.emit("connected", device_id, identity=jsonable(identity))
                 return identity
@@ -470,6 +478,8 @@ class SessionManager:
                     self.audit.try_record("cleanup_failed", device_id=device_id, error=str(cleanup_error))
                 with self.lock:
                     session.state = "error"
+                    if not session.connection_error_code:
+                        session.connection_error_code = getattr(exc, "code", "device_error")
                     session.last_error = "\n".join((str(exc), *getattr(exc, "__notes__", ())))
                 self.emit("error", device_id, error=session.last_error)
                 raise
@@ -616,14 +626,17 @@ class SessionManager:
                 session.state = "busy" if enabled else "connected"
                 session.active_task = "monitoring" if enabled else ""
 
-    def reconnect(self, device_id: str) -> Future[DeviceIdentity]:
+    def reconnect(self, device_id: str, *, allow_connected: bool = False) -> Future[DeviceIdentity]:
         """Explicitly retry an idle failed session once, retaining identity and leases."""
         with self.lock:
             session = self.sessions.get(device_id)
             if self._closing or session is None or session.closing:
                 raise DeviceError("设备会话已关闭，请在设备总览连接", "disconnected")
             if (
-                session.state not in {"degraded", "error"}
+                (
+                    session.state not in {"degraded", "error"}
+                    and not (allow_connected and session.state == "connected")
+                )
                 or session.pending
                 or session.monitoring
                 or session.controls_locked
@@ -651,6 +664,7 @@ class SessionManager:
                 except Exception as exc:
                     with self.lock:
                         session.state, session.last_error = "degraded", str(exc)
+                        session.connection_error_code = getattr(exc, "code", "device_error")
                     self.audit.try_record("manual_reconnect_failed", device_id=device_id, error=str(exc))
                     raise
                 finally:
@@ -875,7 +889,7 @@ class SessionManager:
         with self.lock:
             self.sessions[device_id].stop.set()
 
-    def disconnect(self, device_id: str, *, drain_reads: bool = False) -> None:
+    def disconnect(self, device_id: str, *, drain_reads: bool = False, cleanup_only: bool = False) -> None:
         with self.lock:
             session = self.sessions[device_id]
             background_only = drain_reads and session.pending == 1 and session.background_read
@@ -899,7 +913,7 @@ class SessionManager:
             failure = None
             try:
                 release = getattr(adapter, "release_control", None)
-                if release and session.identity is not None:
+                if not cleanup_only and release and session.identity is not None:
                     if session.state in {"error", "degraded"}:
                         raise DeviceError("返回本地控制未确认：通信异常，未发送释放命令", "disconnected")
                     try:
@@ -941,6 +955,7 @@ class SessionManager:
             with self.lock:
                 session.resource_state = "release_unconfirmed"
                 session.state, session.closing = "error", False
+                session.connection_error_code = "cleanup_failed"
                 session.last_error = "\n".join(
                     text for exc in errors for text in (str(exc), *getattr(exc, "__notes__", ()))
                 )
@@ -958,7 +973,7 @@ class SessionManager:
         self.audit.try_record(
             "disconnected", device_id=device_id, note="Physical output state is unchanged/unknown"
         )
-        self.emit("disconnected", device_id)
+        self.emit("disconnected", device_id, cleanupOnly=cleanup_only)
         if errors:
             for secondary in errors[1:]:
                 errors[0].add_note(f"Additional disconnect failure: {secondary}")

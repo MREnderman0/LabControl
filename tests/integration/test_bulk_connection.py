@@ -208,7 +208,7 @@ def test_parallel_batch_bypasses_slow_first_device_and_replenishes_free_slots(ru
         release.set()
     result = future.result(3)
     assert [item["device_id"] for item in result["items"]] == keys
-    assert [item["status"] for item in result["items"]] == ["failed"] + ["connected"] * 4
+    assert [item["status"] for item in result["items"]] == ["waiting"] + ["connected"] * 4
     assert result["active"] == [] and result["current"] == ""
 
 
@@ -351,7 +351,7 @@ def test_cancel_during_final_audit_does_not_leave_progress_stuck_stopping(runtim
     assert future.result(3)["state"] == "completed"
 
 
-def test_degraded_open_is_reported_as_failed_and_next_device_still_connects(runtime, monkeypatch):
+def test_degraded_open_waits_for_recovery_and_next_device_still_connects(runtime, monkeypatch):
     discovered(runtime, "degraded")
     discovered(runtime, "healthy")
     refresh = runtime.sessions._refresh_capabilities
@@ -363,5 +363,5 @@ def test_degraded_open_is_reported_as_failed_and_next_device_still_connects(runt
 
     monkeypatch.setattr(runtime.sessions, "_refresh_capabilities", failing_refresh)
     result = runtime.connect_all_discovered().result(3)
-    assert [item["status"] for item in result["items"]] == ["failed", "connected"]
+    assert [item["status"] for item in result["items"]] == ["waiting", "connected"]
     assert "fixture capability timeout" in result["items"][0]["reason"]

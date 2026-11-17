@@ -450,6 +450,8 @@ class DeviceDetails(QFrame):
             else (
                 "连接失败：VISA 未能打开设备。详细原因见下方“最近错误”。"
                 if "VI_ERROR_RSRC_NFOUND" in error
+                else error[:180]
+                if error.startswith(("等待设备接入", "正在重连", "需要处理", "正在释放连接"))
                 else "异常：" + error[:180]
             )
         )

@@ -151,6 +151,14 @@ class WorkspaceController(QObject):
         if not self.runtime.closed:
             self.records = {r["id"]: r for r in self.runtime.inventory.all()}
             self.states = {s["stableDeviceId"]: s for s in self.runtime.sessions.snapshots()}
+            for key, retry in self.runtime.connections.snapshots().items():
+                if (
+                    retry["label"]
+                    or retry["phase"] == "opening"
+                    or (key in self.states and retry["lastRecovery"])
+                ):
+                    fallback = "connecting" if retry["phase"] == "opening" else "error"
+                    self.states.setdefault(key, {"connectionState": fallback})["connectionRetry"] = retry
 
     def poll(self) -> None:
         if self.runtime.closed:
@@ -196,7 +204,7 @@ class WorkspaceController(QObject):
         try:
             self.ensure_applicable(device_id)
             self.watch(
-                self.runtime.sessions.reconnect(device_id),
+                self.runtime.connections.request(device_id, reconnect=True),
                 lambda _identity: self._reconnect_finished(),
                 lambda _error: self.refreshed.emit(),
             )

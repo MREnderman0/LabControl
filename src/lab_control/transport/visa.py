@@ -81,7 +81,15 @@ class VisaRuntime:
 
     def release(self, handle: Any) -> None:
         with self._lock:
-            handle.close()
+            from pyvisa import constants, errors
+
+            try:
+                handle.close()
+            except errors.InvalidSession:
+                pass
+            except errors.VisaIOError as exc:
+                if exc.error_code != constants.StatusCode.error_invalid_object:
+                    raise DeviceError(str(exc), "disconnected") from exc
             self._handles.discard(handle)
 
     def close(self) -> None:

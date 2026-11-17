@@ -208,6 +208,7 @@ def test_runtime_close_attempts_every_resource_after_failures():
 
     for name in (
         "bulk_connection",
+        "connections",
         "monitoring",
         "discovery",
         "sessions",
@@ -220,11 +221,11 @@ def test_runtime_close_attempts_every_resource_after_failures():
     runtime._close_lock = threading.Lock()
     with pytest.raises(OSError, match="monitoring close failed") as failure:
         runtime.close()
-    assert calls[-1] == "process_lease" and len(calls) == 7
+    assert calls[-1] == "process_lease" and len(calls) == 8
     assert runtime.closed
     assert "repository close failed" in " ".join(failure.value.__notes__)
     runtime.close()
-    assert len(calls) == 7
+    assert len(calls) == 8
 
 
 def test_uncertain_hardware_close_retains_visa_and_process_gate_until_exit():
@@ -245,6 +246,7 @@ def test_uncertain_hardware_close_retains_visa_and_process_gate_until_exit():
 
     for name in (
         "bulk_connection",
+        "connections",
         "monitoring",
         "discovery",
         "sessions",

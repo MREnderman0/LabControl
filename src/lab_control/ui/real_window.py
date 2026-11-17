@@ -401,12 +401,13 @@ class RealWindow(QMainWindow):
         items = progress.get("items", [])
         counts = {
             status: sum(item["status"] == status for item in items)
-            for status in ("connected", "already_connected", "failed", "skipped")
+            for status in ("connected", "already_connected", "failed", "skipped", "waiting")
         }
         title = {"cancelled": "连接已停止", "error": "批量连接中断"}.get(progress["state"], "连接完成")
         return (
             f"{title} · 成功 {counts['connected']} · 已连接 {counts['already_connected']}"
             f" · 失败 {counts['failed']} · 跳过 {counts['skipped']}"
+            + (f" · 等待恢复 {counts['waiting']}" if counts["waiting"] else "")
         )
 
     def show_connection_results(self) -> None:

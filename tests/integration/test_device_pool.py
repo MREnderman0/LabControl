@@ -126,7 +126,7 @@ def test_overview_batch_shows_progress_results_and_ignores_filters(workspace, qt
     qtbot.waitUntil(lambda: runtime.connection_progress()["state"] == "completed")
     window.refresh()
     assert "成功 1" in window.connection_summary.text()
-    assert "已连接 1" in window.connection_summary.text() and "失败 1" in window.connection_summary.text()
+    assert "已连接 1" in window.connection_summary.text() and "等待恢复 1" in window.connection_summary.text()
     assert window.connection_results_button.isVisible() and window.stop_connect_button.isHidden()
     assert window.scan_button.isEnabled() and window.connect_all_button.isEnabled()
     assert runtime.sessions.sessions[key].state == "connected"

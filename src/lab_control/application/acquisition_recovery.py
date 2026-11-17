@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
-from lab_control.domain.instruments import DeviceError, MeasurementBatch, utc_now
+from lab_control.domain.instruments import DeviceError, MeasurementBatch, ResourceCleanupError, utc_now
 from lab_control.instruments.registry import requires_manual_connection
 
 if TYPE_CHECKING:
@@ -23,6 +23,7 @@ RECOVERABLE_CODES = frozenset(
         "timeout",
         "disconnected",
         "connection_failed",
+        "device_not_present",
         "driver_missing",
         "resource_busy",
         "parse_error",
@@ -35,6 +36,20 @@ RECOVERABLE_CODES = frozenset(
 
 def recoverable(error: BaseException) -> bool:
     return isinstance(error, DeviceError) and error.code in RECOVERABLE_CODES
+
+
+BACKOFF = (0.2, 0.5, 1.0, 2.0, 5.0)
+
+
+def require_present(config: ConnectionConfig) -> None:
+    from lab_control.discovery.providers import VendorSdkDiscoveryProvider
+    from lab_control.domain.connections import canonical_resource
+
+    resources = VendorSdkDiscoveryProvider((config,)).enumerate()
+    if not any(
+        canonical_resource(item.config.resource) == canonical_resource(config.resource) for item in resources
+    ):
+        raise DeviceError(f"SDK 枚举中未发现 {config.resource}", "device_not_present")
 
 
 @dataclass
@@ -55,7 +70,7 @@ class Recovery:
         self.error, self.code = str(error), getattr(error, "code", "device_error")
         self.ready = False
         # No queue of missed samples, no busy loop, no upper bound on outage duration.
-        self.next_at = time.monotonic() + (0.2, 0.5, 1.0, 2.0, 5.0)[min(max(self.attempts - 1, 0), 4)]
+        self.next_at = time.monotonic() + BACKOFF[min(max(self.attempts - 1, 0), len(BACKOFF) - 1)]
 
     def snapshot(self) -> dict[str, Any]:
         return dict(
@@ -84,6 +99,13 @@ class AcquisitionRecovery:
         self.manager.audit.try_record(event, device_id=session.device_id, recovery=details)
         if recording is not None and not recording.error:
             recording.note_event(event, details)
+
+    def _close_for_reconnect(self, session: DeviceSession) -> None:
+        try:
+            self.manager._close_adapter(session)
+        except Exception as exc:
+            # Only local handle cleanup may be retried before the next open.
+            raise DeviceError(f"旧连接尚未释放：{exc}", "disconnected") from exc
 
     def reconnect(self, session: DeviceSession, recovery: Recovery) -> None:
         """One attempt on the existing device worker, keeping every resource lease."""
@@ -123,6 +145,10 @@ class AcquisitionRecovery:
         try:
             # Teardown never sends LOCAL, reset or output commands. Any authorized
             # model setup runs only after the replacement identity is verified below.
+            if session.cleanup_handle is not None:
+                self._close_for_reconnect(session)
+                manager.leases.release_resources(session.device_id, session.cleanup_claims)
+                session.cleanup_claims.clear()
             reopen = getattr(session.adapter, "reopen_acquisition", None)
             if callable(reopen):
                 # Keep model-owned measurement services alive across socket failures.
@@ -130,8 +156,7 @@ class AcquisitionRecovery:
                 reopen()
             elif session.adapter is not None:
                 manager._invalidate_acquisition(session, "reconnect")
-                session.adapter.close()
-                session.adapter = None
+                self._close_for_reconnect(session)
             check()
             if candidate is None:
                 if self.serial_route is not None:
@@ -143,6 +168,8 @@ class AcquisitionRecovery:
                     new = manager.leases.keys(connection_claims(config))
                     manager.leases.acquire(session.device_id, connection_claims(config), identified=True)
                     added_claims, previous_claims = new - old, old - new
+                if recovery.code == "device_not_present":
+                    require_present(config)
                 candidate = manager.factory(config)
             check()
             identity = candidate.identify()
@@ -186,6 +213,7 @@ class AcquisitionRecovery:
                 session.config = config
                 added_claims.clear()
             session.adapter, candidate = candidate, None
+            session.resource_state = "held"
             session.identity = identity
             manager._refresh_capabilities(session)
             check()
@@ -196,20 +224,36 @@ class AcquisitionRecovery:
                     else "connected"
                 )
                 session.last_error = ""
+                session.connection_error_code = ""
                 recovery.ready = True
             manager.emit("reconnected", session.device_id, recovery=recovery.snapshot())
-        except Exception:
+        except Exception as exc:
+            if isinstance(exc, ResourceCleanupError):
+                session.cleanup_handle = exc.resource
+                session.resource_state = "release_unconfirmed"
             if candidate is not None and candidate is not session.adapter:
                 try:
                     candidate.close()
                 except Exception as cleanup:
+                    session.cleanup_handle = candidate
+                    session.resource_state = "release_unconfirmed"
                     manager.audit.try_record(
                         "recovery_cleanup_failed", device_id=session.device_id, error=str(cleanup)
                     )
             if added_claims:
-                manager.leases.release_resources(session.device_id, added_claims)
+                if session.cleanup_handle is not None:
+                    session.cleanup_claims.update(added_claims)
+                else:
+                    manager.leases.release_resources(session.device_id, added_claims)
             with manager.lock:
                 session.state = "recovering"
+            if isinstance(exc, ResourceCleanupError) and getattr(exc.primary, "code", "") in {
+                "timeout",
+                "disconnected",
+                "connection_failed",
+                "device_not_present",
+            }:
+                raise DeviceError(str(exc), "disconnected") from exc
             raise
 
     def complete(

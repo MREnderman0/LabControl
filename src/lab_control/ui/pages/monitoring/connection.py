@@ -21,7 +21,9 @@ def refresh_reconnect_button(
         button.setText("正在停止…")
         button.setEnabled(False)
         button.setToolTip("等待在途读取和原始数据收尾；完成后可重新开始，CSV 在后台继续生成。")
-    elif state.get("activeTask") == "reconnect":
+    elif state.get("activeTask") == "reconnect" or (
+        state.get("connectionRetry", {}).get("phase") == "retrying" and state["connectionRetry"]["inFlight"]
+    ):
         button.setText("重连中…")
         button.setEnabled(False)
         button.setToolTip("正在重新连接并核验当前设备身份")
