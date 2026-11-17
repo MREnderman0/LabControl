@@ -4,17 +4,88 @@ from dataclasses import replace
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QTransform
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QFont, QTransform
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 
 from lab_control.application.acquisition_pipeline import validate_displayed_batch
 from lab_control.domain.instruments import DeviceError
 from lab_control.domain.oscilloscope import COLORS, ScopeDisplay, engineering
 from lab_control.ui.pages.monitoring.plot import LivePlot
+from lab_control.ui.styles import tokens as tk
+
+
+def waveform_measurements(values, axis) -> tuple[float, float, float | None]:
+    """Vpp, RMS and a hysteresis-based frequency estimate of one displayed trace."""
+    v = np.asarray(values, dtype=float)
+    t = np.asarray(axis, dtype=float)
+    finite = np.isfinite(v)
+    if not finite.any():
+        return float("nan"), float("nan"), None
+    v_valid = v[finite]
+    vpp = float(v_valid.max() - v_valid.min())
+    rms = float(np.sqrt(np.mean(v_valid**2)))
+    if v.size > 400_000:  # Frequency only needs the crossing structure.
+        step = v.size // 200_000
+        v, t = v[::step], t[::step]
+    if vpp <= 0 or v.size < 8 or t.size != v.size:
+        return vpp, rms, None
+    middle = (np.nanmax(v) + np.nanmin(v)) / 2
+    high, low = v > middle + 0.2 * vpp, v < middle - 0.2 * vpp
+    defined = high | low
+    if not defined.any():
+        return vpp, rms, None
+    index = np.where(defined, np.arange(v.size), 0)
+    np.maximum.accumulate(index, out=index)
+    state = high[index] & defined[index]
+    start = int(np.argmax(defined))
+    edges = np.flatnonzero(np.diff(state[start:].astype(np.int8))) + start + 1
+    if len(edges) < 3 or len(edges) > v.size // 20:
+        return vpp, rms, None
+    half_period = (t[edges[-1]] - t[edges[0]]) / (len(edges) - 1)
+    return vpp, rms, (1 / (2 * half_period) if half_period > 0 else None)
+
+
+class ScopeTag(pg.TextItem):
+    """Screen tag in grid coordinates; vertical drags report the new level in divisions."""
+
+    dragged = Signal(float, bool)
+
+    def __init__(self, text: str, color: str, anchor: tuple[float, float], font: QFont) -> None:
+        super().__init__(text, anchor=anchor, color=tk.ACCENT_INK, fill=pg.mkBrush(color))
+        self.setFont(font)
+        self.setZValue(20)
+        self.draggable = False
+        self.dragging = False
+
+    def set_draggable(self, draggable: bool) -> None:
+        self.draggable = draggable
+        self.setCursor(Qt.CursorShape.SizeVerCursor if draggable else Qt.CursorShape.ArrowCursor)
+
+    def hoverEvent(self, event) -> None:  # noqa: N802
+        if self.draggable and not event.isExit():
+            event.acceptDrags(Qt.MouseButton.LeftButton)
+
+    def mouseDragEvent(self, event) -> None:  # noqa: N802
+        if not self.draggable or event.button() != Qt.MouseButton.LeftButton:
+            event.ignore()
+            return
+        event.accept()
+        view = self.getViewBox()
+        if view is None:
+            return
+        y = max(-4.0, min(4.0, view.mapSceneToView(event.scenePos()).y()))
+        self.dragging = not event.isFinish()
+        self.setPos(self.pos().x(), y)
+        self.dragged.emit(y, event.isFinish())
 
 
 class OscilloscopePlot(LivePlot):
+    # Offset target in the instrument's convention (channel, value, released).
+    ground_dragged = Signal(int, float, bool)
+    # Trigger level target in volts (value, released).
+    trigger_dragged = Signal(float, bool)
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.preview_hint = QLabel()
@@ -28,6 +99,16 @@ class OscilloscopePlot(LivePlot):
         self.bottom_voltage.setWordWrap(True)
         layout.insertWidget(layout.indexOf(self.plot) + 1, self.bottom_voltage)
         self.bottom_voltage.hide()
+        self.measurements = QLabel()
+        self.measurements.setObjectName("scopeMeasurements")
+        self.measurements.setToolTip("软件测量 · 基于当前显示帧的原始数据，不读取仪器测量项")
+        self.measurements.setWordWrap(True)
+        layout.insertWidget(layout.indexOf(self.bottom_voltage) + 1, self.measurements)
+        self.measurements.hide()
+        self.ground_tags: dict[int, ScopeTag] = {}
+        self.trigger_tag: ScopeTag | None = None
+        self.trigger_state: tuple[int | None, float | None, bool] = (None, None, False)
+        self.offset_drag_channels: frozenset[int] = frozenset()
         self.display_specs: dict[int, ScopeDisplay] = {}
         self.plot.getViewBox().sigYRangeChanged.connect(self.update_shared_bottom)
         self.grid_lines: list = []
@@ -48,6 +129,10 @@ class OscilloscopePlot(LivePlot):
     def reset(self) -> None:
         self.bottom_voltage.hide()
         self.bottom_voltage.clear()
+        self.measurements.hide()
+        self.measurements.clear()
+        self.ground_tags.clear()
+        self.trigger_tag = None
         self.display_specs.clear()
         self.preview_hint.hide()
         self.preview_timer.stop()
@@ -186,7 +271,7 @@ class OscilloscopePlot(LivePlot):
             for angle, count in ((90, horizontal_lines), (0, 9)):
                 for index in range(count):
                     alpha = 110 if index == count // 2 else 78
-                    pen = pg.mkPen((165, 185, 189, alpha), width=1, style=Qt.PenStyle.DashLine)
+                    pen = pg.mkPen((110, 113, 121, alpha), width=1, style=Qt.PenStyle.DashLine)
                     line = pg.InfiniteLine(angle=angle, pen=pen, movable=False)
                     line.setZValue(-10)
                     self.plot.addItem(line, ignoreBounds=True)
@@ -233,6 +318,8 @@ class OscilloscopePlot(LivePlot):
         for key, curve in self.curves.items():
             if key not in used:
                 curve.hide()
+        self._place_tags({m.channel: spec for m, spec in zip(wanted, displays, strict=True)})
+        self._show_measurements(wanted)
         self.meta.setText(
             f"{engineering(first.seconds_per_div, 's')}/格 · "
             + " / ".join(f"CH{m.channel} {len(m.values)} 点" for m in wanted)
@@ -241,8 +328,8 @@ class OscilloscopePlot(LivePlot):
                     wanted[0].metadata.get("waveform_extent"), ""
                 )
             )
-            + f" · 配置 {frame.configuration_version} · {frame.batch.validation}"
         )
+        self.meta.setToolTip(f"配置版本 {frame.configuration_version} · 校验 {frame.batch.validation}")
         self.displayed_frame = candidate
         self.display_specs = {m.channel: s for m, s in zip(wanted, displays, strict=True)}
         self.show_bottom(
@@ -344,7 +431,7 @@ class OscilloscopePlot(LivePlot):
                 level = targets[ch, "trigger_level"][0]
                 if self.trigger_preview is None:
                     self.trigger_preview = pg.InfiniteLine(
-                        angle=0, movable=False, pen=pg.mkPen("#e3a252", style=Qt.PenStyle.DashLine)
+                        angle=0, movable=False, pen=pg.mkPen(tk.ACCENT, style=Qt.PenStyle.DashLine)
                     )
                     self.trigger_preview.setZValue(5)
                     self.plot.addItem(self.trigger_preview, ignoreBounds=True)
@@ -361,6 +448,7 @@ class OscilloscopePlot(LivePlot):
                 curve.setTransform(transform)
         if not specs:
             return
+        self._place_tags({m.channel: s for m, s in specs})
         self.show_bottom(
             [(m.channel, s.reference_value - 4 * s.units_per_div, s.unit) for m, s in specs], used
         )
@@ -397,6 +485,110 @@ class OscilloscopePlot(LivePlot):
             else self.actual_meta
         )
 
+    def _tag_font(self) -> QFont:
+        font = QFont(self.font())
+        font.setPixelSize(11)
+        font.setBold(True)
+        return font
+
+    def set_drag_state(
+        self, offset_channels: frozenset[int], trigger: tuple[int | None, float | None, bool]
+    ) -> None:
+        """Which tags may be dragged now (from the control panel's enabled sliders)."""
+        if (offset_channels, trigger) == (self.offset_drag_channels, self.trigger_state):
+            return
+        self.offset_drag_channels, self.trigger_state = offset_channels, trigger
+        if self.display_specs:
+            self._place_tags(self.display_specs)
+
+    def _place_tags(self, specs: dict) -> None:
+        """0 V tags on the left edge per channel; the trigger level on the right edge."""
+        shown = set()
+        left = self.grid_range[0] if self.grid_range else 0.0
+        right = self.grid_range[1] if self.grid_range else 0.0
+        step = (right - left) * 0.024
+        placed: list[float] = []
+        for channel, spec in sorted(specs.items()):
+            level = (0 - spec.reference_value) / spec.units_per_div
+            arrow = "▲" if level > 3.8 else "▼" if level < -3.8 else ""
+            tag = self.ground_tags.get(channel)
+            if tag is None:
+                tag = ScopeTag("", COLORS[(channel - 1) % len(COLORS)], (0, 0.5), self._tag_font())
+                tag.dragged.connect(lambda y, done, c=channel: self._ground_dragged(c, y, done))
+                self.plot.addItem(tag, ignoreBounds=True)
+                self.ground_tags[channel] = tag
+            draggable = channel in self.offset_drag_channels and spec.vertical_offset_sign in {-1, 1}
+            tag.set_draggable(draggable)
+            tag.setText(f"{channel}{arrow}")
+            tag.setToolTip(f"CH{channel} 0 V" + (" · 上下拖动调整偏移，松手写入仪器" if draggable else ""))
+            y = max(-3.8, min(3.8, level))
+            stacked = sum(abs(y - other) < 0.4 for other in placed)  # Same level: tags sit side by side.
+            placed.append(y)
+            if not tag.dragging:
+                tag.setPos(left + stacked * step, y)
+            tag.show()
+            shown.add(channel)
+        for channel, tag in self.ground_tags.items():
+            if channel not in shown:
+                tag.hide()
+        trigger_channel, level, enabled = self.trigger_state
+        spec = specs.get(trigger_channel) if trigger_channel is not None else None
+        if spec is None or level is None or trigger_channel is None:
+            if self.trigger_tag is not None:
+                self.trigger_tag.hide()
+            return
+        if self.trigger_tag is None:
+            self.trigger_tag = ScopeTag("T", tk.TEXT_2, (1, 0.5), self._tag_font())
+            self.trigger_tag.dragged.connect(self._trigger_dragged)
+            self.plot.addItem(self.trigger_tag, ignoreBounds=True)
+        tag = self.trigger_tag
+        tag.fill = pg.mkBrush(COLORS[(trigger_channel - 1) % len(COLORS)])
+        y = (level - spec.reference_value) / spec.units_per_div
+        arrow = "▲" if y > 3.8 else "▼" if y < -3.8 else ""
+        tag.setText(f"T{arrow}")
+        tag.set_draggable(enabled)
+        tag.setToolTip(
+            f"触发电平 CH{trigger_channel} {engineering(level, spec.unit)}"
+            + (" · 上下拖动调整，松手写入仪器" if enabled else "")
+        )
+        if not tag.dragging:
+            tag.setPos(right, max(-3.8, min(3.8, y)))
+        tag.show()
+
+    def _ground_dragged(self, channel: int, y: float, finished: bool) -> None:
+        spec = self.display_specs.get(channel)
+        if spec is None or spec.vertical_offset_sign not in {-1, 1}:
+            return
+        # reference = sign * offset - position_divs * scale, and 0 V sits at -reference / scale.
+        offset = spec.vertical_offset_sign * (spec.vertical_position_divisions - y) * spec.units_per_div
+        self.ground_dragged.emit(channel, offset, finished)
+
+    def _trigger_dragged(self, y: float, finished: bool) -> None:
+        channel = self.trigger_state[0]
+        spec = self.display_specs.get(channel) if channel is not None else None
+        if spec is not None:
+            self.trigger_dragged.emit(y * spec.units_per_div + spec.reference_value, finished)
+
+    def _show_measurements(self, measurements) -> None:
+        parts = []
+        for m in measurements:
+            if m.axis is None:
+                continue
+            vpp, rms, frequency = waveform_measurements(m.values, m.axis)
+            if not np.isfinite(vpp):
+                continue
+            color = COLORS[(m.channel - 1) % len(COLORS)]
+            values = [f"Vpp {engineering(vpp, m.unit)}", f"RMS {engineering(rms, m.unit)}"]
+            values.append(f"{engineering(frequency, 'Hz')}" if frequency else "频率 —")
+            text = "&nbsp;·&nbsp;".join(value.replace(" ", "&nbsp;") for value in values)
+            parts.append(
+                f'<span style="color:{color}; font-weight:600">CH{m.channel}</span>'
+                f'&nbsp;&nbsp;<span style="color:{tk.TEXT_2}">{text}</span>'
+            )
+        # Wrap only between channels, never inside a value.
+        self.measurements.setText("&nbsp;&nbsp;&nbsp; ".join(parts).replace("-", "−"))
+        self.measurements.setVisible(bool(parts))
+
     def restrict_channels(self, channels: tuple[int, ...]) -> None:
         """Drop explicitly disabled traces without changing the old frame's scales."""
         if self.displayed_frame is None:
@@ -412,6 +604,10 @@ class OscilloscopePlot(LivePlot):
             for curve in self.curves.values():
                 curve.hide()
             self.bottom_voltage.hide()
+            self.measurements.hide()
+            for tag in (*self.ground_tags.values(), self.trigger_tag):
+                if tag is not None:
+                    tag.hide()
             self.display_specs.clear()
             self.plot.plotItem.legend.clear()
             self.legend_signature = None

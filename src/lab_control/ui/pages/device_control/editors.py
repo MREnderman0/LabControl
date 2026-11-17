@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.application.controls import PARAMETER_LABELS
 from lab_control.domain.instruments import DeviceError, Parameter, ValidationError
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.parameter_combo import ParameterComboBox
 from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 
@@ -467,7 +468,7 @@ class ArrayEditor(QWidget):
         self.table.setMaximumHeight(210)
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
-        self.preview = PublicationPlotWidget(background="#151c1f")
+        self.preview = PublicationPlotWidget(background=tk.CHART_BG)
         self.preview.setMinimumHeight(140)
         self.preview.setMaximumHeight(180)
         self.preview.setLabel("bottom", "数据行 / 样点")

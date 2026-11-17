@@ -64,10 +64,16 @@ class OscilloscopeMonitoringPage(QWidget):
         self.start_button.setText("开始监测")
         self.start_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         actions = QMenu(self.start_button)
-        self.single_action = actions.addAction("Single · 单次采集", self.request_single)
+        self.single_action = actions.addAction("单次采集", self.request_single)
+        self.single_action.setToolTip("Single：仪器采集一帧后停止，软件读取这一帧")
         self.cancel_action = actions.addAction("取消本次采集", self.cancel_single)
         self.start_button.setMenu(actions)
         self.start_button.clicked.connect(self.toggle_monitoring)
+        self.single_button = QToolButton()
+        self.single_button.setObjectName("singleButton")
+        self.single_button.setDefaultAction(self.single_action)
+        self.single_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        header.addWidget(self.single_button)
         header.addWidget(self.start_button)
         layout.addLayout(header)
         self.empty = QLabel("请先从总览连接示波器，再选择设备。")
@@ -110,6 +116,8 @@ class OscilloscopeMonitoringPage(QWidget):
         chart_layout.addWidget(self.timing)
         self.plot = OscilloscopePlot()
         self.plot.plot.snapshot_provider = self.export_snapshot
+        self.plot.ground_dragged.connect(self.drag_offset)
+        self.plot.trigger_dragged.connect(self.drag_trigger)
         chart_layout.addWidget(self.plot, 1)
         footer = QHBoxLayout()
         self.status = QLabel("监测未开始")
@@ -186,6 +194,14 @@ class OscilloscopeMonitoringPage(QWidget):
             self.focus_settings()
         self.refresh()
         self.refresh_frame(device_id)
+
+    def drag_offset(self, channel: int, value: float, finished: bool) -> None:
+        if isinstance(self.controls, OscilloscopeControls):
+            self.controls.drag_field(self.controls.sliders.get((channel, "offset")), value, finished)
+
+    def drag_trigger(self, value: float, finished: bool) -> None:
+        if isinstance(self.controls, OscilloscopeControls):
+            self.controls.drag_field(self.controls.trigger_slider, value, finished)
 
     def control_busy_changed(self, busy):
         self.selector.setEnabled(not (busy or self.single_job or self.pausing_for_single))
@@ -504,6 +520,15 @@ class OscilloscopeMonitoringPage(QWidget):
         self.record_button.refresh(
             task, connected=connected, busy=busy, locked=bool(state.get("controlsLocked"))
         )
+        if isinstance(self.controls, OscilloscopeControls) and connected and not busy:
+            self.plot.set_drag_state(self.controls.offset_channels(), self.controls.trigger_state())
+        else:
+            channel, level, _enabled = (
+                self.controls.trigger_state()
+                if isinstance(self.controls, OscilloscopeControls)
+                else (None, None, False)
+            )
+            self.plot.set_drag_state(frozenset(), (channel, level, False))
         update_recording_frame(self.chart, task)
         self.save_action.setEnabled(
             self.plot.displayed_frame is not None

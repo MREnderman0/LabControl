@@ -6,6 +6,8 @@ from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QToolButton, QWidget
 
+from lab_control.ui.styles import tokens as tk
+
 
 def recording_phase(task: dict[str, Any]) -> str:
     if task.get("recording_preparing"):
@@ -76,7 +78,7 @@ def _icon(stop: bool) -> QIcon:
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#f1bab5" if stop else "#de7773"))
+        painter.setBrush(QColor(tk.ERR if not stop else "#f6b9bb"))
         if stop:
             painter.drawRoundedRect(QRectF(3, 3, 10, 10), 1.5, 1.5)
         else:

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.category_cards import CategoryCard
 
 
@@ -178,7 +179,7 @@ class DevicePool(QFrame):
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(5, 8, 10, 172))
+        painter.fillRect(self.rect(), QColor(6, 6, 8, 172))
 
     def hideEvent(self, event) -> None:  # noqa: N802
         popup = QApplication.activePopupWidget()
@@ -262,14 +263,14 @@ class DeviceRowDelegate(QStyledItemDelegate):
         rect = option.rect.adjusted(1, 2, -1, -3)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
-        painter.setBrush(QColor("#30291f" if selected else "#202628" if hovered else "#191e20"))
-        painter.setPen(QColor("#886538" if selected else "#303739"))
+        painter.setBrush(QColor(tk.ACCENT_SOFT if selected else tk.HOVER if hovered else tk.SURFACE_2))
+        painter.setPen(QColor("#6a4a2a" if selected else tk.BORDER))
         painter.drawRoundedRect(rect, 7, 7)
         name, _, model = str(index.data() or "").partition("\n")
         font = option.font
         font.setBold(True)
         painter.setFont(font)
-        painter.setPen(QColor("#f1e8d9" if selected else "#e2e6e4"))
+        painter.setPen(QColor(tk.TEXT))
         painter.drawText(
             rect.adjusted(12, 9, -10, 0),
             Qt.AlignmentFlag.AlignTop,
@@ -277,7 +278,7 @@ class DeviceRowDelegate(QStyledItemDelegate):
         )
         font.setBold(False)
         painter.setFont(font)
-        painter.setPen(QColor("#97a3a6"))
+        painter.setPen(QColor(tk.TEXT_3))
         painter.drawText(
             rect.adjusted(12, 29, -10, 0),
             Qt.AlignmentFlag.AlignTop,
@@ -286,11 +287,11 @@ class DeviceRowDelegate(QStyledItemDelegate):
         status_index = index.siblingAtColumn(3)
         status = str(status_index.data() or "").removeprefix("● ")
         foreground = status_index.data(Qt.ItemDataRole.ForegroundRole)
-        color = foreground.color() if foreground else QColor("#97a3a6")
+        color = foreground.color() if foreground else QColor(tk.TEXT_3)
         badges = [(status, color, 22)]
         slot = str(index.siblingAtColumn(4).data() or "")
         if slot and slot != "未绑定":
-            badges.append((slot, QColor("#efbd84"), 35))
+            badges.append((slot, QColor(tk.ACCENT_TEXT), 35))
         left, available = rect.x() + 12, max(0, rect.width() - 24)
         metrics = painter.fontMetrics()
         for text, color, alpha in badges:
@@ -312,7 +313,7 @@ class DeviceRowDelegate(QStyledItemDelegate):
             left += width + 6
             available -= width + 6
         if option.state & QStyle.StateFlag.State_HasFocus:
-            painter.setPen(QColor("#e3a252"))
+            painter.setPen(QColor(tk.ACCENT))
             painter.drawLine(rect.left() + 1, rect.top() + 15, rect.left() + 1, rect.bottom() - 15)
         painter.restore()
 

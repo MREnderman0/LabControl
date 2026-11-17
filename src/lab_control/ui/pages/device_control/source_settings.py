@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import DeviceCommand
 from lab_control.domain.readback import normalized_value, usable_reading
 from lab_control.ui.controller import WorkspaceController
+from lab_control.ui.styles import tokens as tk
 
 # Deliberate allow list: adding a capability never automatically exposes it here.
 SETTING_SECTIONS = (("reference_clock", "参考源", (("INT", "内部参考"), ("EXT", "外部参考"))),)
@@ -40,7 +41,7 @@ def settings_icon() -> QIcon:
     path.closeSubpath()
     path.addEllipse(23, 23, 18, 18)
     path.setFillRule(Qt.FillRule.OddEvenFill)
-    painter.fillPath(path, QColor("#c3cac8"))
+    painter.fillPath(path, QColor(tk.TEXT_2))
     painter.end()
     return QIcon(pixmap)
 

@@ -6,9 +6,11 @@
 
 ## 前端固定基线
 
-- 用户已明确确认历史提交 `0ae6721` 中的深色琥珀**分类卡片版**，以 `direction-approved.md` 和其中 `design/approved/card-overview.png` 截图为准。
-- 唯一开发启动脚本为 `run.bat`；模块入口、`lab-control` 与安装版 EXE 调用同一正式启动分发函数。Mock 仅用于内部测试和开发预览，共用 `ui/real_window.py`、`ui/widgets/category_cards.py` 和唯一主题 `ui/styles/card_workspace.qss`。首页使用分类卡片，点击卡片打开设备池；保留真实服务与范围校验。
-- 后续功能沿用此结构和配色；除非用户明确调整方向，不改成整页设备表或另选视觉方案。旧表格方向 HTML 不是当前确认基线。
+- 2026-11-17 用户选定**石墨分类工作区**（方案 A），取代历史深色琥珀卡片版，以 `direction-approved.md` 为准。
+- 颜色、圆角、字体只取自 `ui/styles/tokens.py`；运行时唯一主题仍为 `ui/styles/card_workspace.qss`（值与令牌一致）。绘制控件和 pyqtgraph 从令牌取色，新代码不硬编码颜色。琥珀只用于主操作、选中、主曲线和标记；状态用语义色；通道颜色统一用 `tokens.CHANNEL_COLORS`。
+- 共享组件放在 `ui/widgets/graphite.py`、`icons.py`、`readouts.py`、`category_cards.py`，新页面复用而非另写样式。修改 QSS 时保持既有控件的尺寸、内边距和字号，测试依赖这些度量。
+- 唯一开发启动脚本为 `run.bat`；模块入口、`lab-control` 与安装版 EXE 调用同一正式启动分发函数。Mock 仅用于内部测试和开发预览，共用 `ui/real_window.py`。首页使用分类卡片，点击卡片打开设备池；保留真实服务与范围校验。
+- 除非用户明确调整方向，不改成整页设备表或另选视觉方案。旧表格方向 HTML 和历史琥珀版都不是当前基线。
 
 ## 真实设备测试必须留档
 

@@ -196,7 +196,8 @@ class WorkspaceNavigation:
         module, category = window.current_module, window.submenu.tabData(window.submenu.currentIndex()) or ""
         window.submenu.setVisible(module != "监视列表")
         window.breadcrumb.setVisible(module != "监视列表")
-        window.breadcrumb.setText(f"{module} / {window.submenu.tabText(window.submenu.currentIndex())}")
+        tab = window.submenu.tabText(window.submenu.currentIndex())
+        window.breadcrumb.setText(f"/  {tab}" if tab and tab != module else "")
         picker = window.surface_picker
         picker.hide()
         if module == "仪器测控" and category:
@@ -234,6 +235,24 @@ class WorkspaceNavigation:
                 window.stack.addWidget(page)
         elif module == "系统设置":
             page = window.settings_page
+        elif module == "操作日志":
+            from lab_control.ui.pages.operation_log import OperationLogPage
+
+            page = window.page_map.get((module, ""))
+            if page is None:
+
+                def resolve(device_id: str) -> str:
+                    record = window.controller.records.get(device_id)
+                    if not record:
+                        return ""
+                    identity = record.get("identity") or {}
+                    model = identity.get("model") or record.get("adapterId", "")
+                    name = record.get("displayName") or ""
+                    return " · ".join(v for v in (model, name) if v)
+
+                page = OperationLogPage(window.runtime.repository, window, resolve_device=resolve)
+                window.page_map[(module, "")] = page
+                window.stack.addWidget(page)
         elif module == "数据处理":
             page = window.page_map.get((module, ""))
             if page is None:

@@ -29,7 +29,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-dev.ps1 -Offli
 .venv-dev\Scripts\lab-control-cli.exe doctor
 ```
 
-根目录只提供 `run.bat`，调用项目 Python 的模块入口；`lab-control` 与模块入口调用同一正式启动函数。已有真实库存、配置、草稿和记录继续使用，历史模拟数据留在 `simulation` 隔离目录；新空库存不自动填充。Mock 仅用于内部测试与 `scripts/review_signal_ui.py`、`scripts/review_parameter_popups.py` 开发截图，共用深色琥珀界面，无独立演示启动器。
+根目录只提供 `run.bat`，调用项目 Python 的模块入口；`lab-control` 与模块入口调用同一正式启动函数。已有真实库存、配置、草稿和记录继续使用，历史模拟数据留在 `simulation` 隔离目录；新空库存不自动填充。Mock 仅用于内部测试与 `scripts/review_signal_ui.py`、`scripts/review_parameter_popups.py` 开发截图，共用石墨界面，无独立演示启动器。
 
 启动不更新已有 Python 依赖；首次 GUI 运行提供可跳过的设备组件准备页，只有用户选择并点击准备才下载。缺少环境或必要 Python 依赖时，批处理提示并调用上述国内镜像安装脚本。刷新项目安装前正常关闭本项目软件，避免 Windows 锁住旧可执行文件。安装脚本同步注册信息，并清理旧 `lab-control-demo.exe`。仅刷新本地项目且已有构建缓存时，可离线执行：
 

@@ -167,7 +167,7 @@ class RecordingDeviceCard(QFrame):
         self.state.setWordWrap(False)
         status_row.addWidget(self.state)
         status_row.addStretch()
-        self.details_link = QLabel('<a href="#details" style="color:#e3a252; text-decoration:none;">详情</a>')
+        self.details_link = QLabel('<a href="#details" style="color:#ee9a48; text-decoration:none;">详情</a>')
         self.details_link.setObjectName("monitorDetailsLink")
         self.details_link.setTextFormat(Qt.TextFormat.RichText)
         self.details_link.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)

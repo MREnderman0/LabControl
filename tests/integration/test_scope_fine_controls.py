@@ -185,3 +185,22 @@ def test_rapid_drag_while_waiting_does_not_queue_another_write(scope, qtbot, mon
     qtbot.waitUntil(lambda: len(writes) == 2 and not page.controls.running)
     assert writes[0].parameters["value"] == target
     assert writes[1].parameters["value"] == field.actual != target
+
+
+def test_screen_tag_drag_previews_then_writes_once_through_the_offset_field(scope, qtbot, monkeypatch):
+    _, page, _, _, adapter = scope
+    field = page.controls.sliders[1, "offset"]
+    assert field.isEnabled() and 1 in page.controls.offset_channels()
+    writes = []
+    apply = adapter.apply
+    monkeypatch.setattr(adapter, "apply", lambda cmd: writes.append(cmd) or apply(cmd))
+    target = field.actual + 3 * field.step
+    page.drag_offset(1, target + field.step / 3, False)
+    assert field.dirty and "预计" in field.value_label.text() and not writes
+    page.drag_offset(1, target, True)
+    qtbot.waitUntil(lambda: bool(writes) and not page.controls.running)
+    assert [c.operation for c in writes] == ["offset"]
+    assert writes[0].parameters["value"] == pytest.approx(target)
+    page.drag_offset(1, field.high * 10, True)  # Beyond the legal range: clamped by the field.
+    qtbot.waitUntil(lambda: len(writes) == 2 and not page.controls.running)
+    assert writes[-1].parameters["value"] == pytest.approx(field.high)

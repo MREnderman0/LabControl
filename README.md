@@ -1,6 +1,6 @@
 # TF LabControl
 
-Windows 实验室设备控制与监测软件，使用 PySide6、独立型号兼容模块及真实通信服务。界面沿用已确认的[深色琥珀分类卡片基线](direction-approved.md)；软件验证与真实设备验收分别记录。
+Windows 实验室设备控制与监测软件，使用 PySide6、独立型号兼容模块及真实通信服务。界面采用用户选定的[石墨分类工作区](direction-approved.md)；软件验证与真实设备验收分别记录。
 
 ## 安装和启动
 

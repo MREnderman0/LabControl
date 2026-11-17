@@ -3,8 +3,8 @@ from __future__ import annotations
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, QRect, QSize, QTimer, Signal
-from PySide6.QtGui import QAction, QScreen
+from PySide6.QtCore import QObject, QRect, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices, QScreen
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -28,8 +28,11 @@ from lab_control.ui.controller import (
     WorkspaceController,
 )
 from lab_control.ui.pages.monitoring.dashboard import MonitoringDashboard
+from lab_control.ui.styles import tokens as tk
+from lab_control.ui.widgets import icons
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool
+from lab_control.ui.widgets.graphite import NavButton
 from lab_control.ui.widgets.input_wheel_guard import install_input_wheel_guard
 from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
@@ -50,6 +53,16 @@ from lab_control.ui.workspace.dialogs import ConnectionDialogs
 from lab_control.ui.workspace.navigation import WorkspaceNavigation
 from lab_control.ui.workspace.overview import WorkspaceOverview
 from lab_control.ui.workspace.shutdown import WindowShutdown
+
+SIDEBAR_WIDTH = 232  # Layout tests and review scripts pin the expanded sidebar width.
+NAV_ITEMS = (
+    ("首页", "home"),
+    ("仪器测控", "sliders"),
+    ("监视列表", "eye"),
+    ("数据处理", "chart"),
+    ("操作日志", "log"),
+    ("系统设置", "gear"),
+)
 
 
 class ServiceBridge(QObject):
@@ -159,35 +172,48 @@ class RealWindow(QMainWindow):
         row.setSpacing(0)
         self.sidebar = QFrame()
         self.sidebar.setObjectName("workspaceSidebar")
-        self.sidebar.setFixedWidth(232)
+        self.sidebar.setFixedWidth(SIDEBAR_WIDTH)
         side = QVBoxLayout(self.sidebar)
-        side.setContentsMargins(18, 22, 18, 18)
-        side.setSpacing(8)
-        self.brand = QLabel("TF LABCONTROL")
+        side.setContentsMargins(10, 16, 10, 12)
+        side.setSpacing(2)
+        brand_row = QHBoxLayout()
+        brand_row.setContentsMargins(8, 0, 4, 14)
+        brand_row.setSpacing(10)
+        self.brand_logo = QLabel("TF")
+        self.brand_logo.setObjectName("brandLogo")
+        self.brand_logo.setFixedSize(30, 30)
+        self.brand_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_row.addWidget(self.brand_logo)
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(0)
+        self.brand = QLabel("TF LabControl")
         self.brand.setObjectName("commandBrand")
-        side.addWidget(self.brand)
-        self.brand_subline = QLabel("LABORATORY CONTROL")
+        brand_text.addWidget(self.brand)
+        self.brand_subline = QLabel("实验室测控工作站")
         self.brand_subline.setObjectName("commandEyebrow")
-        side.addWidget(self.brand_subline)
-        side.addSpacing(24)
+        brand_text.addWidget(self.brand_subline)
+        brand_row.addLayout(brand_text, 1)
+        side.addLayout(brand_row)
         self.sidebar_section = QLabel("工作区")
         self.sidebar_section.setObjectName("sidebarSection")
+        self.sidebar_section.setContentsMargins(4, 0, 0, 6)
         side.addWidget(self.sidebar_section)
         self.nav_buttons = {}
-        for module in ("首页", "仪器测控", "监视列表", "数据处理", "操作日志", "系统设置"):
-            button = QPushButton(module)
-            button.setObjectName("workspaceNav")
-            button.setCheckable(True)
+        for module, icon_name in NAV_ITEMS:
+            button = NavButton(module, icon_name)
             button.clicked.connect(lambda _checked=False, value=module: self.navigate(value, "", ""))
             self.nav_buttons[module] = button
+            if module == "系统设置":
+                side.addStretch()
             side.addWidget(button)
-        side.addStretch()
-        badges = QHBoxLayout()
-        badges.setSpacing(6)
-        self.runtime_badge = QLabel("● 真实设备" if self.runtime.hardware else "● 演示版")
+        side.addSpacing(8)
+        self.runtime_badge = QLabel(
+            f'<span style="color:{tk.OK}">●</span>&nbsp; 真实设备'
+            if self.runtime.hardware
+            else f'<span style="color:{tk.WARN}">●</span>&nbsp; 演示版'
+        )
         self.runtime_badge.setObjectName("runtimeBadge")
-        badges.addWidget(self.runtime_badge)
-        side.addLayout(badges)
+        side.addWidget(self.runtime_badge)
         row.addWidget(self.sidebar)
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -195,22 +221,23 @@ class RealWindow(QMainWindow):
         content_layout.setSpacing(0)
         header = QFrame()
         header.setObjectName("commandHeader")
+        header.setFixedHeight(56)
         top = QHBoxLayout(header)
-        top.setContentsMargins(28, 18, 28, 16)
-        header_heading = QVBoxLayout()
-        header_heading.setSpacing(3)
-        self.breadcrumb = QLabel()
-        self.breadcrumb.setObjectName("commandEyebrow")
+        top.setContentsMargins(24, 0, 20, 0)
+        top.setSpacing(10)
         self.section_title = QLabel("首页")
         self.section_title.setObjectName("commandModuleTitle")
-        header_heading.addWidget(self.section_title)
-        header_heading.addWidget(self.breadcrumb)
-        top.addLayout(header_heading)
+        top.addWidget(self.section_title)
+        self.breadcrumb = QLabel()
+        self.breadcrumb.setObjectName("commandBreadcrumb")
+        top.addWidget(self.breadcrumb)
         top.addStretch()
         self.scan_button.setProperty("buttonSize", "compact")
+        self.scan_button.setIcon(icons.icon("scan", tk.ACCENT_INK, disabled=tk.TEXT_3))
+        self.scan_button.setIconSize(QSize(15, 15))
         top.addWidget(self.scan_button)
         self.clock_label = QLabel()
-        self.clock_label.setObjectName("commandEyebrow")
+        self.clock_label.setObjectName("commandClock")
         top.addWidget(self.clock_label)
         content_layout.addWidget(header)
         self.submenu = QTabBar()
@@ -239,29 +266,84 @@ class RealWindow(QMainWindow):
         content_layout.addWidget(self.message)
         row.addWidget(content, 1)
         self.settings_page = QScrollArea()
+        self.settings_page.setObjectName("settingsPage")
         self.settings_page.setWidgetResizable(True)
         self.settings_page.setFrameShape(QFrame.Shape.NoFrame)
         settings_body = QWidget()
+        settings_body.setObjectName("settingsBody")
         self.settings_page.setWidget(settings_body)
-        settings = QVBoxLayout(settings_body)
+        outer = QHBoxLayout(settings_body)
+        outer.setContentsMargins(12, 14, 12, 20)
+        column = QWidget()
+        column.setMaximumWidth(1120)
+        outer.addWidget(column, 1)
+        settings = QVBoxLayout(column)
+        settings.setContentsMargins(0, 0, 0, 0)
+        settings.setSpacing(14)
         heading = QLabel("软件设置")
         heading.setObjectName("pageTitle")
         settings.addWidget(heading)
+        jumps = QHBoxLayout()
+        jumps.setSpacing(6)
+        sections: dict[str, QFrame] = {}
+
+        def section(key: str, widget: QWidget) -> QFrame:
+            frame = QFrame()
+            frame.setObjectName("settingsSection")
+            box = QVBoxLayout(frame)
+            box.setContentsMargins(14, 12, 14, 14)
+            box.addWidget(widget)
+            settings.addWidget(frame)
+            sections[key] = frame
+            return frame
+
+        for key, label in (
+            ("storage", "数据存储"),
+            ("directory", "库存与日志"),
+            ("agent", "Agent 协作"),
+            ("environment", "环境与修复"),
+        ):
+            jump = QPushButton(label)
+            jump.setObjectName("settingsJump")
+            jump.clicked.connect(
+                lambda _checked=False, k=key: self.settings_page.ensureWidgetVisible(sections[k], 0, 0)
+            )
+            jumps.addWidget(jump)
+        jumps.addStretch()
+        settings.addLayout(jumps)
         from lab_control.ui.pages.storage_settings import StorageSettingsPanel
 
         self.storage_panel = StorageSettingsPanel(self.runtime.repository, settings_body)
-        settings.addWidget(self.storage_panel)
+        section("storage", self.storage_panel)
+        directory_row = QWidget()
+        directory_layout = QHBoxLayout(directory_row)
+        directory_layout.setContentsMargins(0, 0, 0, 0)
+        directory_text = QVBoxLayout()
+        directory_title = QLabel("软件库存与日志目录")
+        directory_title.setObjectName("panelTitle")
+        directory_text.addWidget(directory_title)
+        directory = QLabel("软件库存与日志目录：" + str(self.runtime.repository.root))
+        directory.setObjectName("pageDescription")
+        directory.setWordWrap(True)
+        directory.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        directory_text.addWidget(directory)
+        directory_layout.addLayout(directory_text, 1)
+        open_directory = QPushButton("打开目录")
+        open_directory.setProperty("buttonSize", "compact")
+        open_directory.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.runtime.repository.root)))
+        )
+        directory_layout.addWidget(open_directory)
+        section("directory", directory_row)
         from lab_control.ui.pages.agent_collaboration import AgentCollaborationPanel
 
         self.agent_panel = AgentCollaborationPanel(self.runtime, settings_body)
-        settings.addWidget(self.agent_panel)
-        directory = QLabel("软件库存与日志目录：" + str(self.runtime.repository.root))
-        directory.setWordWrap(True)
-        settings.addWidget(directory)
+        section("agent", self.agent_panel)
         from lab_control.ui.pages.environment_repair import EnvironmentRepairPanel
 
         self.environment_panel = EnvironmentRepairPanel(self.runtime, settings_body)
-        settings.addWidget(self.environment_panel, 1)
+        section("environment", self.environment_panel)
+        settings.addStretch(1)
         self.stack.addWidget(self.settings_page)
         self.setCentralWidget(root)
         self.navigate("首页", "", "")
@@ -272,15 +354,16 @@ class RealWindow(QMainWindow):
 
     def update_sidebar(self) -> None:
         collapsed = self._manual_sidebar_collapsed
-        self.sidebar.setFixedWidth(76 if collapsed else 232)
+        self.sidebar.setFixedWidth(68 if collapsed else SIDEBAR_WIDTH)
         if layout := self.sidebar.layout():
-            layout.setContentsMargins(8 if collapsed else 18, 22, 8 if collapsed else 18, 18)
-        self.brand.setText("TF" if collapsed else "TF LABCONTROL")
+            layout.setContentsMargins(10, 16, 10, 12)
+        self.brand.setVisible(not collapsed)
         self.brand_subline.setVisible(not collapsed)
         self.sidebar_section.setVisible(not collapsed)
         self.runtime_badge.setVisible(not collapsed)
         for label, button in self.nav_buttons.items():
-            button.setText(label[:2] if collapsed else label)
+            assert isinstance(button, NavButton)
+            button.set_collapsed(collapsed)
             button.setToolTip(label)
 
     def fit_to_screen(self, available: QRect | None = None) -> None:

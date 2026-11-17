@@ -27,9 +27,10 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand
 from lab_control.instruments.devices.rs_fspn26.settings import LABELS
 from lab_control.storage.recording import read_frames
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
-COLORS = ("#edb25b", "#72d2dd", "#b19cf1", "#99cf8e", "#e88e92", "#89acdc")
+COLORS = tk.CHANNEL_COLORS
 METRICS = (
     ("carrier_hz", "载波频率", "Hz"),
     ("carrier_dbm", "载波电平", "dBm"),

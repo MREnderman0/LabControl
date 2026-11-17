@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -21,6 +22,8 @@ from PySide6.QtWidgets import (
 from lab_control.application.watchlists import Preset, new_id
 from lab_control.ui.pages.watch_runtime import WatchRuntime
 from lab_control.ui.pages.watch_table import PresetTable
+from lab_control.ui.styles import tokens as tk
+from lab_control.ui.widgets import icons
 from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 
@@ -30,19 +33,26 @@ class WatchlistsPage(QWidget):
         self.hub = WatchRuntime(controller, self)
         self.windows = {}
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setObjectName("watchSplit")
-        split.setHandleWidth(8)
+        split.setHandleWidth(14)
         layout.addWidget(split)
-        pane = QWidget()
+        pane = QFrame()
+        pane.setObjectName("watchPresetPane")
         left = QVBoxLayout(pane)
-        left.setContentsMargins(0, 0, 0, 0)
+        left.setContentsMargins(10, 10, 10, 10)
+        left.setSpacing(8)
         bar = QHBoxLayout()
+        bar.setContentsMargins(4, 0, 0, 0)
         title = QLabel("预设")
         title.setObjectName("panelTitle")
         bar.addWidget(title)
         bar.addStretch()
         self.create_button = QPushButton("新建")
+        self.create_button.setProperty("buttonSize", "compact")
+        self.create_button.setIcon(icons.icon("plus", tk.TEXT_2))
+        self.create_button.setToolTip("新建监视预设；双击预设打开独立窗口，右键可重命名、复制或删除")
         bar.addWidget(self.create_button)
         left.addLayout(bar)
         self.list = QListWidget()
@@ -50,13 +60,22 @@ class WatchlistsPage(QWidget):
         self.list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.list.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        left.addWidget(self.list)
+        left.addWidget(self.list, 1)
+        self.presets_empty = QLabel("还没有监视预设\n点击“新建”，把需要盯着的通道放进一个预设")
+        self.presets_empty.setObjectName("watchEmpty")
+        self.presets_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.presets_empty.setWordWrap(True)
+        left.addWidget(self.presets_empty, 1)
+        hint = QLabel("双击打开独立窗口 · 拖动调整顺序")
+        hint.setObjectName("watchHint")
+        left.addWidget(hint)
         self.table = PresetTable(self.hub)
+        self.table.open_window.connect(lambda: self.open_window(self.key(self.list.currentItem())))
         split.addWidget(pane)
         split.addWidget(self.table)
-        pane.setMinimumWidth(145)
+        pane.setMinimumWidth(170)
         split.setStretchFactor(1, 1)
-        split.setSizes([200, 900])
+        split.setSizes([230, 900])
         self.create_button.clicked.connect(self.create_preset)
         self.list.currentItemChanged.connect(self.select)
         self.list.itemDoubleClicked.connect(lambda item: self.open_window(self.key(item)))
@@ -86,6 +105,8 @@ class WatchlistsPage(QWidget):
             )
             self.list.blockSignals(False)
             self.select(self.list.currentItem())
+        self.list.setVisible(bool(items))
+        self.presets_empty.setVisible(not items)
         for key, dialog in list(self.windows.items()):
             preset = self.hub.presets.get(key)
             if preset:

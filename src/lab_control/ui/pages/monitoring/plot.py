@@ -16,6 +16,7 @@ from lab_control.application.monitoring import MonitorFrame
 from lab_control.domain.instruments import DeviceError
 from lab_control.ui.pages.monitoring.scalar_readouts import ScalarReadouts
 from lab_control.ui.pages.monitoring.trace_view import TraceView
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.plot_export import PublicationPlotWidget, PublicationViewBox
 
 
@@ -45,9 +46,14 @@ class LivePlot(QWidget):
         layout.addWidget(self.value)
         self.plot_item = MonitoringPlotItem(viewBox=PublicationViewBox())
         self.plot_item.fit_requested.connect(self.fit_current)
-        self.plot = self.canvas_type(background="#131c21", plotItem=self.plot_item)
+        self.plot = self.canvas_type(background=tk.CHART_BG, plotItem=self.plot_item)
         self.plot.showGrid(x=True, y=True, alpha=0.16)
-        self.plot.addLegend(offset=(8, 8))
+        self.plot.addLegend(
+            offset=(8, 8),
+            labelTextColor=tk.TEXT_2,
+            brush=pg.mkBrush(22, 23, 26, 215),
+            pen=pg.mkPen(tk.BORDER),
+        )
         self.plot.setMinimumSize(150, 170)
         layout.addWidget(self.plot, 1)
         self.meta = QLabel("尚无数据 · 选择设备后开始监测")
@@ -172,7 +178,7 @@ class LivePlot(QWidget):
                 if measurement.metadata.get("axis_kind") == "transfer_sample_index":
                     axis_label = "传输样本序号（频率未核实）"
             if key not in self.curves:
-                color = ("#e3a252", "#69c9d4", "#b5d979", "#cda8e8")[(measurement.channel - 1) % 4]
+                color = tk.channel_color(measurement.channel)
                 curve = self.plot.plot(pen=pg.mkPen(color, width=1), name=f"CH {measurement.channel}")
                 curve.setDownsampling(auto=True, method="peak")
                 curve.setClipToView(True)

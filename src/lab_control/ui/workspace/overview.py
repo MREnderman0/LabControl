@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QDateTime, Qt
+from PySide6.QtCore import QDateTime, QSize, Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QFrame,
@@ -29,6 +29,8 @@ from lab_control.ui.controller import (
     display_connection_state,
     display_task,
 )
+from lab_control.ui.styles import tokens as tk
+from lab_control.ui.widgets import icons
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool, DeviceRowDelegate
 from lab_control.ui.widgets.popup_surface import WorkspaceMenu
@@ -55,15 +57,19 @@ class WorkspaceOverview:
         root = QWidget()
         root.setObjectName("shellRoot")
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(30, 24, 30, 24)
-        layout.setSpacing(14)
-        eyebrow = QLabel("首页 / 总览")
-        eyebrow.setObjectName("eyebrow")
-        layout.addWidget(eyebrow)
+        layout.setContentsMargins(24, 18, 24, 14)
+        layout.setSpacing(12)
         toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+        heading_column = QVBoxLayout()
+        heading_column.setSpacing(2)
         heading = QLabel("设备总览")
-        heading.setObjectName("pageTitle")
-        toolbar.addWidget(heading)
+        heading.setObjectName("overviewTitle")
+        heading_column.addWidget(heading)
+        window.summary = QLabel()
+        window.summary.setObjectName("overviewNote")
+        heading_column.addWidget(window.summary)
+        toolbar.addLayout(heading_column)
         toolbar.addStretch()
         window.scan_button = QPushButton("扫描设备")
         window.scan_button.setObjectName("primaryButton")
@@ -89,16 +95,26 @@ class WorkspaceOverview:
         toolbar.addWidget(window.device_list_button)
         for text, action in (("环境诊断", window.diagnose),):
             button = QPushButton(text)
+            button.setProperty("buttonSize", "compact")
+            button.setIcon(icons.icon("stethoscope", tk.TEXT_2))
+            button.setIconSize(QSize(15, 15))
             button.clicked.connect(action)
             toolbar.addWidget(button)
+        for button in (
+            window.stop_connect_button,
+            window.connection_results_button,
+            window.cancel_button,
+            window.address_list_button,
+            window.device_list_button,
+        ):
+            button.setProperty("buttonSize", "compact")
+        window.connect_all_button.setProperty("buttonSize", "compact")
+        window.connect_all_button.setIcon(icons.icon("plug", tk.ACCENT_INK, disabled=tk.TEXT_3))
+        window.device_list_button.setIcon(icons.icon("list", tk.TEXT_2))
+        window.address_list_button.setIcon(icons.icon("network", tk.TEXT_2))
+        for button in (window.connect_all_button, window.device_list_button, window.address_list_button):
+            button.setIconSize(QSize(15, 15))
         layout.addLayout(toolbar)
-        description = QLabel("按设备类型查看设备池、连接状态和功能槽位。")
-        description.setObjectName("pageDescription")
-        layout.addWidget(description)
-        window.summary = QLabel()
-        window.summary.setWordWrap(True)
-        window.summary.setObjectName("overviewNote")
-        layout.addWidget(window.summary)
         window.connection_summary = QLabel()
         window.connection_summary.setWordWrap(True)
         window.connection_summary.setObjectName("overviewNote")
@@ -124,6 +140,7 @@ class WorkspaceOverview:
         trend_layout = QHBoxLayout(trend)
         trend_text = QVBoxLayout()
         trend_text.setSpacing(2)
+        trend_layout.setContentsMargins(16, 12, 12, 12)
         trend_heading = QLabel("实时趋势预览")
         trend_heading.setObjectName("panelTitle")
         trend_caption = QLabel("选择设备后进入仪器测控，查看波形、温度、电压、功率或频谱趋势。")
@@ -133,6 +150,7 @@ class WorkspaceOverview:
         trend_text.addWidget(trend_caption)
         trend_layout.addLayout(trend_text, 1)
         monitor = QPushButton("进入监测")
+        monitor.setProperty("buttonSize", "compact")
         monitor.clicked.connect(lambda: window.navigate("实时监测"))
         trend_layout.addWidget(monitor)
         layout.addWidget(trend)
@@ -291,6 +309,39 @@ class WorkspaceOverview:
         layout.addWidget(window.message)
         window.setCentralWidget(root)
 
+    def _card_devices(self, records: list[dict[str, Any]]) -> list[tuple[str, str, str, str]]:
+        window = self.window
+        order = {"busy": 0, "connected": 1, "degraded": 2, "error": 2, "recovering": 3, "connecting": 3}
+        rows = []
+        for record in records:
+            state = window.states.get(record["id"], {})
+            connection = display_connection_state(state)
+            slot = window.runtime.repository.function_slots.label(
+                record.get("slots", {}).get(window.controller.mode, ""), window.controller.mode
+            )
+            model = (
+                record["identity"].get("model")
+                or record.get("displayName")
+                or record["adapterId"]
+                or "未识别设备"
+            )
+            detail = (
+                slot
+                if slot and slot != "未绑定"
+                else record.get("displayName") or record["config"]["resource"]
+            )
+            text = {
+                "connected": "已连接",
+                "busy": "采集中" if display_task(state) else "忙碌",
+                "connecting": "连接中",
+                "recovering": "重连中",
+                "degraded": "异常",
+                "error": "异常",
+            }.get(connection, "未连接")
+            rows.append((order.get(connection, 9), connection, model, detail, text))
+        rows.sort(key=lambda row: row[0])
+        return [row[1:] for row in rows]
+
     def select_category(self, *_args) -> None:
         window = self.window
         window.active_category = window.category_filter.currentData() or ""
@@ -420,6 +471,7 @@ class WorkspaceOverview:
             if window.category_filter.itemData(index, Qt.ItemDataRole.ToolTipRole) != tooltip:
                 window.category_filter.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
             window.cards[category].update_counts(len(records), live, abnormal, bound)
+            window.cards[category].set_devices(self._card_devices(records))
             if records:
                 visible_cards.append(window.cards[category])
         window.card_grid.set_cards(tuple(visible_cards))
@@ -444,12 +496,12 @@ class WorkspaceOverview:
                 "error": "异常",
             }
             colors = {
-                "connected": "#8de3a3",
-                "busy": "#efc66e",
-                "connecting": "#efc66e",
-                "recovering": "#efc66e",
-                "degraded": "#ee7474",
-                "error": "#ee7474",
+                "connected": tk.OK,
+                "busy": tk.WARN,
+                "connecting": tk.WARN,
+                "recovering": tk.WARN,
+                "degraded": tk.ERR,
+                "error": tk.ERR,
             }
             texts = [
                 name
@@ -482,7 +534,7 @@ class WorkspaceOverview:
                 if row.text(index) != text:
                     row.setText(index, text)
                     row.setToolTip(index, text)
-            fallback_color = "#ee7474" if record.get("presenceState") == "unreachable" else "#8da19e"
+            fallback_color = tk.ERR if record.get("presenceState") == "unreachable" else tk.TEXT_3
             row.setForeground(3, QColor(colors.get(connection, fallback_color)))
             task = display_task(state)
             row.setToolTip(3, texts[3] + (" / " + task if task else ""))

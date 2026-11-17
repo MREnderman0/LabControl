@@ -31,6 +31,7 @@ from lab_control.domain.oscilloscope import COLORS, CONTROL_NAMES, coarse_steps,
 from lab_control.domain.readback import boolean_value, normalized_value, usable_reading
 from lab_control.ui.pages.monitoring.scope_depth import ScopeDepth
 from lab_control.ui.pages.monitoring.scope_points import ScopePoints
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 
@@ -42,7 +43,7 @@ def gear_icon() -> QIcon:
     painter.scale(2, 2)
     painter.translate(12, 12)
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor("#b7c5bf"))
+    painter.setBrush(QColor(tk.TEXT_2))
     for _ in range(8):
         painter.drawRoundedRect(QRectF(-1.8, -9, 3.6, 4), 0.7, 0.7)
         painter.rotate(45)
@@ -178,7 +179,7 @@ class ScopeSlider(QWidget):
         outer.addLayout(layout)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)
-        self.setMinimumHeight(40)
+        self.setMinimumHeight(26)
         self.title = QLabel(title)
         self.title.setObjectName("scopeControlLabel")
         self.title.setFixedWidth(28)
@@ -201,6 +202,9 @@ class ScopeSlider(QWidget):
         endpoints.addWidget(self.minimum_label)
         endpoints.addStretch()
         endpoints.addWidget(self.maximum_label)
+        # Range endpoints stay available as text and in the tooltip; the panel shows only the value.
+        self.minimum_label.hide()
+        self.maximum_label.hide()
         outer.addLayout(endpoints)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -469,7 +473,11 @@ class OscilloscopeControls(QFrame):
             box = section("")
             if (ch, "channel_enabled") in self.model_writes:
                 check = QCheckBox(f"CH {ch}")
-                check.setStyleSheet(f"color: {COLORS[(ch - 1) % 4]}; font-weight: 600;")
+                color = COLORS[(ch - 1) % 4]
+                check.setStyleSheet(
+                    f"QCheckBox {{ color: {color}; font-weight: 600; }}"
+                    f"QCheckBox::indicator:checked {{ background: {color}; border-color: {color}; }}"
+                )
                 check.clicked.connect(lambda enabled, c=ch: self.set_channel(c, enabled))
                 box.addWidget(check)
                 self.checks[ch] = check
@@ -759,6 +767,33 @@ class OscilloscopeControls(QFrame):
                 self.submit([DeviceCommand("record_length", {"value": value})])
         except (ValueError, DeviceError) as exc:
             self.status.setText(f"采集点数未写入：{exc}")
+
+    def trigger_state(self) -> tuple[int | None, float | None, bool]:
+        """Trigger channel, its current level and whether the level can be dragged now."""
+        channel = self.trigger_channel()
+        if channel is None:
+            return None, None, False
+        cap = self.capabilities(channel).get("trigger_level")
+        level = self.values.get((channel if cap and cap.channel_scoped else 1, "trigger_level"))
+        if not isinstance(level, (int, float)) or isinstance(level, bool):
+            return channel, None, False
+        enabled = bool(self.trigger_slider is not None and self.trigger_slider.isEnabled())
+        return channel, float(level), enabled
+
+    def offset_channels(self) -> frozenset[int]:
+        return frozenset(
+            ch for (ch, name), field in self.sliders.items() if name == "offset" and field.isEnabled()
+        )
+
+    def drag_field(self, field: ScopeSlider | None, value: float, finished: bool) -> None:
+        """Screen-tag drags reuse the slider's preview, range clamp and release-to-write path."""
+        if field is None or not field.isEnabled() or field.actual is None or self.running:
+            return
+        if not field.dirty:
+            field.begin_gesture()
+        field.set_target(value)
+        if finished:
+            field.commit()
 
     def preview_trigger_level(self, value: float) -> None:
         ch = self.trigger_channel()

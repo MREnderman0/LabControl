@@ -29,6 +29,7 @@ from lab_control.storage.layout import raw_folder
 from lab_control.storage.recording import read_frames
 from lab_control.ui.pages.device_control.fspn import FspnPanel
 from lab_control.ui.pages.monitoring.recording_state import update_recording_frame
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.device_selector import DeviceSelector
 from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 
@@ -126,14 +127,16 @@ class PhaseNoisePage(QWidget):
         charts.addWidget(self.tabs, 1)
         charts.addWidget(self.stability_plot, 1)
         self.curves = {
-            "phase_difference": self.phase_plot.plot(pen=pg.mkPen("#e3a252", width=1), connect="finite"),
-            "phase_noise": self.pn_plot.plot(pen=pg.mkPen("#e3a252", width=2), name="相噪"),
-            "noise_floor": self.pn_plot.plot(pen=pg.mkPen("#6e8492", width=1), name="估计底噪"),
+            "phase_difference": self.phase_plot.plot(
+                pen=pg.mkPen(tk.CHANNEL_COLORS[0], width=1), connect="finite"
+            ),
+            "phase_noise": self.pn_plot.plot(pen=pg.mkPen(tk.CHANNEL_COLORS[0], width=2), name="相噪"),
+            "noise_floor": self.pn_plot.plot(pen=pg.mkPen(tk.TEXT_3, width=1), name="估计底噪"),
             "adev": self.stability_plot.plot(
-                pen=pg.mkPen("#e3a252", width=2), symbol="o", symbolSize=5, name="ADEV · 重叠"
+                pen=pg.mkPen(tk.CHANNEL_COLORS[0], width=2), symbol="o", symbolSize=5, name="ADEV · 重叠"
             ),
             "mdev": self.stability_plot.plot(
-                pen=pg.mkPen("#69c9d4", width=2), symbol="s", symbolSize=5, name="MDEV"
+                pen=pg.mkPen(tk.CHANNEL_COLORS[1], width=2), symbol="s", symbolSize=5, name="MDEV"
             ),
         }
         self.side = QFrame()
@@ -199,8 +202,8 @@ class PhaseNoisePage(QWidget):
         axes = {"bottom": LogAxis(orientation="bottom")} if log_x else {}
         if log_y:
             axes["left"] = LogAxis(orientation="left")
-        chart = PublicationPlotWidget(background="#131c21", axisItems=axes)
-        chart.setTitle(title, color="#edf0ee", size="12pt")
+        chart = PublicationPlotWidget(background=tk.CHART_BG, axisItems=axes)
+        chart.setTitle(title, color=tk.TEXT, size="12pt")
         chart.setLabel("bottom", xlabel, units=xunit)
         chart.setLabel("left", ylabel, units=yunit)
         chart.showGrid(x=True, y=True, alpha=0.2)
@@ -208,7 +211,7 @@ class PhaseNoisePage(QWidget):
         chart.getAxis("bottom").enableAutoSIPrefix(False)
         if log_y:
             chart.getAxis("left").enableAutoSIPrefix(False)
-        chart.addLegend(offset=(10, 10))
+        chart.addLegend(offset=(10, 10), labelTextColor=tk.TEXT_2)
         chart.setMinimumSize(340, 180)
         return chart
 

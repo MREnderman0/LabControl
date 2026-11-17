@@ -8,7 +8,8 @@ from typing import Mapping
 
 from lab_control.domain.instruments import DeviceError
 
-COLORS = ("#e3a252", "#69c9d4", "#b5d979", "#cda8e8")
+# Matches ui.styles.tokens.CHANNEL_COLORS[:4].
+COLORS = ("#f2b44c", "#4fc3e8", "#8fd16a", "#c49cf5")
 CONTROL_NAMES = (
     "channel_enabled",
     "scale",

@@ -24,6 +24,7 @@ from lab_control.domain.spectrum_display import display_values
 from lab_control.ui.pages.device_control.editors import ParameterEditor
 from lab_control.ui.pages.monitoring.plot import LivePlot
 from lab_control.ui.pages.monitoring.spectrum_view import SpectrumCanvas, SpectrumView
+from lab_control.ui.styles import tokens as tk
 
 
 def frequency_text(value: float) -> str:
@@ -132,7 +133,7 @@ class SpectrumPlot(LivePlot):
         self.save_enabled = False
         self.plot.menu_requested.connect(self.open_menu)
         self.plot_item.hideButtons()
-        self.plot.setBackground("#111719")
+        self.plot.setBackground(tk.CHART_BG)
         self.plot.getPlotItem().legend.hide()
         self.plot.getViewBox().sigRangeChanged.connect(self.position_labels)
 
@@ -187,10 +188,10 @@ class SpectrumPlot(LivePlot):
         self.overlays.clear()
         for marker in markers:
             line = MarkerLine(
-                angle=90, movable=False, pen=pg.mkPen("#dba455", width=1, style=Qt.PenStyle.DashLine)
+                angle=90, movable=False, pen=pg.mkPen(tk.ACCENT, width=1, style=Qt.PenStyle.DashLine)
             )
-            label = MarkerLabel(color="#eed4ae", anchor=(0.5, 1), fill="#20282b", border="#665237")
-            point = pg.ScatterPlotItem(size=7, brush="#efb96a", pen=None)
+            label = MarkerLabel(color=tk.TEXT, anchor=(0.5, 1), fill=tk.SURFACE_2, border=tk.BORDER_STRONG)
+            point = pg.ScatterPlotItem(size=7, brush=tk.ACCENT, pen=None)
             line.edit_requested.connect(lambda n=marker.number: self.edit_marker.emit(n))
             label.edit_requested.connect(lambda n=marker.number: self.edit_marker.emit(n))
             line.setZValue(10)

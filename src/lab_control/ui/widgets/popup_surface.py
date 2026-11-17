@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QMenu
 
+from lab_control.ui.styles import tokens as tk
+
 ROW_HEIGHT = 34
 SURFACE_PADDING = 6
 SHADOW_MARGIN = 8
@@ -18,8 +20,8 @@ def paint_popup_surface(widget) -> None:
     for spread in range(SHADOW_MARGIN, 0, -1):
         painter.setBrush(QColor(0, 0, 0, 5 + (SHADOW_MARGIN - spread) * 2))
         painter.drawRoundedRect(panel.adjusted(-spread, -spread, spread, spread), 8 + spread, 8 + spread)
-    painter.setBrush(QColor("#1d2325"))
-    painter.setPen(QPen(QColor("#505957"), 1))
+    painter.setBrush(QColor(tk.POPUP))
+    painter.setPen(QPen(QColor(tk.BORDER_STRONG), 1))
     painter.drawRoundedRect(panel, 8, 8)
 
 

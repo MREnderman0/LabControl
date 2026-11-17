@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.application.bulk_connection import device_label
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox, _ChoiceDelegate
 
 if TYPE_CHECKING:
@@ -41,10 +42,10 @@ class _SlotDelegate(_ChoiceDelegate):
         text_option.rect = option.rect.adjusted(0, 0, -62, 0)
         super().paint(painter, text_option, index)
         painter.save()
-        painter.setPen(QColor("#75514a"))
-        painter.setBrush(QColor("#302526"))
+        painter.setPen(QColor("#6b2f33"))
+        painter.setBrush(QColor("#2a1719"))
         painter.drawRoundedRect(_delete_rect(option.rect), 4, 4)
-        painter.setPen(QColor("#ee9690"))
+        painter.setPen(QColor(tk.ERR))
         painter.drawText(_delete_rect(option.rect), Qt.AlignmentFlag.AlignCenter, "删除")
         painter.restore()
 

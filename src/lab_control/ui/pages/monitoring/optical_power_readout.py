@@ -9,6 +9,7 @@ from lab_control.application.power_window import PowerChannelSnapshot
 from lab_control.domain.power import power_span, watts_to_dbm
 from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS
 from lab_control.ui.pages.monitoring.readout_columns import add_readout_column
+from lab_control.ui.styles import tokens as tk
 
 
 def set_columns(widget: QWidget, fields: tuple[QWidget, ...]) -> None:
@@ -66,7 +67,7 @@ class PowerMeterReadoutRow(QFrame):
             return
         self.selected = selected
         self.setProperty("participating", selected)
-        color = CHANNEL_COLORS[(self.channel - 1) % len(CHANNEL_COLORS)] if selected else "#788286"
+        color = CHANNEL_COLORS[(self.channel - 1) % len(CHANNEL_COLORS)] if selected else tk.TEXT_3
         self.channel_label.setStyleSheet(f"color: {color};")
         for widget in (self, self.value, self.peak):
             widget.style().unpolish(widget)

@@ -3,15 +3,17 @@
 from dataclasses import replace
 from datetime import datetime
 
-from PySide6.QtCore import QAbstractTableModel, QMimeData, QModelIndex, Qt
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtCore import QAbstractTableModel, QEvent, QMimeData, QModelIndex, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QPushButton,
     QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -20,6 +22,10 @@ from PySide6.QtWidgets import (
 from lab_control.application.watchlists import WatchRow
 from lab_control.domain.workspace import channel_label
 from lab_control.ui.pages.watch_picker import WatchPicker
+from lab_control.ui.styles import tokens as tk
+from lab_control.ui.widgets import icons
+
+STATUS_DOTS = {"正常": tk.OK, "高于上限": tk.ERR, "低于下限": tk.ERR}
 
 
 class WatchReadingDelegate(QStyledItemDelegate):
@@ -28,6 +34,24 @@ class WatchReadingDelegate(QStyledItemDelegate):
         color = index.data(Qt.ItemDataRole.ForegroundRole)
         if color is not None:
             option.palette.setColor(QPalette.ColorRole.HighlightedText, color)
+
+    def paint(self, painter, option, index):
+        if index.column() != WatchTableModel.columns.index("状态"):
+            super().paint(painter, option, index)
+            return
+        # Status cell: a colored dot before the text, so alarms stand out at a glance.
+        status = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        size = max(6, round(option.fontMetrics.height() * 0.42))
+        shifted = QStyleOptionViewItem(option)
+        shifted.rect = option.rect.adjusted(size + 8, 0, 0, 0)
+        super().paint(painter, shifted, index)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(STATUS_DOTS.get(status, tk.IDLE)))
+        center = option.rect.center()
+        painter.drawEllipse(option.rect.left() + 8, center.y() - size // 2, size, size)
+        painter.restore()
 
 
 class WatchTableModel(QAbstractTableModel):
@@ -98,9 +122,9 @@ class WatchTableModel(QAbstractTableModel):
         reading = self.hub.values.get(row.id, ("", None))[1]
         if role == Qt.ItemDataRole.ForegroundRole and col in (3, 8):
             if status in {"高于上限", "低于下限"}:
-                return QColor("#ef6661")
+                return QColor(tk.ERR)
             if status != "正常":
-                return QColor("#9aa7ac")
+                return QColor(tk.TEXT_3)
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (3, 5, 6):
             return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         if role not in (Qt.ItemDataRole.EditRole, Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
@@ -198,18 +222,38 @@ class WatchTableModel(QAbstractTableModel):
 
 
 class PresetTable(QWidget):
+    open_window = Signal()
+
     def __init__(self, hub, parent=None, *, detached=False):
         super().__init__(parent)
         self.hub = hub
+        self.detached = detached
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
         bar = QHBoxLayout()
+        bar.setSpacing(8)
         self.add = QPushButton("添加监视量")
         self.remove = QPushButton("移除")
         self.once = QPushButton("采一次")
+        if not detached:
+            self.add.setObjectName("primaryButton")
+            self.add.setIcon(icons.icon("plus", tk.ACCENT_INK, disabled=tk.TEXT_3))
+            for button in (self.add, self.remove, self.once):
+                button.setProperty("buttonSize", "compact")
         for button in (self.add, self.remove, self.once):
             bar.addWidget(button)
         bar.addStretch()
+        self.summary = QLabel()
+        self.summary.setObjectName("watchSummary")
+        bar.addWidget(self.summary)
+        if not detached:
+            self.window_button = QPushButton("独立窗口")
+            self.window_button.setProperty("buttonSize", "compact")
+            self.window_button.setIcon(icons.icon("expand", tk.TEXT_2))
+            self.window_button.setToolTip("在独立窗口中打开当前预设（大字号，可放到副屏）")
+            self.window_button.clicked.connect(self.open_window)
+            bar.addWidget(self.window_button)
         layout.addLayout(bar)
         self.table = QTableView()
         self.table.setObjectName("watchReadings")
@@ -238,18 +282,51 @@ class PresetTable(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(64 if detached else 34)
         layout.addWidget(self.table)
+        self.empty = QLabel(
+            "这个预设还没有监视量\n点击“添加监视量”，选择设备通道和要盯的读数", self.table.viewport()
+        )
+        self.empty.setObjectName("watchEmpty")
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.hide()
+        self.table.viewport().installEventFilter(self)
         self.add.clicked.connect(self.pick)
         self.remove.clicked.connect(self.remove_rows)
         self.once.clicked.connect(self.capture)
         self.table.selectionModel().selectionChanged.connect(self.buttons)
         self.table.clicked.connect(self.edit_limit)
         hub.updated.connect(self.buttons)
+        hub.updated.connect(self.update_summary)
+        self.model.modelReset.connect(self.update_summary)
+        self.model.rowsInserted.connect(self.update_summary)
+        self.model.rowsRemoved.connect(self.update_summary)
         self.bind("")
+
+    def eventFilter(self, watched, event):
+        if watched is self.table.viewport() and event.type() == QEvent.Type.Resize:
+            self.empty.setGeometry(self.table.viewport().rect())
+        return super().eventFilter(watched, event)
+
+    def update_summary(self, *_args):
+        rows = self.model.rows
+        statuses = [self.hub.status.get(r.id, "等待读数") for r in rows]
+        alarms = sum(s in {"高于上限", "低于下限"} for s in statuses)
+        waiting = sum(s not in {"正常", "高于上限", "低于下限"} for s in statuses)
+        parts = [f"共 {len(rows)} 项"]
+        if alarms:
+            parts.append(f'<span style="color:{tk.ERR}">超限 {alarms}</span>')
+        if waiting:
+            parts.append(f"未就绪 {waiting}")
+        self.summary.setText(" · ".join(parts) if self.model.preset else "")
+        self.empty.setGeometry(self.table.viewport().rect())
+        self.empty.setVisible(bool(self.model.preset) and not rows)
+        if not self.detached:
+            self.window_button.setEnabled(bool(self.model.preset))
 
     def bind(self, key):
         self.model.bind(key)
         self.add.setEnabled(bool(key))
         self.buttons()
+        self.update_summary()
         if self.isVisible():
             self.hub.subscribe(self, key)
 

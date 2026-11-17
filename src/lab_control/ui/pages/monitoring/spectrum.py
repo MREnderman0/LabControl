@@ -35,6 +35,7 @@ from lab_control.ui.pages.monitoring.spectrum_controls import SpectrumControls
 from lab_control.ui.pages.monitoring.spectrum_markers import MarkerDialog, SpectrumPlot, frequency_text
 from lab_control.ui.pages.monitoring.timing import SpectrumInterval
 from lab_control.ui.widgets.device_selector import DeviceSelector
+from lab_control.ui.widgets.readouts import ReadoutStrip
 
 
 class SpectrumMonitoringPage(QWidget):
@@ -82,11 +83,17 @@ class SpectrumMonitoringPage(QWidget):
         self.interval.setFixedWidth(self.record_button.width())
         toolbar.addWidget(self.interval)
         plot_layout.addLayout(toolbar)
+        self.readouts = ReadoutStrip(
+            {"center": "中心频率", "span": "扫宽", "bw": "RBW / VBW", "ref": "参考电平", "marker": "标记"},
+            highlight=("marker",),
+        )
+        plot_layout.addWidget(self.readouts)
         self.plot = SpectrumPlot(chart)
         self.plot.add_frequency.connect(self.add_marker_at)
         self.plot.save_frame.connect(self.save)
         self.plot.edit_marker.connect(self.edit_marker)
         self.plot.readings_changed.connect(self.update_marker_list)
+        self.plot.readings_changed.connect(self.update_readouts)
         plot_layout.addWidget(self.plot, 1)
         self.status = QLabel("监测未开始", chart)
         self.status.setObjectName("mutedText")
@@ -273,6 +280,53 @@ class SpectrumMonitoringPage(QWidget):
             self.plot.set_markers(self.markers)
         dialog.deleteLater()
 
+    def update_readouts(self) -> None:
+        """Instrument settings of the displayed frame, plus the first marker reading."""
+        frame = self.plot.displayed_frame
+        # Verified readback values from the control panel; the displayed frame's own settings win.
+        config = dict(self.controls.current()) if self.controls else {}
+        if frame:
+            config.update({k: v for k, v in frame.batch.configuration.items() if v is not None})
+
+        def number(key):
+            value = config.get(key)
+            return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+        start, stop = number("start_frequency"), number("stop_frequency")
+        center, span = number("center_frequency"), number("span")
+        if start is not None and stop is not None:
+            center = (start + stop) / 2 if center is None else center
+            span = stop - start if span is None else span
+        self.readouts.set("center", frequency_text(center) if center is not None else "—")
+        self.readouts.set("span", frequency_text(span) if span is not None else "—")
+        rbw, vbw = number("rbw"), number("vbw")
+        self.readouts.set(
+            "bw",
+            " / ".join(frequency_text(v) if v is not None else "—" for v in (rbw, vbw))
+            if rbw is not None or vbw is not None
+            else "—",
+        )
+        reference = number("reference_level")
+        unit = (
+            (frame.batch.measurements[0].metadata.get("spectrum_display") or {}).get("unit")
+            if frame and frame.batch.measurements
+            else None
+        )
+        self.readouts.set(
+            "ref", f"{reference:g} {unit or 'dBm'}".replace("-", "−") if reference is not None else "—"
+        )
+        marker = self.markers[0] if self.markers else None
+        reading = self.plot.readings.get(marker.number) if marker else None
+        if marker and reading and reading.amplitude is not None:
+            position = reading.position if reading.position is not None else marker.frequency
+            self.readouts.set(
+                "marker",
+                f"{reading.amplitude:.2f} {self.plot.amplitude_unit}".replace("-", "−"),
+                f"M{marker.number} {'寻峰' if marker.tracking else '固定'} · {frequency_text(position)}",
+            )
+        else:
+            self.readouts.set("marker", "—", f"M{marker.number}" if marker else "标记")
+
     def update_marker_list(self) -> None:
         if self.marker_list is None:
             return
@@ -372,6 +426,7 @@ class SpectrumMonitoringPage(QWidget):
             text += " · 仪器刻度暂不可用"
         self.status.setToolTip(detail)
         self.status.setText(text)
+        self.update_readouts()
 
     def refresh_frame(self, device_id: str) -> None:
         if device_id != self.device_id or not self.isVisible() or not self.source:
@@ -381,3 +436,4 @@ class SpectrumMonitoringPage(QWidget):
         if frame:
             self.plot.show_frame(frame, self.source, (1,))
             service.displayed(device_id, frame)
+            self.update_readouts()

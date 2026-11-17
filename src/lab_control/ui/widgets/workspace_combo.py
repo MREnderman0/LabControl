@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.input_wheel_guard import scroll_input_parent
 from lab_control.ui.widgets.popup_surface import POPUP_MARGIN, ROW_HEIGHT, paint_popup_surface
 
@@ -50,10 +51,10 @@ class _ChoiceDelegate(QStyledItemDelegate):
         chosen = index.row() == self.combo.currentIndex()
         if (active or chosen) and enabled:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor("#3b3023" if chosen else "#303638"))
+            painter.setBrush(QColor(tk.ACCENT_SOFT if chosen else tk.PRESSED))
             painter.drawRoundedRect(rect.adjusted(0, 1, 0, -1), 5, 5)
         if chosen:
-            painter.setPen(QPen(QColor("#e3a252" if enabled else "#788286"), 1.5))
+            painter.setPen(QPen(QColor(tk.ACCENT if enabled else tk.TEXT_3), 1.5))
             path = QPainterPath()
             x, y = rect.right() - 16, rect.center().y()
             path.moveTo(x - 4, y)
@@ -61,7 +62,7 @@ class _ChoiceDelegate(QStyledItemDelegate):
             path.lineTo(x + 5, y - 3)
             painter.drawPath(path)
         painter.setFont(option.font)
-        painter.setPen(QColor("#788286" if not enabled else "#e3a252" if chosen else "#e7e9e8"))
+        painter.setPen(QColor(tk.TEXT_3 if not enabled else tk.ACCENT_TEXT if chosen else tk.TEXT))
         text = option.fontMetrics.elidedText(
             str(index.data() or ""), Qt.TextElideMode.ElideRight, rect.width() - 40
         )
@@ -370,7 +371,7 @@ class WorkspaceComboBox(QComboBox):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = "#e3a252" if self._popup.isVisible() else "#aeb5b5" if self.isEnabled() else "#596164"
+        color = tk.ACCENT if self._popup.isVisible() else tk.TEXT_2 if self.isEnabled() else tk.TEXT_DISABLED
         painter.setPen(QPen(QColor(color), 1.5))
         x, y = self.width() - 16, self.height() / 2
         direction = -1 if self._popup.isVisible() else 1
