@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import shutil
 import time
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QSortFilterProxyModel, QStringListModel, Qt
@@ -18,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.application.bulk_connection import device_label
-from lab_control.application.catalog import instrument_category, surface_applicable
+from lab_control.application.catalog import instrument_category
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.discovery.presence import LIVE_CONNECTIONS
 from lab_control.ui.kit import (
@@ -27,7 +28,6 @@ from lab_control.ui.kit import (
     IconButton,
     NavButton,
     SearchBox,
-    Segmented,
     SubNavButton,
     set_property,
 )
@@ -137,11 +137,6 @@ class WorkspaceChrome:
     # ------------------------------------------------------------------ header
     def build_header_tools(self, row: QHBoxLayout) -> None:
         window = self.window
-        self.surface_switch = Segmented(())
-        self.surface_switch.setAccessibleName("仪器页面")
-        self.surface_switch.changed.connect(self._surface_chosen)
-        self.surface_switch.hide()
-        row.addWidget(self.surface_switch)
         row.addStretch()
         self.search = SearchBox("搜索设备、型号或功能槽位", parent=window)
         self.search.setFixedWidth(300)
@@ -162,24 +157,6 @@ class WorkspaceChrome:
         self.alerts = IconButton("bell", "设备告警", 32, 17)
         self.alerts.clicked.connect(self._open_alerts)
         row.addWidget(self.alerts)
-
-    def sync_surface(self) -> None:
-        """Mirror the (hidden) surface combo as a segmented 控制 / 监测 switch."""
-        picker = self.window.surface_picker
-        items = [(picker.itemText(i), picker.itemData(i)) for i in range(picker.count())]
-        if items != [
-            (b.text(), self.surface_switch.data(i)) for i, b in enumerate(self.surface_switch.group.buttons())
-        ]:
-            self.surface_switch.set_items(items)
-        self.surface_switch.set_current(picker.currentData())
-        self.surface_switch.setVisible(picker.property("shown") is True)
-
-    def _surface_chosen(self, surface) -> None:
-        picker = self.window.surface_picker
-        index = picker.findData(surface)
-        if index >= 0 and index != picker.currentIndex():
-            picker.setCurrentIndex(index)
-            picker.activated.emit(index)
 
     def set_crumbs(self, parent: str, leaf: str) -> None:
         window = self.window
@@ -203,7 +180,8 @@ class WorkspaceChrome:
             ]
             text = " · ".join(dict.fromkeys(p for p in parts if p))
             entries.append((text, device_id))
-        entries.sort()
+        counts = Counter(label for label, _ in entries)
+        entries = sorted((f"{label} · {key}" if counts[label] > 1 else label, key) for label, key in entries)
         if entries != self._search_entries:
             self._search_entries = entries
             self.search_model.setStringList([text for text, _ in entries])
@@ -218,15 +196,9 @@ class WorkspaceChrome:
             return
         record = window.controller.records[device_id]
         category = instrument_category(record)
-        live = window.controller.states.get(device_id, {}).get("connectionState") in LIVE_CONNECTIONS
         self.search.edit.clear()
         self.search.edit.clearFocus()
-        if live and category in window._submenu_categories("仪器测控"):
-            surface = "实时监测" if surface_applicable(record, "monitoring") else "设备管理"
-            window.navigate(surface, category, device_id)
-        else:
-            window.navigate("首页")
-            window.open_details(device_id)
+        window.navigate("仪器测控", category, device_id)
 
     # ------------------------------------------------------------------ alerts and status bar
     def _problems(self) -> list[tuple[str, str]]:
@@ -247,8 +219,7 @@ class WorkspaceChrome:
         problems = self._problems()
         if problems:
             window = self.window
-            window.navigate("首页")
-            window.open_details(problems[0][0])
+            window.navigate("仪器测控", "", problems[0][0])
         else:
             self.window.navigate("操作日志")
 

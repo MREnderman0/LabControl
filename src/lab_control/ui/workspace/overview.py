@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.application.bulk_connection import device_label
-from lab_control.application.catalog import instrument_category, surface_applicable
+from lab_control.application.catalog import instrument_category
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.discovery.addresses import identity_conflict_message
 from lab_control.discovery.presence import is_current, presence_label
@@ -349,7 +349,8 @@ class WorkspaceOverview:
         window.refresh()
         candidates = [row for row in window.rows.values() if not row.isHidden()]
         if candidates:
-            window.tree.setCurrentItem(candidates[0])
+            current = window.rows.get(window.selected_id)
+            window.tree.setCurrentItem(current if current in candidates else candidates[0])
         else:
             window.tree.clearSelection()
             window.selected_id = ""
@@ -605,7 +606,18 @@ class WorkspaceOverview:
 
     def open_details(self, device_id: str) -> None:
         window = self.window
-        window.tree.setCurrentItem(window.rows[device_id])
+        row = window.rows.get(device_id)
+        if row is None:
+            return
+        category = category_for(window.records[device_id])
+        if window.active_category and window.active_category != category:
+            window.category_filter.setCurrentIndex(window.category_filter.findData(category))
+        if row.isHidden():
+            window.filter.setCurrentIndex(window.filter.findData("all"))
+        if row.isHidden():
+            window.presence_filter.setCurrentIndex(window.presence_filter.findData("all"))
+        window.tree.setCurrentItem(row)
+        window.tree.scrollToItem(row)
         window.selected_id = device_id
         window.show_device_pool()
         window.refresh_details()
@@ -624,19 +636,10 @@ class WorkspaceOverview:
         connecting = window.runtime.connection_progress()["state"] in {"running", "stopping"}
         for key, button in window.action_buttons.items():
             if key == "manage":
-                button.setText("设备控制")
-                button.setVisible(
-                    not bool(
-                        record
-                        and (
-                            not surface_applicable(record, "management")
-                            or instrument_category(record)
-                            in {"spectrum_analyzer", "oscilloscope", "power_supply", "optical_power_meter"}
-                        )
-                    )
-                )
+                button.setText("打开设备工作页")
+                button.setVisible(bool(record and instrument_category(record) in CATEGORY_LABELS))
             elif key == "monitor":
-                button.setVisible(bool(record and surface_applicable(record, "monitoring")))
+                button.hide()
             enabled = bool(record)
             if key == "connect":
                 enabled &= not bool(state) and bool(

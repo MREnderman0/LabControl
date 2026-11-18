@@ -97,7 +97,7 @@ class DeviceChips(Segmented):
         super().__init__((), parent)
         self.setObjectName("deviceChips")
         # Chips never set the page's minimum width; the page hides them when space runs out.
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.signature: tuple = ()
 
     def set_devices(self, devices: Sequence[tuple[str, str, str, str]], current: str) -> None:

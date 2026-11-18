@@ -118,7 +118,13 @@ class OscilloscopeMonitoringPage(QWidget):
         tools_row.setContentsMargins(0, 0, 10, 0)
         tools_row.setSpacing(4)
         self.readouts = ReadoutStrip(
-            {"timebase": "时基", "rate": "采样率", "points": "采集点数", "trigger": "触发"},
+            {
+                "timebase": "时基",
+                "rate": "采样率",
+                "points": "设定深度",
+                "actual_points": "本帧点数",
+                "trigger": "触发",
+            },
             highlight=("trigger",),
             embedded=True,
         )
@@ -365,11 +371,14 @@ class OscilloscopeMonitoringPage(QWidget):
             self.controller.focus_settings("")
 
     def focus_card(self, spec: dict) -> None:
-        self.selector.select(spec["device_id"])
+        channel = next(iter(spec.get("channels", ())), 1)
+        self.selector.select(spec["device_id"], channel)
 
         if self.controls and spec.get("channels"):
             check = self.controls.checks.get(spec["channels"][0])
             if check:
+                self.controls.show_tab("垂直")
+                self.controls.show_channel(channel)
                 self.controls.scroller.ensureWidgetVisible(check)
                 check.setFocus()
 
@@ -712,9 +721,29 @@ class OscilloscopeMonitoringPage(QWidget):
     def update_readouts(self) -> None:
         """Timebase, sample rate, points and trigger from the verified readback values."""
         controls = self.controls
+        frame = self.plot.displayed_frame
+        state = self.controller.states.get(self.device_id, {})
+        if frame and (
+            frame.session_id != state.get("sessionId")
+            or (isinstance(controls, PicoScopeControls) and not self.frame_is_current(state))
+        ):
+            frame = None
+        counts = {len(m.values) for m in frame.batch.measurements} if frame else set()
+        self.readouts.set("actual_points", " / ".join(f"{n:,}" for n in sorted(counts)) or "—")
         if not isinstance(controls, OscilloscopeControls):
-            for key in self.readouts.cells:
-                self.readouts.set(key, "—")
+            config = frame.batch.configuration if frame else {}
+            interval = config.get("sample_interval_s")
+            valid = isinstance(interval, (int, float)) and interval > 0
+            self.readouts.set("rate", engineering(1 / interval, "Sa/s") if valid else "—")
+            index = config.get("timebase")
+            timebase = (
+                f"索引 {index}"
+                if index is not None and config.get("capture_mode") == "waveform"
+                else (engineering(interval, "s") + "/点" if valid else "—")
+            )
+            self.readouts.set("timebase", timebase)
+            self.readouts.set("points", f"{frame.request.points:,}" if frame else "—")
+            self.readouts.set("trigger", "—")
             return
         values = controls.values
         timebase = values.get((1, "timebase"))
@@ -725,7 +754,16 @@ class OscilloscopeMonitoringPage(QWidget):
         rate = controls.sample_rate.text().partition("：")[2].strip()
         self.readouts.set("rate", rate or "—")
         points = values.get((1, "record_length"))
-        self.readouts.set("points", f"{float(points):,.0f}" if isinstance(points, (int, float)) else "—")
+        if isinstance(points, str) and points.strip().isdigit():
+            points = int(points.strip())
+        self.readouts.set(
+            "points",
+            f"{points:,.0f}"
+            if isinstance(points, (int, float))
+            else "AUTO"
+            if str(points).strip().upper() == "AUTO"
+            else "—",
+        )
         channel, level, _enabled = controls.trigger_state()
         source = values.get((1, "trigger_source"))
         slope = values.get((1, "trigger_slope"))
@@ -765,4 +803,5 @@ class OscilloscopeMonitoringPage(QWidget):
             self.refresh_tag_state(self.controller.states.get(device_id, {}))
             if isinstance(self.controls, PicoScopeControls):
                 self.controls.show_sample_rate(frame)
+            self.update_readouts()
             service.displayed(device_id, frame)

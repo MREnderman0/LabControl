@@ -11,16 +11,19 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from lab_control.application.catalog import mode_applicable
 from lab_control.application.config import config_from_record
-from lab_control.application.controls import CATEGORY_LABELS, MEASUREMENT_CATEGORIES, DataSource, data_sources
+from lab_control.application.controls import CATEGORY_LABELS, DataSource, data_sources
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController
+from lab_control.ui.kit import style_button
 from lab_control.ui.pages.device_control.form import ControlForm
+from lab_control.ui.pages.monitoring import frame as page_frame
 from lab_control.ui.pages.monitoring.channel_selection import instrument_scan_channels
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.plot import LivePlot
@@ -60,6 +63,10 @@ class MonitoringPage(QWidget):
         main_layout.setContentsMargins(14, 12, 14, 12)
         main_layout.setSpacing(8)
         options = QHBoxLayout()
+        acquisition = QWidget()
+        settings = QVBoxLayout(acquisition)
+        settings.setAlignment(Qt.AlignmentFlag.AlignTop)
+        points_row = QHBoxLayout()
         self.source = WorkspaceComboBox()
         self.source.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.source.currentIndexChanged.connect(self.source_changed)
@@ -67,34 +74,35 @@ class MonitoringPage(QWidget):
         self.points = QSpinBox()
         self.points.setRange(1, 4_000_000)
         self.points.setValue(2000)
-        options.addWidget(QLabel("请求点数"))
+        points_row.addWidget(QLabel("请求点数"))
         self.points.setToolTip(
             "请求点数不一定限制仪器传回长度；实际点数见曲线下方。完整波形型号保留全部有效点。"
         )
-        options.addWidget(self.points)
+        points_row.addWidget(self.points)
+        settings.addLayout(points_row)
         main_layout.addLayout(options)
         self.timing = MonitoringTiming(controller, self)
         self.interval = self.timing.interval
-        main_layout.addWidget(self.timing)
+        settings.addWidget(self.timing)
         self.numeric_ranges = numeric_ranges = QLabel(
             "点数 1 ～ 4000000（整数） · 自定义采集间隔 0.5 ～ 60 s · 新帧到达后尽快显示"
         )
         numeric_ranges.setObjectName("rangeHint")
         numeric_ranges.setWordWrap(True)
-        main_layout.addWidget(numeric_ranges)
+        settings.addWidget(numeric_ranges)
         self.channel_row = QHBoxLayout()
         self.channel_checks: dict[int, QCheckBox] = {}
-        main_layout.addLayout(self.channel_row)
+        settings.addLayout(self.channel_row)
         self.scan_channels_label = QLabel()
         self.scan_channels_label.setWordWrap(True)
         self.scan_channels_label.setObjectName("rangeHint")
-        main_layout.addWidget(self.scan_channels_label)
+        settings.addWidget(self.scan_channels_label)
         self.initiate = QCheckBox("读取前执行单次采集")
         self.initiate.setToolTip(
             "点击单次读取或开始监测后按所选方式执行。Pico 必须启动采集；"
             "3458A 读取存储可能停止内部记录。其他设备默认读取现有数据。"
         )
-        main_layout.addWidget(self.initiate)
+        settings.addWidget(self.initiate)
         self.button_layout = buttons = QGridLayout()
         self.button_columns = 5
         self.buttons: dict[str, QPushButton] = {}
@@ -106,10 +114,17 @@ class MonitoringPage(QWidget):
             ("save", "保存当前帧", self.save),
         ):
             button = QPushButton(label)
+            style_button(
+                button,
+                "primary" if key == "start" else "",
+                {"once": "play", "start": "play", "stop": "stop", "record": "record", "save": "save"}[key],
+            )
             button.clicked.connect(callback)
             self.buttons[key] = button
             buttons.addWidget(button, 0, len(self.buttons) - 1)
-        main_layout.addLayout(buttons)
+        self.actions = QWidget()
+        self.actions.setLayout(buttons)
+        layout.addWidget(self.actions)
         self.plot = LivePlot()
         main_layout.addWidget(self.plot, 1)
         footer = QHBoxLayout()
@@ -120,20 +135,17 @@ class MonitoringPage(QWidget):
         self.fit_button.clicked.connect(self.plot.fit_current)
         footer.addWidget(self.fit_button)
         main_layout.addLayout(footer)
+        self.status_dot = page_frame.chart_card(main, status=self.status, footer_extra=(self.fit_button,))
         splitter.addWidget(main)
         self.form = ControlForm(controller)
-        self.form.setMinimumWidth(330)
+        parameters = QTabWidget()
+        parameters.addTab(self.form, "仪器参数")
+        parameters.addTab(acquisition, "采集设置")
+        parameters.setMinimumWidth(280)
         self.form.setMinimumHeight(150)
-        splitter.addWidget(self.form)
+        splitter.addWidget(parameters)
         splitter.setSizes([820, 400])
         layout.addWidget(splitter, 1)
-        if category not in MEASUREMENT_CATEGORIES:
-            self.form.hide()
-            manage = QPushButton("前往设备管理调整输出 / 设定值 →")
-            manage.clicked.connect(
-                lambda: controller.navigate.emit("设备管理", category, self.selector.device_id)
-            )
-            main_layout.addWidget(manage)
         self.scan_page = None
         if category == "multimeter":
             self.scan_page = ScanMonitoringPage(controller, add_card, self, manage_selection=False)
@@ -152,7 +164,7 @@ class MonitoringPage(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        orientation = Qt.Orientation.Vertical if self.width() < 850 else Qt.Orientation.Horizontal
+        orientation = Qt.Orientation.Vertical if self.width() < 680 else Qt.Orientation.Horizontal
         if self.splitter.orientation() != orientation:
             self.splitter.setOrientation(orientation)
             self.splitter.setSizes([500, 260] if orientation == Qt.Orientation.Vertical else [820, 400])
@@ -163,7 +175,7 @@ class MonitoringPage(QWidget):
         self.refresh_frame(self.selector.device_id)
 
     def reflow_buttons(self) -> None:
-        columns = 3 if self.main_area.width() < 620 else 5
+        columns = 3 if self.actions.width() < 560 else 5
         if columns == self.button_columns:
             return
         self.button_columns = columns
@@ -176,7 +188,7 @@ class MonitoringPage(QWidget):
         if self.scan_page is not None:
             scan = bool(device_id) and instrument_scan_channels(self.controller, device_id) is not None
             self.scan_page.setVisible(scan)
-            self.title.setVisible(not scan)
+            self.actions.setVisible(not scan and bool(device_id))
             self.selector.setVisible(not scan)
             if scan:
                 self.empty.hide()
@@ -189,6 +201,7 @@ class MonitoringPage(QWidget):
                 self.scan_page.select_device("")
         self.timing.bind(device_id, self.controller.mode)
         self.splitter.setVisible(bool(device_id))
+        self.actions.setVisible(bool(device_id))
         self.empty.setVisible(not device_id)
         self.source.blockSignals(True)
         self.source.clear()
@@ -208,7 +221,7 @@ class MonitoringPage(QWidget):
             channels = (
                 self.controller.capabilities(device_id).channels
                 if self.category in {"power_supply", "oscilloscope"}
-                else (1,)
+                else ()
             )
             for channel in () if self.instrument_scan_channels() is not None else channels:
                 check = QCheckBox(f"CH {channel}")
@@ -222,8 +235,7 @@ class MonitoringPage(QWidget):
             self.initiate.setEnabled(definition is None or definition.acquisition_initiate_editable)
         self.plot.reset()
         self.source_changed()
-        if self.category in MEASUREMENT_CATEGORIES:
-            self.form.set_device(device_id, self.selector.channel.currentData() or 1)
+        self.form.set_device(device_id, self.selector.channel.currentData() or 1)
         self.refresh()
         self.refresh_frame(device_id)
 
@@ -231,6 +243,9 @@ class MonitoringPage(QWidget):
         scan = self.instrument_scan_channels()
         if scan is not None:
             return scan
+        if not self.channel_checks:
+            channel = self.selector.channel.currentData()
+            return (channel,) if channel is not None else ()
         return tuple(channel for channel, check in self.channel_checks.items() if check.isChecked())
 
     def instrument_scan_channels(self) -> tuple[int, ...] | None:
@@ -391,9 +406,10 @@ class MonitoringPage(QWidget):
                 else "已停止软件读取 · 仪器输出保持原状"
             )
         )
+        page_frame.show_state(self.status_dot, task, available)
         if text != self.status.text():
             self.status.setText(text)
-        if self.isVisible() and self.category in MEASUREMENT_CATEGORIES:
+        if self.isVisible():
             self.form.set_device(device_id, self.selector.channel.currentData() or 1)
 
     def refresh_frame(self, device_id: str) -> None:

@@ -68,7 +68,7 @@ def test_all_selectors_share_cached_session_filter(workspace, qtbot, monkeypatch
             assert "需要检查" in selector.combo.itemText(selector.combo.findData(ids["first"]))
     window.navigate("实时监测")
     window.dashboard.refresh()
-    assert set(window.dashboard.cards) == expected | {ids["power"]}
+    assert set(window.dashboard.cards) == {ids["power"]}
 
 
 @pytest.mark.parametrize(
@@ -97,7 +97,7 @@ def test_disconnect_clears_open_popup_and_returns_to_overview(workspace, qtbot, 
         assert not page.panels and not page.outputs and not page.advanced_groups
         assert page.advanced_channel.count() == 0
         assert page.tabs.isHidden() and page.empty.isVisible()
-        assert not page.monitor_button.isEnabled()
+        assert not hasattr(page, "monitor_button")
         assert window.controller.sync_device == ""
     elif category == "power_supply":
         assert window.current_module == "仪器测控"
@@ -174,7 +174,8 @@ def test_submenus_only_show_connected_categories_and_restore_after_reconnect(wor
     assert window.stack.currentWidget() is window.dashboard
 
     window.navigate("实时监测", "oscilloscope", ids["offline"])
-    assert window.stack.currentWidget() is window.dashboard
+    assert window.stack.currentWidget() is window.overview_page
+    assert window.selected_id == ids["offline"] and not window.rows[ids["offline"]].isHidden()
 
     monkeypatch.setattr(
         runtime.sessions,
@@ -192,32 +193,34 @@ def test_invalid_navigation_never_focuses_another_device(workspace, monkeypatch,
     focused = []
     monkeypatch.setattr(runtime.monitoring, "focus_settings", lambda device, *_: focused.append(device))
     window.navigate(module, "signal_generator", ids["offline"])
-    page = window.stack.currentWidget()
-    assert page.selector.device_id == ""
+    assert window.stack.currentWidget() is window.overview_page
+    assert window.selected_id == ids["offline"] and not window.rows[ids["offline"]].isHidden()
     assert not any(focused)
+    window.navigate(module, "signal_generator", ids["first"])
+    page = window.stack.currentWidget()
     page.selector.select(ids["first"])
     # An invalid target also clears an existing page, even while its former device is busy.
     window.controller.group_devices.add(ids["first"])
     window.navigate(module, "signal_generator", "missing-record")
-    assert page.selector.device_id == ""
+    assert window.stack.currentWidget() is window.overview_page
 
 
 def test_monitor_overview_disconnect_preserves_slot_preference(workspace, qtbot):
     window, runtime, ids = workspace
     window.navigate("实时监测")
-    card = window.dashboard.cards[ids["first"]]
+    card = window.dashboard.cards[ids["power"]]
     card.enabled.setChecked(False)
     saved = runtime.repository.load_workspace("monitor_overview/all")
-    slots = window.controller.records[ids["first"]]["slots"]
-    runtime.sessions.disconnect(ids["first"])
+    slots = window.controller.records[ids["power"]]["slots"]
+    runtime.sessions.disconnect(ids["power"])
     window.controller.poll()
-    assert ids["first"] not in window.dashboard.cards
+    assert ids["power"] not in window.dashboard.cards
     assert runtime.repository.load_workspace("monitor_overview/all") == saved
-    assert window.controller.records[ids["first"]]["slots"] == slots
-    runtime.connect(ids["first"]).result(3)
+    assert window.controller.records[ids["power"]]["slots"] == slots
+    runtime.connect(ids["power"]).result(3)
     window.controller.poll()
-    assert ids["first"] in window.dashboard.cards
-    assert not window.dashboard.cards[ids["first"]].enabled.isChecked()
+    assert ids["power"] in window.dashboard.cards
+    assert not window.dashboard.cards[ids["power"]].enabled.isChecked()
 
 
 def test_offline_pool_actions_require_connection(workspace):

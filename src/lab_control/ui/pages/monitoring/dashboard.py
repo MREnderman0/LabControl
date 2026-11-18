@@ -495,7 +495,6 @@ class MonitoringDashboard(QWidget):
             in {
                 "power_supply",
                 "electronic_load",
-                "signal_generator",
                 "network_analyzer",
                 "phase_noise_analyzer",
                 "frequency_counter",
@@ -528,7 +527,7 @@ class MonitoringDashboard(QWidget):
         return saved
 
     def _spec_for(self, record: dict[str, Any]) -> dict[str, Any] | None:
-        if not surface_applicable(record, "monitoring"):
+        if instrument_category(record) == "signal_generator" or not surface_applicable(record, "monitoring"):
             return None
         device_id = record["id"]
         try:
@@ -731,8 +730,17 @@ class MonitoringDashboard(QWidget):
         if not record:
             return
         spec = next((item for item in self.specs if item["device_id"] == device_id), None)
-        self.controller.navigate.emit("实时监测", instrument_category(record), device_id)
-        self.open_card.emit(spec or {"device_id": device_id, "source": "", "channels": [1]})
+        target = dict(spec or {"device_id": device_id, "source": "", "channels": [1]})
+        pinned = self.controller.runtime.repository.load_workspace(f"monitor_overview/view/{device_id}", {})
+        if isinstance(pinned, dict) and self.controller.has_connected_session(device_id):
+            available = self.controller.capabilities(device_id).channels
+            channels = pinned.get("channels", ())
+            if isinstance(channels, list) and (valid := [ch for ch in channels if ch in available]):
+                target["channels"] = valid
+            if pinned.get("source") in target.get("sources", ()):
+                target["source"] = pinned["source"]
+        self.controller.navigate.emit("仪器测控", instrument_category(record), device_id)
+        self.open_card.emit(target)
 
     def add(
         self, device_id: str, source: str, channels: tuple[int, ...], title: str = "", view: str = ""
@@ -744,6 +752,9 @@ class MonitoringDashboard(QWidget):
             return
         target = next((spec for spec in self.specs if spec["device_id"] == device_id), None)
         if target is not None:
+            self.controller.runtime.repository.save_workspace(
+                f"monitor_overview/view/{device_id}", {"source": source, "channels": list(channels)}
+            )
             task = self.controller.runtime.monitoring.snapshots().get(device_id, {})
             if task.get("running") and task.get("interval") is not None:
                 # Pinning from a live page must carry its current scheduler
@@ -780,7 +791,7 @@ class MonitoringDashboard(QWidget):
 
     def card_action(self, action: str, card_id: str) -> None:
         device_id = card_id.removeprefix("device:")
-        if action == "open" and device_id in self.cards:
+        if action == "open" and device_id in self.controller.records:
             self._open_device(device_id)
 
     def _requests(self) -> list[tuple[str, tuple[AcquisitionRequest, ...], float, str]]:
@@ -792,6 +803,7 @@ class MonitoringDashboard(QWidget):
             if (
                 not card
                 or not record
+                or instrument_category(record) == "signal_generator"
                 or not card.enabled.isChecked()
                 or not self.controller.has_connected_session(spec["device_id"])
             ):

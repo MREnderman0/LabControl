@@ -181,7 +181,7 @@ def test_pool_is_bounded_by_overview_and_closes_on_every_navigation(workspace, q
         assert rect.width() <= 960 and rect.height() <= 640
         assert abs(rect.center().x() - window.overview_page.rect().center().x()) <= 1
         assert abs(rect.center().y() - window.overview_page.rect().center().y()) <= 1
-        for button in (window.pool_close, window.pool_more, window.action_buttons["monitor"]):
+        for button in (window.pool_close, window.pool_more, window.action_buttons["manage"]):
             assert isinstance(button, QPushButton)
             top_left = button.mapTo(window.device_pool.panel, QPoint())
             assert window.device_pool.panel.rect().contains(button.rect().translated(top_left))
@@ -293,7 +293,7 @@ def test_exposed_card_switches_directly_and_minimum_layout_reaches_all_content(w
     center = field.mapTo(scroll.viewport(), field.rect().center())
     assert scroll.viewport().rect().contains(center)
     assert scroll.horizontalScrollBar().maximum() == 0
-    button = window.action_buttons["monitor"]
+    button = window.action_buttons["manage"]
     assert isinstance(button, QPushButton)
     point = button.mapTo(window.device_pool.panel, button.rect().center())
     assert window.device_pool.panel.rect().contains(point)
@@ -442,7 +442,7 @@ def test_primary_actions_share_geometry_and_slot_is_outside_menu(workspace, qtbo
     window.open_category("signal_generator")
     assert isinstance(window.action_buttons["slot"], QPushButton)
     assert "功能槽位" not in [action.text() for action in window.pool_menu.actions()]
-    buttons = [window.action_buttons[name] for name in ("disconnect", "slot", "manage", "monitor")]
+    buttons = [window.action_buttons[name] for name in ("disconnect", "slot", "manage")]
     buttons.append(window.pool_more)
     qtbot.wait(20)
     assert len({button.height() for button in buttons}) == 1
@@ -519,7 +519,9 @@ def test_slot_popup_creates_named_slot_and_updates_all_views(workspace, qtbot):
     window.dashboard.refresh()
     assert window.rows[key].text(4) == "冷却光 RF"
     assert window.details.values["slot"].text() == "冷却光 RF"
-    assert window.dashboard.cards[key].slot.text() == "功能槽位：冷却光 RF"
+    assert key not in window.dashboard.cards
+    window.navigate("仪器测控", "signal_generator", key)
+    assert "冷却光 RF" in window.stack.currentWidget().selector.combo.card[1]
     context = runtime.repository.new_save_context("general", "single_frame", device_id=key)
     assert context.slot == selected[0] and context.slot_label == "冷却光 RF"
 

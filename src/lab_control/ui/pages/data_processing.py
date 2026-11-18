@@ -105,6 +105,9 @@ class DataProcessingPage(QWidget):
         self.devices = WorkspaceComboBox()
         self.devices.currentIndexChanged.connect(self.show_device)
         bar.addWidget(self.devices, 1)
+        self.open_device_button = QPushButton("打开设备工作页")
+        self.open_device_button.setEnabled(False)
+        self.open_device_button.clicked.connect(self.open_device_page)
         self.process_button = QPushButton("处理本次采集")
         self.process_button.setToolTip("整理数据并自动生成 PNG 图片")
         self.process_button.clicked.connect(lambda: self.process(self.entry) if self.entry else None)
@@ -123,7 +126,10 @@ class DataProcessingPage(QWidget):
         self.detail_label = QLabel()
         self.detail_label.setTextFormat(Qt.TextFormat.PlainText)
         self.detail_label.setWordWrap(True)
-        body.addWidget(self.detail_label)
+        detail_row = QHBoxLayout()
+        detail_row.addWidget(self.detail_label, 1)
+        detail_row.addWidget(self.open_device_button)
+        body.addLayout(detail_row)
         self.progress = QProgressBar()
         self.progress.hide()
         body.addWidget(self.progress)
@@ -363,10 +369,23 @@ class DataProcessingPage(QWidget):
                 folder = selected
         self._open_path(folder if folder.is_dir() else self.entry.folder)
 
+    def selected_device_id(self) -> str:
+        index = self.devices.currentIndex()
+        if self.entry is None or index < 0:
+            return ""
+        key = self.entry.devices[index].metadata.get("device_id")
+        return key if isinstance(key, str) and key in self.controller.records else ""
+
+    def open_device_page(self) -> None:
+        if device_id := self.selected_device_id():
+            self.controller.navigate.emit("仪器测控", "", device_id)
+
     def show_device(self) -> None:
         if self.entry is None or self.devices.currentIndex() < 0:
+            self.open_device_button.setEnabled(False)
             return
         device = self.entry.devices[self.devices.currentIndex()]
+        self.open_device_button.setEnabled(bool(self.selected_device_id()))
         try:
             result = current_result(result_home(self.entry.folder, device))
             if result:

@@ -8,8 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from lab_control.application.bulk_connection import device_label
-from lab_control.application.catalog import instrument_category, surface_applicable
-from lab_control.discovery.presence import LIVE_CONNECTIONS
+from lab_control.application.catalog import instrument_category
 from lab_control.ui.kit import Card, Dot, ElideLabel, Pill
 
 if TYPE_CHECKING:
@@ -98,12 +97,7 @@ class OverviewSide(QWidget):
         if not record:
             return
         category = instrument_category(record)
-        live = window.controller.states.get(device_id, {}).get("connectionState") in LIVE_CONNECTIONS
-        if live and category in window._submenu_categories("仪器测控"):
-            surface = "实时监测" if surface_applicable(record, "monitoring") else "设备管理"
-            window.navigate(surface, category, device_id)
-        else:
-            window.open_details(device_id)
+        window.navigate("仪器测控", category, device_id)
 
     def refresh(self, problems: list[tuple[str, str]], tasks: dict[str, dict[str, Any]]) -> None:
         window = self.workspace

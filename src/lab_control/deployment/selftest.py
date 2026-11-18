@@ -80,15 +80,17 @@ def run(destination: Path) -> int:
             window.grab().save(str(destination.with_suffix(".png")))
             from lab_control.agent.verification import verify_mock
 
-            result["agent"] = verify_mock(runtime)
-            window.agent_panel.timer.stop()
-            window.agent_panel.shutdown()
-            window.environment_panel.shutdown()
-            window.controller.close()
-            runtime.close()
-            window.closing = True
-            window.close()
-            window.bridge.worker.shutdown(wait=True)
+            try:
+                result["agent"] = verify_mock(runtime)
+            finally:
+                window.agent_panel.timer.stop()
+                window.agent_panel.shutdown()
+                window.environment_panel.shutdown()
+                window.controller.close()
+                runtime.close()
+                window.closing = True
+                window.close()
+                window.bridge.worker.shutdown(wait=True)
             assert not list(root.rglob("hardware.lock"))
             result["gui"] = "settings rendered without hardware"
         result["passed"] = True

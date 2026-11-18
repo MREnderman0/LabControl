@@ -120,6 +120,19 @@ class SimulatedInstrument:
                     )
                 )
                 self.caps = replace(self.caps, operations=tuple(optical))
+        scan_channels = {"keithley.2701": (101, 102), "rigol.m300": (401, 402)}.get(config.adapter)
+        if config.adapter == "pangu.kt616r":
+            from lab_control.instruments.devices.pangu_kt616r.protocol import Settings
+
+            scan_channels = Settings.from_config(config).channels
+        if scan_channels:
+            self.caps = replace(
+                self.caps, channels=tuple(dict.fromkeys((*self.caps.channels, *scan_channels)))
+            )
+            self.capability_details = {
+                "acquisition_channel_selection": "scan_list",
+                "acquisition_channels": list(scan_channels),
+            }
         defaults = {
             "frequency": 1000,
             "amplitude": 1,
@@ -357,6 +370,8 @@ class SimulatedInstrument:
                         "FREQ": ("Hz", 1000),
                         "PER": ("s", 0.001),
                     }.get(self._value(1, "function", "DCV"), ("V", 1.25))
+                if self.adapter_id == "pangu.kt616r":
+                    quantity, unit, value = "temperature", "°C", 20 + channel / 10
                 values, x, axis_unit = (
                     np.array([value + abs(value) * 0.002 * np.sin(self.sample_index / 8)]),
                     None,
@@ -409,6 +424,7 @@ class SimulatedInstrument:
                 "channels": {ch: dict(self.values.get(f"{ch}.channel", {})) for ch in request.channels},
                 "sample_interval_s": interval,
                 "capture_mode": request.kind,
+                "timebase": self._value(1, "timebase", 10),
             }
             if self.adapter_id == "pico.6404e" and request.kind in {"waveform", "streaming"}
             else dict(self.values),

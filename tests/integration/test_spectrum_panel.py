@@ -443,9 +443,9 @@ def test_spectrum_pool_has_only_one_monitor_entry_and_other_categories_keep_cont
     window.open_category("spectrum_analyzer")
     window.tree.setCurrentItem(window.rows[key])
     window.refresh()
-    assert window.action_buttons["manage"].isHidden()
-    assert window.action_buttons["monitor"].text() == "实时监测"
-    assert window.action_buttons["monitor"].isVisible()
+    assert window.action_buttons["manage"].isVisible()
+    assert window.action_buttons["manage"].text() == "打开设备工作页"
+    assert window.action_buttons["monitor"].isHidden()
     second = runtime.add(ConnectionConfig("mock://pool-source", "rs.sma100b", "mock"))
     runtime.connect(second).result()
     window.refresh()
@@ -453,7 +453,7 @@ def test_spectrum_pool_has_only_one_monitor_entry_and_other_categories_keep_cont
     window.tree.setCurrentItem(window.rows[second])
     window.refresh()
     assert window.action_buttons["manage"].isVisible()
-    assert window.action_buttons["manage"].text() == "设备控制"
+    assert window.action_buttons["manage"].text() == "打开设备工作页"
 
 
 @pytest.mark.parametrize(

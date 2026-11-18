@@ -896,9 +896,13 @@ class OpticalPowerMonitoringPage(QWidget):
             check.blockSignals(False)
         self.channels_changed()
 
+    vertical_below = 900
+
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        orientation = Qt.Orientation.Vertical if self.width() < 900 else Qt.Orientation.Horizontal
+        orientation = (
+            Qt.Orientation.Vertical if self.width() < self.vertical_below else Qt.Orientation.Horizontal
+        )
         if self.splitter.orientation() != orientation:
             self.splitter.setOrientation(orientation)
             self.splitter.setSizes([430, 300] if orientation == Qt.Orientation.Vertical else [850, 380])

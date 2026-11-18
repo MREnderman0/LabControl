@@ -169,7 +169,7 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         QWidget.resizeEvent(self, event)
-        orientation = Qt.Orientation.Vertical if self.width() < 850 else Qt.Orientation.Horizontal
+        orientation = Qt.Orientation.Vertical if self.width() < 700 else Qt.Orientation.Horizontal
         if self.splitter.orientation() != orientation:
             self.splitter.setOrientation(orientation)
             self.splitter.setSizes([500, 300] if orientation == Qt.Orientation.Vertical else [800, 400])

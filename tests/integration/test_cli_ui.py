@@ -160,14 +160,15 @@ def test_power_surfaces_route_coremorrow_to_management_and_other_supplies_to_mon
         management = window.stack.currentWidget()
         assert isinstance(management, PowerSupplyPage)
         assert management.selector.combo.findData(coremorrow) >= 0
-        assert management.selector.combo.findData(generic) == -1
-
-        window.navigate("设备管理", "power_supply", generic)
+        management.selector.combo.setCurrentIndex(management.selector.combo.findData(generic))
         assert window.current_module == "仪器测控"
         monitoring = window.stack.currentWidget()
         assert isinstance(monitoring, PowerMonitoringPage)
         assert monitoring.selector.combo.findData(generic) >= 0
-        assert monitoring.selector.combo.findData(coremorrow) == -1
+        assert monitoring.selector.device_id == generic
+        monitoring.selector.combo.setCurrentIndex(monitoring.selector.combo.findData(coremorrow))
+        window.controller.poll()
+        assert window.stack.currentWidget() is management and management.selector.device_id == coremorrow
     finally:
         window.timer.stop()
         window.controller.close()

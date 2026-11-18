@@ -116,13 +116,21 @@ def chart_card(chart: QFrame, *, status: QLabel | None = None, footer_extra: tup
     if items:
         first = items.pop(0)
         _style_tools(first)
-        head_layout.addItem(first)
+        if first.layout() is not None:
+            head_layout.addLayout(first.layout())
+        elif first.widget() is not None:
+            head_layout.addWidget(first.widget())
+        else:
+            head_layout.addItem(first)
     layout.addWidget(head)
     body = QVBoxLayout()
     body.setContentsMargins(12, 10, 14, 8)
     body.setSpacing(8)
     for item in items:
-        body.addItem(item)
+        if item.layout() is not None:
+            body.addLayout(item.layout())
+        else:
+            body.addItem(item)
     layout.addLayout(body, 1)
     foot = QFrame(chart)
     foot.setObjectName("cardFoot")

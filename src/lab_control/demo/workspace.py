@@ -5,7 +5,7 @@ from pathlib import Path
 from lab_control.application.catalog import instrument_category, mode_applicable
 from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
-from lab_control.instruments.registry import PROFILES, SDK_ADAPTERS
+from lab_control.instruments.registry import DEVICE_DEFINITIONS, PROFILES, SDK_ADAPTERS
 
 DEMO_MODELS = {
     "signal_generator": ("rigol.dg5504pro", "rs.sma100b"),
@@ -24,10 +24,15 @@ DEMO_MODELS = {
 }
 
 
-def create_demo_runtime(root: Path | None = None) -> ApplicationRuntime:
+def create_demo_runtime(root: Path | None = None, *, all_models: bool = False) -> ApplicationRuntime:
+    models_by_category = DEMO_MODELS
+    if all_models:
+        models_by_category = {}
+        for adapter, definition in DEVICE_DEFINITIONS.items():
+            models_by_category.setdefault(definition.category, []).append(adapter)
     configs = tuple(
         ConnectionConfig(f"mock://workspace/{category}/{index}", adapter, "mock", identity_confirmed=True)
-        for category, models in DEMO_MODELS.items()
+        for category, models in models_by_category.items()
         for index, adapter in enumerate(models, 1)
         if adapter in PROFILES or adapter in SDK_ADAPTERS or adapter.startswith("sim.")
     )
@@ -40,7 +45,7 @@ def create_demo_runtime(root: Path | None = None) -> ApplicationRuntime:
         if not runtime.repository.load_workspace("demo_general_slots_initialized", False):
             for device_id, config in zip(ids, configs, strict=True):
                 record = records[device_id]
-                if "general" in record.get("slots", {}):
+                if all_models or "general" in record.get("slots", {}):
                     continue
                 for mode in ("general",):
                     if mode_applicable(record, mode):
@@ -57,7 +62,7 @@ def create_demo_runtime(root: Path | None = None) -> ApplicationRuntime:
             preferences = {}
             for device_id in ids:
                 record = records[device_id]
-                if not mode_applicable(record, mode):
+                if instrument_category(record) == "signal_generator" or not mode_applicable(record, mode):
                     continue
                 slot = record.get("slots", {}).get(mode, "")
                 if slot:

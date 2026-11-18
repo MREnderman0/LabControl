@@ -81,11 +81,11 @@ def test_sampling_click_starts_selected_device_without_confirmation(
 
 def test_monitor_overview_uses_connected_devices_and_slot_preferences(qtbot, tmp_path):
     runtime = ApplicationRuntime(root=tmp_path, hardware=False)
-    first = runtime.add(ConnectionConfig("mock://overview/first", "rs.sma100b", "mock"))
-    second = runtime.add(ConnectionConfig("mock://overview/second", "rs.sma100b", "mock"))
-    runtime.add(ConnectionConfig("mock://overview/offline", "rs.sma100b", "mock"))
+    first = runtime.add(ConnectionConfig("mock://overview/first", "keithley.2231a", "mock"))
+    second = runtime.add(ConnectionConfig("mock://overview/second", "keithley.2231a", "mock"))
+    runtime.add(ConnectionConfig("mock://overview/offline", "keithley.2231a", "mock"))
     for device_id, index in ((first, 1), (second, 2)):
-        runtime.bind_slot(device_id, f"signal_generator:{index}", "general")
+        runtime.bind_slot(device_id, f"power_supply:{index}", "general")
     runtime.connect(first).result(3)
     runtime.connect(second).result(3)
     window = RealWindow(runtime)
@@ -95,7 +95,7 @@ def test_monitor_overview_uses_connected_devices_and_slot_preferences(qtbot, tmp
         window.navigate("实时监测")
         assert "数据采集" not in window.nav_buttons
         assert set(window.dashboard.cards) == {first, second}
-        assert set(window.dashboard.groups) == {"signal_generator"}
+        assert set(window.dashboard.groups) == {"power_supply"}
 
         first_card = window.dashboard.cards[first]
         second_card = window.dashboard.cards[second]
@@ -178,7 +178,7 @@ def test_monitor_overview_includes_optical_power_meter_in_electronic_layout(qtbo
 
 def test_monitor_overview_optional_timed_sampling_and_manual_cancel(qtbot, tmp_path):
     runtime = ApplicationRuntime(root=tmp_path, hardware=False)
-    device = runtime.add(ConnectionConfig("mock://overview/timed", "rs.sma100b", "mock"))
+    device = runtime.add(ConnectionConfig("mock://overview/timed", "keithley.2231a", "mock"))
     runtime.connect(device).result(3)
     window = RealWindow(runtime)
     qtbot.addWidget(window)
@@ -233,7 +233,7 @@ def test_monitor_overview_optional_timed_sampling_and_manual_cancel(qtbot, tmp_p
 
 def test_monitor_overview_rejects_invalid_duration_without_starting(qtbot, tmp_path):
     runtime = ApplicationRuntime(root=tmp_path, hardware=False)
-    device = runtime.add(ConnectionConfig("mock://overview/invalid-duration", "rs.sma100b", "mock"))
+    device = runtime.add(ConnectionConfig("mock://overview/invalid-duration", "keithley.2231a", "mock"))
     runtime.connect(device).result(3)
     window = RealWindow(runtime)
     qtbot.addWidget(window)
@@ -259,8 +259,8 @@ def test_monitor_overview_rejects_invalid_duration_without_starting(qtbot, tmp_p
 
 def test_monitor_overview_timed_sampling_only_stops_successful_devices(qtbot, tmp_path, monkeypatch):
     runtime = ApplicationRuntime(root=tmp_path, hardware=False)
-    first = runtime.add(ConnectionConfig("mock://overview/timed-first", "rs.sma100b", "mock"))
-    failed = runtime.add(ConnectionConfig("mock://overview/timed-failed", "rs.sma100b", "mock"))
+    first = runtime.add(ConnectionConfig("mock://overview/timed-first", "keithley.2231a", "mock"))
+    failed = runtime.add(ConnectionConfig("mock://overview/timed-failed", "keithley.2231a", "mock"))
     runtime.connect(first).result(3)
     runtime.connect(failed).result(3)
     window = RealWindow(runtime)

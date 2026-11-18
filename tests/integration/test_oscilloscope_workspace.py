@@ -93,7 +93,9 @@ def test_navigation_keeps_card_and_only_monitoring_route(scope):
     assert "oscilloscope" in window.cards
     window.show_device_pool(window.cards["oscilloscope"])
     window.open_details(key)
-    assert not window.action_buttons["manage"].isVisible()
+    assert window.action_buttons["manage"].isVisible() and window.action_buttons["monitor"].isHidden()
+    window.action_buttons["manage"].click()
+    assert window.stack.currentWidget() is page and page.selector.device_id == key
 
 
 def test_fixed_slider_endpoints_and_points_continue_monitoring(scope, qtbot, monkeypatch):

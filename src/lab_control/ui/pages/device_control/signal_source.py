@@ -571,12 +571,6 @@ class SignalSourcePage(QWidget):
         style_button(self.refresh_button, "", "refresh")
         self.refresh_button.clicked.connect(self.refresh_ranges)
         toolbar.addWidget(self.refresh_button)
-        self.monitor_button = monitor = QPushButton("实时监测 ↗", self)
-        monitor.clicked.connect(
-            lambda: controller.navigate.emit("实时监测", "signal_generator", self.device_id)
-        )
-        toolbar.addWidget(monitor)
-        monitor.hide()
         self.settings_button = QPushButton("高级设置", self)
         self.settings_button.setObjectName("sourceSettingsButton")
         self.settings_button.setProperty("buttonSize", "compact")
@@ -638,7 +632,6 @@ class SignalSourcePage(QWidget):
         self.empty.setVisible(not device_id)
         self.tabs.hide()
         self.settings_button.show()
-        self.monitor_button.hide()
         if not device_id and self.controller.sync_device == self.device_id:
             self.controller.focus_settings("")
         self.device_id, self.mode = device_id, self.controller.mode
@@ -714,6 +707,12 @@ class SignalSourcePage(QWidget):
     def read_main(self) -> None:
         self.read_advanced()
         self.update_readings(self.device_id)
+
+    def focus_card(self, spec: dict) -> None:
+        channel = next(iter(spec.get("channels", ())), None)
+        if channel in self.panels:
+            self.selector.select(spec["device_id"], channel)
+            self.scroll_area.ensureWidgetVisible(self.panels[channel])
 
     def open_settings(self) -> None:
         if not self.device_id:
@@ -823,7 +822,6 @@ class SignalSourcePage(QWidget):
                 display_connection_state(state), "未连接" if self.device_id else "未选择"
             )
         )
-        self.monitor_button.setEnabled(bool(self.device_id))
         busy = self.device_id in self.controller.group_devices
         self.settings_button.setEnabled(bool(self.device_id) and not busy and not state.get("controlsLocked"))
         self.selector.combo.setEnabled(not busy)

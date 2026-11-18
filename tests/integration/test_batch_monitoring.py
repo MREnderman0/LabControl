@@ -28,7 +28,7 @@ def overview(qtbot, tmp_path):
             if index < 3:
                 runtime.bind_slot(key, f"optical_power_meter:{index + 1}", "general")
             keys.append(key)
-        source = runtime.add(ConnectionConfig("mock://batch-source", "rs.sma100b", "mock"))
+        source = runtime.add(ConnectionConfig("mock://batch-supply", "keithley.2231a", "mock"))
         runtime.connect(source).result(3)
         parent = QWidget()
         qtbot.addWidget(parent)

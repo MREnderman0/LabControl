@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.domain.instruments import DeviceCommand, DeviceError
 from lab_control.domain.oscilloscope import COLORS, engineering
+from lab_control.ui.kit import Segmented
 from lab_control.ui.pages.monitoring.oscilloscope_controls import gear_icon
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -98,6 +99,11 @@ class PicoScopeControls(QFrame):
         self.health.setObjectName("spectrumHealth")
         self.health.setWordWrap(True)
         layout.addWidget(self.health)
+        self.tabs = Segmented((name, name) for name in ("水平", "垂直", "触发"))
+        layout.addWidget(self.tabs)
+        self.channel_tabs = Segmented((f"CH{ch}", ch) for ch in caps.channels)
+        layout.addWidget(self.channel_tabs)
+        self.channel_panels = {}
         self.scroller = QScrollArea()
         self.scroller.setWidgetResizable(True)
         self.scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -151,6 +157,7 @@ class PicoScopeControls(QFrame):
             check.setChecked(ch == 1)
             self.checks[ch] = check
             box = section(check)
+            self.channel_panels[ch] = box.parentWidget()
             self.ranges[ch] = InputRange(channel["range"].choices)
             self.ranges[ch].setCurrentIndex(self.ranges[ch].findData("10"))
             self.couplings[ch] = choice(
@@ -227,6 +234,9 @@ class PicoScopeControls(QFrame):
         stack.addStretch()
         self.scroller.setWidget(body)
         layout.addWidget(self.scroller)
+        self.tabs.changed.connect(self.show_tab)
+        self.channel_tabs.changed.connect(self.show_channel)
+        self.show_tab("水平")
         if not draft:
             self.restore_session_inputs()
         if draft:
@@ -250,6 +260,18 @@ class PicoScopeControls(QFrame):
         self.direction.currentIndexChanged.connect(self.update_trigger_mode)
         self.update_mode()
         self.applied_draft = None
+
+    def show_tab(self, title):
+        self.tabs.set_current(title)
+        self.horizontal.parentWidget().setVisible(title == "水平")
+        self.trigger_panel.parentWidget().setVisible(title == "触发")
+        self.channel_tabs.setVisible(title == "垂直")
+        self.show_channel(self.channel_tabs.current())
+
+    def show_channel(self, channel):
+        self.channel_tabs.set_current(channel)
+        for ch, panel in self.channel_panels.items():
+            panel.setVisible(self.tabs.current() == "垂直" and ch == channel)
 
     def update_channel(self, ch):
         value = self.ranges[ch]

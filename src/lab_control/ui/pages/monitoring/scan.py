@@ -187,6 +187,7 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
 
     category = "multimeter"
     rolling_power = False
+    vertical_below = 680
     category_name = "测量设备"
     trend_title = "测量趋势"
     quantity = ""
@@ -206,7 +207,7 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
         readout_panel = self.splitter.widget(1)
         assert readout_panel is not None
         readout_panel.setObjectName("scanReadoutList")
-        readout_panel.setMinimumWidth(560)
+        readout_panel.setMinimumWidth(280)
         panel_layout = readout_panel.layout()
         assert isinstance(panel_layout, QVBoxLayout)
         panel_layout.setContentsMargins(10, 8, 10, 8)
@@ -223,9 +224,19 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
         self._reflow_readout_cards()
         self.refresh()
 
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        compact = self.vertical_below <= self.width() < 960
+        if compact != getattr(self, "_compact_split", None):
+            self._compact_split = compact
+            if self.splitter.orientation() == Qt.Orientation.Horizontal:
+                width = self.splitter.width()
+                right = min(560, max(280, int(width * 0.43))) if compact else 560
+                self.splitter.setSizes([max(1, width - right), right])
+
     def _reflow_readout_cards(self) -> None:
         width = self.readout_scroll.viewport().width()
-        columns = 2
+        columns = 2 if width >= 520 else 1
         # Two compact groups share the viewport. Give a named sensor the full row
         # when its checkbox and the aligned numeric columns cannot fit side by side.
         named = self.plot.names

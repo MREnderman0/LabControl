@@ -21,7 +21,7 @@ from lab_control.ui.real_window import RealWindow
         ("joinwit.jw8105", "optical_power_meter"),
         ("ceyear.6362d", "optical_spectrometer"),
         ("keysight.53220a", "frequency_counter"),
-        ("rigol.dg5504pro", "signal_generator"),
+        ("custom.optical_comb_pump", "pump_driver"),
         ("rigol.m300", "multimeter"),
         ("rs.znb3004", "network_analyzer"),
     ],

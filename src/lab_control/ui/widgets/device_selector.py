@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
@@ -89,6 +89,7 @@ class DeviceSelector(QWidget):
         super().__init__(parent)
         self.controller, self.category, self.surface = controller, category, surface
         self.device_id = ""
+        self._chip_count = 0
         self._names_key: tuple | None = None
         self.signature: tuple[tuple[str, str], ...] | None = None
         layout = QVBoxLayout(self)
@@ -129,10 +130,11 @@ class DeviceSelector(QWidget):
         self.refresh()
 
     def _records(self) -> tuple[dict, ...]:
+        records = self.controller.connected_records(self.category)
+        if self.category == "power_supply" and self.surface:
+            return tuple(sorted(records, key=lambda r: not surface_applicable(r, self.surface)))
         return tuple(
-            record
-            for record in self.controller.connected_records(self.category)
-            if self.surface is None or surface_applicable(record, self.surface)
+            record for record in records if self.surface is None or surface_applicable(record, self.surface)
         )
 
     def refresh(self) -> None:
@@ -158,16 +160,21 @@ class DeviceSelector(QWidget):
             )
         signature = tuple(entries)
         if signature != self.signature:
-            self.combo.replace_items(entries, select_first=self.signature is None)
+            initial = (
+                self.signature is None
+                and bool(records)
+                and (not self.surface or surface_applicable(records[0], self.surface))
+            )
             self.signature = signature
+            self.combo.replace_items(entries, select_first=initial)
         self.combo.setPlaceholderText("选择已连接设备" if entries else "暂无已连接设备")
-        show_chips = 1 < len(chips) <= 6
-        if show_chips:
+        self._chip_count = len(chips)
+        if 1 < len(chips) <= 6:
             self.chips.set_devices(chips, self.device_id)
-        self.chips.setVisible(show_chips)
         record = self.controller.records.get(self.device_id)
         self.connect_button.setVisible(not bool(self.device_id))
         self.channel.setEnabled(bool(self.device_id))
+        self._fit_chips()
         if record:
             key = (self.device_id, record.get("slots", {}).get(self.controller.mode), slots.names_revision)
             if key != self._names_key:
@@ -222,6 +229,21 @@ class DeviceSelector(QWidget):
                 "neutral",
             )
 
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._fit_chips()
+
+    def _fit_chips(self) -> None:
+        width = self.chips.sizeHint().width()
+        reserved = 190 + sum(
+            w.sizeHint().width() + 10
+            for w in (self.channel_label, self.channel, self.connect_button)
+            if not w.isHidden()
+        )
+        visible = 1 < self._chip_count <= 6 and 0 < width <= self.width() - reserved
+        self.chips.setMaximumWidth(width if visible else 0)
+        self.chips.setVisible(visible)
+
     def _chip_chosen(self, device_id) -> None:
         if device_id and device_id != self.device_id:
             index = self.combo.findData(device_id)
@@ -231,6 +253,12 @@ class DeviceSelector(QWidget):
     def _selected(self) -> None:
         device_id = self.combo.currentData() or ""
         if device_id == self.device_id:
+            return
+        record = self.controller.records.get(device_id)
+        if self.surface and record and not surface_applicable(record, self.surface):
+            with QSignalBlocker(self.combo):
+                self.combo.setCurrentIndex(self.combo.findData(self.device_id))
+            self.controller.navigate.emit("仪器测控", self.category, device_id)
             return
         self.device_id = device_id
         self._names_key = None
@@ -244,15 +272,17 @@ class DeviceSelector(QWidget):
             self.combo.icon_name = icons.CATEGORY_ICONS.get(category, self.combo.icon_name)
         self.channel.blockSignals(False)
         self.selected.emit(device_id)
-        self.chips.set_current(device_id)
+        self.refresh()
 
-    def select(self, device_id: str, channel: int = 1) -> None:
+    def select(self, device_id: str, channel: int | None = None) -> None:
         self.refresh()
         index = self.combo.findData(device_id)
         if index >= 0:
             self.combo.setCurrentIndex(index)
-            index = self.channel.findData(channel)
-            self.channel.setCurrentIndex(max(0, index))
+            if channel is not None:
+                index = self.channel.findData(channel)
+                if index >= 0:
+                    self.channel.setCurrentIndex(index)
         else:
             # A stale navigation target must never leave a different device selected.
             self.combo.setCurrentIndex(-1)

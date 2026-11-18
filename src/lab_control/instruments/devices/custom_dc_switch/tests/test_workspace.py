@@ -63,7 +63,7 @@ def test_bulk_and_automatic_board_gui_verify_identity_without_switching_outputs(
             assert "RF3 和 RF4 互斥" in page.note.text()
             assert page.form.refresh_button.isHidden() and page.form.snapshot_status.isHidden()
             assert "output_switch" not in window._submenu_categories("实时监测")
-            assert not page.go_monitor.isVisible() and manager.handles[-1].writes == [b"*IDN?\n"]
+            assert not hasattr(page, "go_monitor") and manager.handles[-1].writes == [b"*IDN?\n"]
             log = page.form.action_log
             assert log.isVisible() and not log.toPlainText()
             editor = page.form.editors["ch4_on"]

@@ -95,7 +95,7 @@ def test_automatic_pump_connection_control_and_monitoring_use_bound_port_only(qt
             runtime.serial_autoconnect.poll((port,))
             window.refresh()
             window.navigate("设备管理", "pump_driver", device_id)
-            page = window.page_map[("设备管理", "pump_driver")]
+            page = window.stack.currentWidget()
             assert page.selector.device_id == device_id
             assert manager.opens == [RESOURCE] and manager.handle.writes == [SETTINGS_REQUEST]
             assert runtime.inventory.all()[0]["identityKey"] is None
@@ -116,6 +116,7 @@ def test_automatic_pump_connection_control_and_monitoring_use_bound_port_only(qt
 
             window.navigate("实时监测", "pump_driver", device_id)
             monitor = window.stack.currentWidget()
+            assert monitor is page
             assert len(monitor.sources) == 7 and not monitor.initiate.isEnabled()
             monitor.start(once=True)
             qtbot.waitUntil(lambda: runtime.monitoring.latest(device_id, "scalar") is not None)

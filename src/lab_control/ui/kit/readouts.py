@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QGridLayout, QSizePolicy, QVBoxLayout
 
 from lab_control.ui.kit.base import ElideLabel
 
@@ -38,14 +38,32 @@ class ReadoutStrip(QFrame):
         super().__init__()
         self.setObjectName("readoutStrip")
         self.setProperty("embedded", embedded)
-        layout = QHBoxLayout(self)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.grid = layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.cells = {key: ReadoutCell(label, highlight=key in highlight) for key, label in cells.items()}
-        for cell in self.cells.values():
-            layout.addWidget(cell)
-        layout.addStretch(1)
-        self.tail = layout
+        self.columns = 0
+        self._arrange(self.width())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._arrange(event.size().width())
+
+    def _arrange(self, width: int) -> None:
+        columns = min(len(self.cells), max(1, width // 94))
+        if columns == self.columns:
+            return
+        for column in range(self.columns):
+            self.grid.setColumnStretch(column, 0)
+        self.columns = columns
+        compact = columns < len(self.cells)
+        for index, cell in enumerate(self.cells.values()):
+            cell.layout().setContentsMargins(
+                7 if compact else 12, 4 if compact else 9, 7 if compact else 12, 4 if compact else 9
+            )
+            self.grid.addWidget(cell, index // columns, index % columns)
+            self.grid.setColumnStretch(index % columns, 1)
 
     def set(self, key: str, value: str, label: str | None = None) -> None:
         self.cells[key].set(value, label)

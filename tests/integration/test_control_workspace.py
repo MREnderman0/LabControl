@@ -260,6 +260,9 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
                     common = {"output", "waveform", "frequency", "amplitude", "power", "offset", "phase"}
                     assert names == {c.name for c in caps.operations if c.name in common}
                     assert not page.advanced_groups and page.tabs.count() == 0
+                    window.navigate("实时监测", category, page.selector.device_id)
+                    assert window.stack.currentWidget() is page
+                    continue
                 elif category == "power_supply":
                     assert set(page.controls.panels) == set(caps.channels)
                     assert all(

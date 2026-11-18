@@ -24,7 +24,7 @@ def workspace(qtbot, tmp_path):
             key = runtime.add(ConnectionConfig(f"mock://editing/{index}", "joinwit.jw8105", "mock"))
             runtime.connect(key).result(3)
             meters.append(key)
-        other = runtime.add(ConnectionConfig("mock://editing/source", "rs.sma100b", "mock"))
+        other = runtime.add(ConnectionConfig("mock://editing/supply", "keithley.2231a", "mock"))
         runtime.connect(other).result(3)
         window = QWidget()
         qtbot.addWidget(window)
@@ -114,7 +114,7 @@ def test_categories_start_new_rows_and_devices_wrap_at_three(workspace, qtbot):
     assert all(
         item.x() == 0 and item.width() == dashboard.grid.viewport().width() for item in dashboard.grid.items
     )
-    source = dashboard.groups["signal_generator"]
+    source = dashboard.groups["power_supply"]
     assert group.y() >= source.y() + source.height()
     window.resize(2200, 900)
     qtbot.wait(50)

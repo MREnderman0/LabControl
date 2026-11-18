@@ -130,8 +130,13 @@ class DevicePool(QFrame):
 
     def reflow_actions(self) -> None:
         widgets = tuple(widget for widget in self.action_widgets if not widget.isHidden())
-        largest = max((widget.sizeHint().width() for widget in widgets), default=1)
-        columns = max(1, min(len(widgets), (self.panel.width() - 40 + 8) // (largest + 8)))
+        widths = [widget.sizeHint().width() for widget in widgets]
+        columns = max(1, len(widgets))
+        while columns > 1:
+            required = sum(max(widths[col::columns]) for col in range(columns))
+            if required + self.action_grid.horizontalSpacing() * (columns - 1) <= self.panel.width() - 40:
+                break
+            columns -= 1
         signature = (widgets, columns)
         if signature == self._actions_signature:
             return

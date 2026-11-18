@@ -131,7 +131,7 @@ def test_manual_reconnect_is_single_flight_and_keeps_peer_connected(tmp_path):
         ("joinwit.jw8105", "optical_power_meter"),
         ("ceyear.6362d", "optical_spectrometer"),
         ("keysight.53220a", "frequency_counter"),
-        ("rigol.dg5504pro", "signal_generator"),
+        ("custom.optical_comb_pump", "pump_driver"),
         ("rigol.m300", "multimeter"),
     ],
 )

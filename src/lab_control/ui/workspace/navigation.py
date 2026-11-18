@@ -36,10 +36,13 @@ class WorkspaceNavigation:
 
     def __init__(self, window: RealWindow) -> None:
         self.window = window
+        self.last_devices: dict[str, str] = {}
 
     def focus_card(self, spec: dict) -> None:
         window = self.window
         page = window.stack.currentWidget()
+        if getattr(getattr(page, "selector", None), "device_id", None) != spec.get("device_id"):
+            return
         if isinstance(
             page,
             (
@@ -50,6 +53,7 @@ class WorkspaceNavigation:
                 OpticalPowerMonitoringPage,
                 OpticalSpectrumMonitoringPage,
                 FrequencyCounterMonitoringPage,
+                SignalSourcePage,
             ),
         ):
             page.focus_card(spec)
@@ -155,42 +159,60 @@ class WorkspaceNavigation:
             return
         categories = window._submenu_categories(window.current_module, window.records, window.states)
         current_category = window.submenu.tabData(window.submenu.currentIndex()) or ""
-        options = tuple(
-            s
-            for s in ("设备管理", "实时监测")
-            if current_category in self._submenu_categories(s, window.records, window.states)
-        )
-        visible_options = tuple(
-            window.surface_picker.itemData(i) for i in range(window.surface_picker.count())
-        )
-        if (
-            (current_category and options != visible_options)
-            or (window.current_module, categories) != window._submenu_signature
-            or (current_category and current_category not in categories)
-        ):
-            window.navigate(
-                window.current_module,
-                current_category if current_category in categories else "",
-            )
+        if (window.current_module, categories) != window._submenu_signature:
+            if current_category in categories:
+                window._rebuild_submenu(window.current_module, current_category)
+            else:
+                window.navigate(window.current_module)
+
+    def _device_page(self, category: str, device_id: str) -> tuple[str, str]:
+        controller = self.window.controller
+        if not device_id:
+            keys = [r["id"] for r in controller.connected_records(category)]
+            remembered = self.last_devices.get(category)
+            device_id = remembered if remembered in keys else next(iter(keys), "")
+        record = controller.records.get(device_id)
+        control = category == "signal_generator" or (record and not surface_applicable(record, "monitoring"))
+        return ("设备管理" if control else "实时监测", device_id)
 
     def navigate(self, module: str, category: str = "", device_id: str = "") -> None:
         window = self.window
-        preferred = module if category and module in {"设备管理", "实时监测"} else ""
+        current = window.stack.currentWidget()
+        selector = getattr(current, "selector", None)
+        if selector and selector.device_id:
+            self.last_devices[selector.category] = selector.device_id
+        if device_id and module in {"设备管理", "实时监测", "仪器测控"}:
+            record = window.controller.records.get(device_id)
+            if record is None:
+                self.navigate("首页")
+                window.controller.message.emit("设备已不在设备池中")
+                return
+            category = instrument_category(record)
+            if window.controller.states.get(device_id, {}).get("connectionState") not in LIVE_CONNECTIONS:
+                self.navigate("首页")
+                window.open_details(device_id)
+                return
         if module == "设备管理":
             module = "仪器测控" if category else "首页"
         elif module == "实时监测":
             module = "仪器测控"
         if module not in window.nav_buttons:
             return
+        if module == "仪器测控" and category:
+            surface, device_id = self._device_page(category, device_id)
+            cached = window.page_map.get((surface, category))
+            if cached and device_id != cached.selector.device_id and not cached.selector.isEnabled():
+                window.controller.message.emit("设备正在操作，请稍后切换")
+                return
         window.device_pool.hide()
         window.current_module = module
         for name, button in window.nav_buttons.items():
             button.setChecked(name == module)
         window.section_title.setText(module)
         window._rebuild_submenu(module, category)
-        self.show_page(device_id=device_id, preferred=preferred)
+        self.show_page(device_id=device_id)
 
-    def show_page(self, *_args, device_id: str = "", preferred: str = "") -> None:
+    def show_page(self, *_args, device_id: str = "") -> None:
         window = self.window
         window.device_pool.hide()
         module, category = window.current_module, window.submenu.tabData(window.submenu.currentIndex()) or ""
@@ -199,31 +221,8 @@ class WorkspaceNavigation:
             module if module == "仪器测控" and category else "",
             CATEGORY_LABELS.get(category, module) if module == "仪器测控" and category else module,
         )
-        picker = window.surface_picker
-        picker.hide()
-        picker.setProperty("shown", False)
         if module == "仪器测控" and category:
-            options = [s for s in ("设备管理", "实时监测") if category in self._submenu_categories(s)]
-            requested = window.controller.records.get(device_id)
-            available = [
-                s
-                for s in options
-                if not requested
-                or surface_applicable(requested, "management" if s == "设备管理" else "monitoring")
-            ]
-            previous = picker.currentData() if picker.property("category") == category else ""
-            choices = available or options
-            surface = next((s for s in (preferred, previous, *choices) if s in choices), "")
-            picker.blockSignals(True)
-            picker.clear()
-            for s in options:
-                picker.addItem("控制" if s == "设备管理" else "监测", s)
-            picker.setProperty("category", category)
-            picker.setCurrentIndex(picker.findData(surface))
-            picker.blockSignals(False)
-            # The combo stays the model; the header shows it as a 控制 / 监测 segmented switch.
-            picker.setProperty("shown", len(options) > 1)
-            module = surface
+            module, device_id = self._device_page(category, device_id)
         if module == "首页":
             page = window.overview_page
         elif module == "仪器测控" and not category:
@@ -334,5 +333,4 @@ class WorkspaceNavigation:
             # Resolve a requested device before showEvent can start readback for the page.
             page.selector.select(device_id)
         window.stack.setCurrentWidget(page)
-        window.chrome.sync_surface()
         window.chrome.sync_selection()

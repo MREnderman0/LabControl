@@ -129,6 +129,7 @@ def test_scan_curve_selection_keeps_full_recording_and_snapshot(qtbot, tmp_path,
             check.setChecked(False)
         assert page.displayed_channels() == () and page.channels() == CHANNELS
         assert page.plot.displayed_frame is not None and page.save_button.isEnabled()
+        assert page.save_button.isVisibleTo(window) and page.isAncestorOf(page.save_button)
         assert all(not curve.isVisible() for curve in page.plot.curves.values())
         qtbot.waitUntil(lambda: task.recorder.snapshot()["committed"] > committed, timeout=8000)
         assert task.recording and task.requests[0].channels == CHANNELS
@@ -201,8 +202,8 @@ def test_switch_scan_and_multimeter_preserves_management_controls(qtbot, tmp_pat
         management = window.stack.currentWidget()
         assert window.current_module == "仪器测控"
         assert management.selector.device_id == meter_id
-        assert management.go_monitor.isEnabled()
-        assert management.selector.combo.findData(scan_id) == -1
+        assert management is outer and management.form.device_id == meter_id
+        assert management.selector.combo.findData(scan_id) >= 0
         qtbot.wait(20)
     finally:
         close_window(window, runtime)
