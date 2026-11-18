@@ -2,12 +2,11 @@
 
 from PySide6.QtWidgets import QFormLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
 
-from lab_control.domain.instruments import Parameter
 from lab_control.domain.oscilloscope import engineering
 from lab_control.ui.pages.device_control.editors import UNIT_CHOICES, ParameterEditor
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
-from .capture_settings import ACK_ONLY, CAPTURE, TOKENS, field
+from .capture_settings import ACK_ONLY, CAPTURE, FREQUENCY, TOKENS, field
 
 GROUPS = {
     "scope_timebase": (
@@ -74,11 +73,7 @@ class CaptureControls(QWidget):
             self.forms.addWidget(box)
             self.editors[group] = {}
             for key, title, default in fields:
-                spec = (
-                    Parameter(unit="Hz", minimum=0, maximum=300e6)
-                    if group == "spectrum_center"
-                    else CAPTURE[group][1][key]
-                )
+                spec = FREQUENCY if group == "spectrum_center" else CAPTURE[group][1][key]
                 editor = ParameterEditor(spec, simplified=True, label=title)
                 if spec.kind == "enum":
                     for index, token in enumerate(spec.choices):
@@ -93,6 +88,11 @@ class CaptureControls(QWidget):
                 editor.changed.connect(lambda g=group: self.mark_edited(g))
                 self.editors[group][key] = editor
                 form.addRow(title, editor)
+            if operation(group) == "spectrum_span":
+                limit = QLabel("超过 300 MHz 时，所选输入需启用 600 MHz 模拟带宽。")
+                limit.setObjectName("rangeHint")
+                limit.setWordWrap(True)
+                form.addRow(limit)
         if "spectrum_rbw" in self.editors:
             self.editors["spectrum_rbw"]["mode"].changed.connect(self.update_rbw)
             self.update_rbw()

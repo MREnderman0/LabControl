@@ -25,7 +25,9 @@
 
 示波器的“采集参数”可设触发点两侧的时窗和帧点数上限（128 至 16384 的二次幂）、普通或精密采集、Linear / SinX / Gaussian 插值。边沿触发支持当前物理输入对应的显示通道或外部触发源、Auto / Normal、上升沿 / 下降沿 / 双沿和 −20 至 +20 V 电平。面板独立读回时窗、采样率、采集模式与插值方式，实际点数取自返回帧。触发设置显示写入回执。[厂商时基](https://apis.liquidinstruments.com/api/reference/oscilloscope/set_timebase.html) · [边沿触发](https://apis.liquidinstruments.com/api/reference/oscilloscope/set_trigger.html) · [示波器读回](https://apis.liquidinstruments.com/api/reference/oscilloscope/getters.html)
 
-频谱仪支持起止频率或中心频率与跨度两种输入方式，Moku:Pro 的 4.4 API 端点范围为 0 至 300 MHz。RBW 可选自动、手动或最小，面板显示设备取整后的实际带宽。可选九种窗函数，也可按秒设置帧平均的目标时长。频段、RBW 和窗函数有独立读回，平均时长显示写入回执。时基、频段等设置作用于所在仪器槽的全部通道。[频段](https://apis.liquidinstruments.com/api/reference/specan/set_span.html) · [RBW](https://apis.liquidinstruments.com/api/reference/specan/set_rbw.html) · [窗函数](https://apis.liquidinstruments.com/api/reference/specan/set_window.html) · [帧平均](https://apis.liquidinstruments.com/api/reference/specan/set_averaging.html)
+频谱仪支持按起止频率或中心频率与跨度设置频段。厂商的频段函数页列出 Pro 的常规范围 0 至 300 MHz；4.1.1 版本说明及 API 总览说明了 600 MHz 扩展模式。面板在发送超过 300 MHz 的请求前，先读回所选物理输入的带宽；只有确认前端为 600 MHz 时才发送，随后核对仪器槽的实际频段。[频段函数](https://apis.liquidinstruments.com/api/reference/specan/set_span.html) · [频谱扩展说明](https://apis.liquidinstruments.com/api/reference/) · [4.1.1 变更记录](https://apis.liquidinstruments.com/api/changelog/changelog.html)
+
+RBW 可选自动、手动或最小，面板显示设备取整后的实际带宽。可选九种窗函数，也可按秒设置帧平均的目标时长。频段、RBW 和窗函数有独立读回，平均时长显示写入回执。时基、频段等设置作用于所在仪器槽的全部通道。[RBW](https://apis.liquidinstruments.com/api/reference/specan/set_rbw.html) · [窗函数](https://apis.liquidinstruments.com/api/reference/specan/set_window.html) · [帧平均](https://apis.liquidinstruments.com/api/reference/specan/set_averaging.html)
 
 ## 文件与公共依赖
 

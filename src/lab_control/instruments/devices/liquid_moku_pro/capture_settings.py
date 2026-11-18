@@ -38,7 +38,7 @@ TOKENS = {
         "External",
     )
 }
-FREQUENCY = Parameter(unit="Hz", minimum=0, maximum=300e6)
+FREQUENCY = Parameter(unit="Hz", minimum=0, maximum=600e6)
 CAPTURE = {
     "scope_timebase": (
         "timebase",
@@ -125,6 +125,9 @@ def wire_parameters(name, params):
 def apply_capture(adapter, name, params, body, channel):
     method, _ = CAPTURE[name]
     role = "oscilloscope" if name.startswith("scope_") else "spectrum_analyzer"
+    if method == "span" and body["frequency2"] > 300e6:
+        if adapter._frontend(channel).get("bandwidth") != "600MHz":
+            raise ValidationError(f"频段超过 300 MHz，请先将 CH {channel} 的共享模拟前端带宽设为 600 MHz")
     if method == "trigger":
         body["type"] = "Edge"
         if body["source"] == "Current":
@@ -160,7 +163,7 @@ def apply_capture(adapter, name, params, body, channel):
         actual[key] = value
     if method == "timebase" and actual["t1"] >= actual["t2"]:
         raise DeviceError("时窗读回无效")
-    if method == "span" and not 0 <= actual["frequency1"] < actual["frequency2"] <= 300e6:
+    if method == "span" and not 0 <= actual["frequency1"] < actual["frequency2"] <= FREQUENCY.maximum:
         raise DeviceError("频段读回无效")
     if method == "rbw":
         value = field(read, "rbw_value")

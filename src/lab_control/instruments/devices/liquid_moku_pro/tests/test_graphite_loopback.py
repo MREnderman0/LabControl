@@ -114,8 +114,9 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
             else:
                 editor.set_value(val)
         wait(controls.apply_button.isEnabled)
+        before = controls.feedback.text()
         controls.apply_button.click()
-        wait(lambda: controls.feedback.text())
+        wait(lambda: controls.feedback.text() and controls.feedback.text() != before)
         return controls.feedback.text()
 
     results = []
@@ -169,6 +170,9 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 scope.stop_button.click()
                 wait(lambda: not scope.stop_button.isEnabled())
                 spectrum = open_role("spectrum_analyzer")
+                assert "600 MHz" in configure(spectrum, "spectrum_span", frequency1=300e6, frequency2=600e6)
+                assert wire.settings["span"]["frequency2"] == 600e6
+                wideband_readback = wire.settings["span"].copy()
                 assert "Hamming" in configure(spectrum, "spectrum_window", window="HAMMING")
                 assert "设置回执" in configure(spectrum, "spectrum_averaging", target_duration=0.2)
                 assert "设备读回" in configure(spectrum, "spectrum_center", center=15000, span=20000)
@@ -222,7 +226,18 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
         stop(scope)
         assert set(wire.outputs) == {4} and wire.routes["Output1"] == "Slot2OutD"
         (tmp_path / "loopback.json").write_text(
-            json.dumps({"source": "simulation", "ch1": results, "off_vpp": off_vpp}, indent=2),
+            json.dumps(
+                {
+                    "source": "simulation",
+                    "ch1": results,
+                    "off_vpp": off_vpp,
+                    "ch1_frontend": wire.front[1],
+                    "wideband_span_readback_hz": wideband_readback,
+                    "capture_settings": wire.settings,
+                    "max_scope_points": wire.max_length,
+                },
+                indent=2,
+            ),
             encoding="utf-8",
         )
     finally:

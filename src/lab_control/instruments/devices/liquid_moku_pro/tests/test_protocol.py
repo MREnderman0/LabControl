@@ -123,7 +123,7 @@ def instrument():
         ("scope_timebase", {"t1": 0, "t2": 0.001, "max_length": 500}),
         ("scope_trigger", {"source": "CURRENT", "mode": "AUTO", "edge": "BOTH", "level": 21}),
         ("spectrum_span", {"frequency1": 10, "frequency2": 5}),
-        ("spectrum_span", {"frequency1": 0, "frequency2": 300e6 + 1}),
+        ("spectrum_span", {"frequency1": 0, "frequency2": 600e6 + 1}),
         ("spectrum_rbw", {"mode": "Manual"}),
         ("spectrum_rbw", {"mode": "Manual", "rbw_value": 0}),
         ("spectrum_rbw", {"mode": "Auto", "rbw_value": 100}),
@@ -289,6 +289,17 @@ def test_editing_only_bandwidth_preserves_live_frontend():
     result = dev.apply(DeviceCommand("shared_frontend", {"bandwidth": "600MHz"}, 1, True))
     assert result.readback == dict(impedance="1MOhm", coupling="AC", attenuation="20dB", bandwidth="600MHz")
     assert dev.acquire(AcquisitionRequest("spectrum")).configuration["frontend"] == result.readback
+
+
+def test_extended_spectrum_span_requires_selected_input_bandwidth():
+    dev, wire = instrument()
+    params = {"frequency1": 300e6, "frequency2": 600e6}
+    wire.front[2]["bandwidth"] = "600MHz"
+    with pytest.raises(DeviceError, match="600 MHz"):
+        dev.apply(DeviceCommand("spectrum_span", params, 1, True))
+    assert not any(path.endswith(("/set_frontend", "/set_span")) for _, path, _ in wire.calls)
+    dev.apply(DeviceCommand("shared_frontend", {"bandwidth": "600MHz"}, 1, True))
+    assert dev.apply(DeviceCommand("spectrum_span", params, 1, True)).readback == params
 
 
 def test_first_output_allocates_after_safety_checks_and_stop_never_allocates():
