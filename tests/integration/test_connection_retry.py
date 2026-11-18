@@ -27,7 +27,9 @@ def wait(check):
 
 @pytest.fixture
 def app(tmp_path, monkeypatch):
-    monkeypatch.setattr(connection_retry, "BACKOFF", (0.04, 0.08))
+    monkeypatch.setattr(
+        connection_retry, "retry_delay", lambda attempts, **kw: 0.04 if attempts <= 1 else 0.08
+    )
     with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
         yield runtime
 
@@ -268,7 +270,7 @@ def test_stop_batch_cancels_only_new_waits(app, monkeypatch):
     existing, offline, slow = [asset(app, name) for name in ("existing", "offline", "slow")]
     entered, release = threading.Event(), threading.Event()
     attempts = []
-    monkeypatch.setattr(connection_retry, "BACKOFF", (1.0,))
+    monkeypatch.setattr(connection_retry, "retry_delay", lambda *_args, **_kwargs: 1.0)
 
     def factory(cfg):
         name = cfg.expected_serial

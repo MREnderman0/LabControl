@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
+from lab_control.domain.connections import network_host
 from lab_control.domain.instruments import DeviceError, MeasurementBatch, ResourceCleanupError, utc_now
 from lab_control.instruments.registry import requires_manual_connection
 
@@ -39,6 +40,12 @@ def recoverable(error: BaseException) -> bool:
 
 
 BACKOFF = (0.2, 0.5, 1.0, 2.0, 5.0)
+NETWORK_BACKOFF = (*BACKOFF, 15.0, 30.0, 60.0, 300.0)
+
+
+def retry_delay(attempts: int, *, network: bool) -> float:
+    schedule = NETWORK_BACKOFF if network else BACKOFF
+    return schedule[min(max(attempts - 1, 0), len(schedule) - 1)]
 
 
 def require_present(config: ConnectionConfig) -> None:
@@ -65,12 +72,14 @@ class Recovery:
     failed_reads: int = 1
     ready: bool = False
     cancelled: threading.Event = field(default_factory=threading.Event)
+    network: bool = False
+    discovered_resource: str = ""
 
     def failed(self, error: BaseException) -> None:
         self.error, self.code = str(error), getattr(error, "code", "device_error")
         self.ready = False
         # No queue of missed samples, no busy loop, no upper bound on outage duration.
-        self.next_at = time.monotonic() + BACKOFF[min(max(self.attempts - 1, 0), len(BACKOFF) - 1)]
+        self.next_at = time.monotonic() + retry_delay(self.attempts, network=self.network)
 
     def snapshot(self) -> dict[str, Any]:
         return dict(
@@ -91,6 +100,8 @@ class AcquisitionRecovery:
         self.manager = manager
         self.serial_route: Callable[[DeviceSession], ConnectionConfig] | None = None
         self.serial_verified: Callable[[DeviceSession, ConnectionConfig, DeviceIdentity], None] | None = None
+        self.network_route = None
+        self.verify_move = None
 
     def event(
         self, session: DeviceSession, recovery: Recovery, event: str, recording: Recording | None = None
@@ -127,6 +138,7 @@ class AcquisitionRecovery:
         if original is None:
             raise DeviceError("自动重连缺少原设备身份", "identity_conflict")
         recovery.attempts += 1
+        recovery.network = bool(network_host(session.config.resource))
         with manager.lock:
             session.recovery = recovery
             session.state = "recovering"
@@ -159,7 +171,9 @@ class AcquisitionRecovery:
                 self._close_for_reconnect(session)
             check()
             if candidate is None:
-                if self.serial_route is not None:
+                if recovery.network and self.network_route is not None:
+                    config = self.network_route(session)
+                elif self.serial_route is not None:
                     config = self.serial_route(session)
                 if config != session.config:
                     from lab_control.application.leases import connection_claims
@@ -187,6 +201,8 @@ class AcquisitionRecovery:
                 raise DeviceError("重连设备序列号与配置不一致", "identity_conflict")
             if original.firmware and identity.firmware != original.firmware:
                 raise DeviceError("重连设备固件与原采集会话不一致", "qualification_stale")
+            if recovery.network and config.resource != session.config.resource and self.verify_move:
+                self.verify_move(session, config, identity)
             check()
             bind = getattr(candidate, "bind_control_state", None)
             if callable(bind):
@@ -273,8 +289,10 @@ class AcquisitionRecovery:
     def wait(self, session: DeviceSession, recovery: Recovery) -> bool:
         """Direct recordings use their worker; a stop interrupts every backoff."""
         while not session.stop.is_set() and not self.manager._closing:
-            if session.stop.wait(max(0, recovery.next_at - time.monotonic())):
-                break
+            remaining = recovery.next_at - time.monotonic()
+            if remaining > 0:
+                session.stop.wait(min(remaining, 0.5))
+                continue
             try:
                 self.reconnect(session, recovery)
                 return True

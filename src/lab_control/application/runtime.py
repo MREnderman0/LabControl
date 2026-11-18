@@ -157,6 +157,9 @@ class ApplicationRuntime:
             from lab_control.application.monitoring import MonitoringService
 
             self.monitoring = MonitoringService(self.sessions, self.repository)
+            from lab_control.application.record_on_connect import load_devices
+
+            self.record_on_connect = load_devices(self.repository)
             from lab_control.application.bulk_connection import BulkConnectionService
 
             self.bulk_connection = BulkConnectionService(self)
@@ -168,6 +171,12 @@ class ApplicationRuntime:
             self.connections = ConnectionRetry(self)
             self.monitoring.settings_sync.on_disconnect = self.connections.settings_failed
             if hardware:
+                from lab_control.application.network_recovery import NetworkRecovery
+
+                self.network_recovery = NetworkRecovery(self)
+                self.sessions.recovery.network_route = self.network_recovery.route
+                self.sessions.recovery.verify_move = self.network_recovery.verify_move
+                self.discovery.on_complete = self.connections.discovered
                 self.sessions.recovery.serial_route = self.serial_autoconnect.recovery_route
                 self.sessions.recovery.serial_verified = self.serial_autoconnect.verified_route
         except Exception as failure:
@@ -418,6 +427,9 @@ class ApplicationRuntime:
                     config.adapter,
                     session_device_id=device_id,
                 )
+                from lab_control.application.record_on_connect import start_recording
+
+                start_recording(self, device_id, config.adapter)
                 saved.set_result(identity)
             except Exception as exc:
                 try:

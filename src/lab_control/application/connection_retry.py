@@ -8,7 +8,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from lab_control.application.acquisition_recovery import BACKOFF, require_present
+from lab_control.application.acquisition_recovery import require_present, retry_delay
+from lab_control.domain.connections import network_host
 from lab_control.domain.instruments import DeviceError
 from lab_control.instruments.registry import requires_manual_connection
 
@@ -45,6 +46,8 @@ class Intent:
     cleanup_only: bool = False
     awaiting_presence: bool = False
     serial_detached: bool = False
+    resource: str = ""
+    discovered_resource: str = ""
 
 
 class ConnectionRetry:
@@ -183,7 +186,8 @@ class ConnectionRetry:
         item.phase = phase
         item.code = getattr(error, "code", "device_error")
         item.error = str(error)
-        item.due = time.monotonic() + BACKOFF[min(max(0, item.attempts - 1), len(BACKOFF) - 1)]
+        network = bool(network_host(item.resource)) and getattr(error, "code", "") in TRANSIENT
+        item.due = time.monotonic() + retry_delay(item.attempts, network=network)
         self.condition.notify_all()
 
     def _schedule(self):
@@ -221,6 +225,8 @@ class ConnectionRetry:
         app = self.runtime
         key = item.device_id
         state = self._state(key)
+        if state:
+            item.resource = state["resource"]
         if self.runtime.hardware and requires_manual_connection(state.get("adapterId", "")):
             raise DeviceError("请手动选择设备串口", "manual_reconnect_required")
         if (
@@ -276,6 +282,9 @@ class ConnectionRetry:
                 raise
         self._check(item)
         record = next(r for r in app.inventory.all() if r["id"] == key)
+        item.resource = record["config"]["resource"]
+        if item.attempts and network_host(item.resource) and app.hardware:
+            app.network_recovery.refresh_unconnected(record)
         if item.expected is None:
             known = record.get("identity") or {}
             item.expected = (
@@ -349,6 +358,33 @@ class ConnectionRetry:
                 item.phase, item.attempts, item.error, item.code = "online", 0, "", ""
                 item.batch = None
         return identity
+
+    def discovered(self, report):
+        if report["state"] != "complete":
+            return
+        for result in report["items"]:
+            resource = result["resource"]
+            if result["reason"] != "identified" or not network_host(resource):
+                continue
+            key = result["device_id"]
+            with self.condition:
+                item = self.intents.get(key)
+                if (
+                    item
+                    and item.phase in {"waiting", "retrying"}
+                    and item.due is not None
+                    and resource not in (item.resource, item.discovered_resource)
+                ):
+                    item.discovered_resource = resource
+                    item.due = time.monotonic()
+                    self.condition.notify_all()
+            with self.runtime.sessions.lock:
+                session = self.runtime.sessions.sessions.get(key)
+                recovery = session.recovery if session else None
+                if recovery and resource not in (session.config.resource, recovery.discovered_resource):
+                    recovery.discovered_resource = resource
+                    recovery.next_at = time.monotonic()
+                    self.runtime.monitoring.wake.set()
 
     def settings_failed(self, key, session_id, exc):
         sessions = self.runtime.sessions

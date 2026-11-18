@@ -26,6 +26,34 @@ class InputBanks:
         pass
 
 
+def test_record_on_each_new_verified_connection(qtbot, tmp_path):
+    import json
+
+    cfg = ConnectionConfig("mock://auto", ADAPTER_ID, "mock", options=("float_order=ABCD", "unit=°C"))
+    with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
+        device = runtime.add(cfg)
+        other = runtime.add(ConnectionConfig("mock://other", ADAPTER_ID, "mock"))
+        config = runtime.repository.root / "config" / "record-on-connect.json"
+        config.parent.mkdir(exist_ok=True)
+        config.write_text(json.dumps({device: ADAPTER_ID}), encoding="utf-8")
+    with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
+        runtime.sessions.factory = lambda config: RecorderAdapter(config, InputBanks())
+        runtime.connect(other).result(5)
+        assert other not in runtime.monitoring.snapshots()
+        runtime.connections.request(device).result(5)
+        qtbot.waitUntil(lambda: bool(runtime.monitoring.snapshots()[device].get("last_path")))
+        first = runtime.monitoring.tasks[device].record_session
+        runtime.connections.request(device).result(5)
+        assert runtime.monitoring.tasks[device].record_session == first
+        runtime.monitoring.stop(device).result(5)
+        runtime.connections.request(device).result(5)
+        assert not runtime.monitoring.snapshots()[device]["recording"]
+        runtime.connections.disconnect(device).result(5)
+        runtime.connections.request(device).result(5)
+        qtbot.waitUntil(lambda: bool(runtime.monitoring.snapshots()[device]["recording"]))
+        assert runtime.monitoring.tasks[device].record_session != first
+
+
 def test_shared_workspace_and_recording(qtbot, tmp_path):
     cfg = ConnectionConfig("mock://recorder", ADAPTER_ID, "mock", options=("float_order=ABCD", "unit=°C"))
     runtime = ApplicationRuntime(root=tmp_path, hardware=False)

@@ -172,8 +172,12 @@ class Inventory:
     def all(self) -> tuple[dict[str, Any], ...]:
         import copy
 
+        from lab_control.discovery.serial_routes import empty_onboard_record
+
         with self.lock:
-            return tuple(copy.deepcopy(item) for item in self.records.values())
+            return tuple(
+                copy.deepcopy(item) for item in self.records.values() if not empty_onboard_record(item)
+            )
 
     def by_resource(self, resource: str) -> dict[str, Any] | None:
         normalized = canonical_resource(resource)
@@ -427,6 +431,12 @@ class Inventory:
             }
             if resource not in record["resources"]:
                 record["resources"].append(resource)
+            if (
+                canonical_resource(resource).startswith("SERIAL:")
+                and candidate.config.adapter
+                and (scan_id == "manual" or candidate.descriptor.get("configured") is True)
+            ):
+                record["serialBindingExplicit"] = True
             if not record["displayName"] and candidate.descriptor.get("display_name"):
                 record["displayName"] = str(candidate.descriptor["display_name"])
             previous = record["candidates"].get(resource, {})
@@ -655,6 +665,8 @@ class Inventory:
             # A serial COM number is a current endpoint, not an asset address.
             # The next scan may replace it when the same USB bridge reappears.
             record["primaryResourceExplicit"] = config.transport != "serial"
+            if canonical_resource(resource).startswith("SERIAL:"):
+                record["serialBindingExplicit"] = True
             update_record_presence(record)
             self.repository.save(record)
             self.records[device_id] = record
