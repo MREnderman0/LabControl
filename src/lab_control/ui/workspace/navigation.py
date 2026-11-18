@@ -9,9 +9,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from lab_control.application.catalog import instrument_category, surface_applicable
+from lab_control.application.catalog import instrument_categories, instrument_category, surface_applicable
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.discovery.presence import LIVE_CONNECTIONS
+from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.pages.data_processing import DataProcessingPage
 from lab_control.ui.pages.device_control.coremorrow_e00 import CoreMorrowE00Page
 from lab_control.ui.pages.device_control.electronic_load import ElectronicLoadPage
@@ -43,29 +44,20 @@ class WorkspaceNavigation:
         page = window.stack.currentWidget()
         if getattr(getattr(page, "selector", None), "device_id", None) != spec.get("device_id"):
             return
-        if isinstance(
-            page,
-            (
-                MonitoringPage,
-                SpectrumMonitoringPage,
-                OscilloscopeMonitoringPage,
-                PowerMonitoringPage,
-                OpticalPowerMonitoringPage,
-                OpticalSpectrumMonitoringPage,
-                FrequencyCounterMonitoringPage,
-                SignalSourcePage,
-            ),
-        ):
-            page.focus_card(spec)
+        focus = getattr(page, "focus_card", None)
+        if callable(focus):
+            focus(spec)
 
-    def open_recorded_device(self, device_id: str, channel: int | None) -> None:
-        self.navigate("仪器测控", "", device_id)
+    def open_recorded_device(self, device_id: str, channel: int | None, category: str = "") -> None:
+        self.navigate("仪器测控", category, device_id)
         page = self.window.stack.currentWidget()
         selector = getattr(page, "selector", None)
         if channel is None or selector is None or selector.device_id != device_id:
             return
-        if isinstance(page, (OscilloscopeMonitoringPage, SignalSourcePage)):
-            page.focus_card({"device_id": device_id, "channels": [channel]})
+        if isinstance(page, (OscilloscopeMonitoringPage, SignalSourcePage)) or getattr(
+            selector, "bound_device", None
+        ):
+            self.focus_card({"device_id": device_id, "channels": [channel]})
             return
         selector.select(device_id, channel)
         if isinstance(page, PowerMonitoringPage) and page.controls and channel in page.controls.panels:
@@ -89,9 +81,10 @@ class WorkspaceNavigation:
         if states is None:
             states = window.controller.states
         return frozenset(
-            instrument_category(record)
+            role
             for device_id, record in records.items()
             if states.get(device_id, {}).get("connectionState") in LIVE_CONNECTIONS
+            for role in instrument_categories(record)
         )
 
     def _submenu_categories(
@@ -125,7 +118,7 @@ class WorkspaceNavigation:
             for device_id, record in records.items()
             if states.get(device_id, {}).get("connectionState") in LIVE_CONNECTIONS
         )
-        available = {instrument_category(record) for record in connected}
+        available = {role for record in connected for role in instrument_categories(record)}
         return tuple(
             value
             for value in CATEGORY_LABELS
@@ -134,7 +127,7 @@ class WorkspaceNavigation:
             and any(
                 surface_applicable(record, "management" if module == "设备管理" else "monitoring")
                 for record in connected
-                if instrument_category(record) == value
+                if value in instrument_categories(record)
             )
         )
 
@@ -190,7 +183,7 @@ class WorkspaceNavigation:
         if not device_id:
             keys = [r["id"] for r in controller.connected_records(category)]
             remembered = self.last_devices.get(category)
-            device_id = remembered if remembered in keys else next(iter(keys), "")
+            device_id = remembered if remembered is not None and remembered in keys else next(iter(keys), "")
         record = controller.records.get(device_id)
         control = category == "signal_generator" or (record and not surface_applicable(record, "monitoring"))
         return ("设备管理" if control else "实时监测", device_id)
@@ -207,7 +200,8 @@ class WorkspaceNavigation:
                 self.navigate("首页")
                 window.controller.message.emit("设备已不在设备池中")
                 return
-            category = instrument_category(record)
+            if category not in instrument_categories(record):
+                category = instrument_category(record)
             if window.controller.states.get(device_id, {}).get("connectionState") not in LIVE_CONNECTIONS:
                 self.navigate("首页")
                 window.open_details(device_id)
@@ -221,7 +215,8 @@ class WorkspaceNavigation:
         if module == "仪器测控" and category:
             surface, device_id = self._device_page(category, device_id)
             cached = window.page_map.get((surface, category))
-            if cached and device_id != cached.selector.device_id and not cached.selector.isEnabled():
+            selector = getattr(cached, "selector", None)
+            if selector and device_id != selector.device_id and not selector.isEnabled():
                 window.controller.message.emit("设备正在操作，请稍后切换")
                 return
         window.device_pool.hide()
@@ -243,6 +238,18 @@ class WorkspaceNavigation:
         )
         if module == "仪器测控" and category:
             module, device_id = self._device_page(category, device_id)
+            record = window.controller.records.get(device_id, {})
+            definition = DEVICE_DEFINITIONS.get(record.get("adapterId", ""))
+            if definition and definition.role_page_factory and category in definition.role_categories:
+                key = (device_id, category)
+                page = window.page_map.get(key)
+                if page is None:
+                    page = definition.role_page_factory(window.controller, device_id, category)
+                    window.page_map[key] = page
+                    window.stack.addWidget(page)
+                window.stack.setCurrentWidget(page)
+                window.chrome.sync_selection()
+                return
         if module == "首页":
             page = window.overview_page
         elif module == "仪器测控" and not category:

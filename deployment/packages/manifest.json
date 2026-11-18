@@ -527,6 +527,20 @@
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
     },
     {
+      "path": "deployment/packages/python/certifi-2026.10.23-py3-none-any.whl",
+      "kind": "python-wheel",
+      "name": "certifi",
+      "version": "2026.10.23",
+      "size": 135082,
+      "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl",
+      "source_page": "https://pypi.org/project/certifi/2026.10.23/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "MPL-2.0",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
       "path": "deployment/packages/python/cffi-2.1.1-cp312-cp312-win_amd64.whl",
       "kind": "python-wheel",
       "name": "cffi",
@@ -538,6 +552,20 @@
       "purpose": "desktop runtime and Agent integration",
       "signature_status": "not_applicable: wheel verified by lock SHA256",
       "license": "MIT-0",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
+      "path": "deployment/packages/python/charset_normalizer-3.5.2-cp312-cp312-win_amd64.whl",
+      "kind": "python-wheel",
+      "name": "charset-normalizer",
+      "version": "3.5.2",
+      "size": 207486,
+      "sha256": "780fbe7cab297b81dad9fb8dc5eb003c0468ffb0d9e5f65068c53a34661a96bc",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/eb/e6/e6e083884cbcfd49c64865af05027fe7011be7b2d9179524f099a1b611f3/charset_normalizer-3.5.2-cp312-cp312-win_amd64.whl",
+      "source_page": "https://pypi.org/project/charset-normalizer/3.5.2/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "MIT",
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
     },
     {
@@ -580,6 +608,20 @@
       "purpose": "desktop runtime and Agent integration",
       "signature_status": "not_applicable: wheel verified by lock SHA256",
       "license": "Apache-2.0 OR BSD-3-Clause",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
+      "path": "deployment/packages/python/deprecated-3.0.1-py3-none-any.whl",
+      "kind": "python-wheel",
+      "name": "deprecated",
+      "version": "3.0.1",
+      "size": 22191,
+      "sha256": "eda314c115e8bc0fe52b90a6869e19240ac3cedb7449adfdba5981cf9ef693e1",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/82/f0/07de837adfa09d592747b82fd74316e88285d2d7057551f30e4b5ef81bd8/deprecated-3.0.1-py3-none-any.whl",
+      "source_page": "https://pypi.org/project/deprecated/3.0.1/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "MIT",
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
     },
     {
@@ -636,6 +678,20 @@
       "purpose": "desktop runtime and Agent integration",
       "signature_status": "not_applicable: wheel verified by lock SHA256",
       "license": "BSD-3-Clause",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
+      "path": "deployment/packages/python/ifaddr-0.2.0-py3-none-any.whl",
+      "kind": "python-wheel",
+      "name": "ifaddr",
+      "version": "0.2.0",
+      "size": 12314,
+      "sha256": "085e0305cfe6f16ab12d72e2024030f5d52674afad6911bb1eee207177b8a748",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/9c/1f/19ebc343cc71a7ffa78f17018535adc5cbdd87afb31d7c34874680148b32/ifaddr-0.2.0-py3-none-any.whl",
+      "source_page": "https://pypi.org/project/ifaddr/0.2.0/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "MIT",
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
     },
     {
@@ -723,6 +779,20 @@
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
     },
     {
+      "path": "deployment/packages/python/moku-4.4.0.0-py3-none-any.whl",
+      "kind": "python-wheel",
+      "name": "moku",
+      "version": "4.4.0.0",
+      "size": 192861,
+      "sha256": "ca5740c05e06afcce219bdd613cd573b57266a3e3529b8a88f785f30aaa52492",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/f6/57/0685e77a36e0c5f4495a7944582d00bad9cc9db6faf37bcd9cde5a1ace0a/moku-4.4.0.0-py3-none-any.whl",
+      "source_page": "https://pypi.org/project/moku/4.4.0.0/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "MIT",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
       "path": "deployment/packages/python/mypy-2.3.1-cp312-cp312-win_amd64.whl",
       "kind": "python-wheel",
       "name": "mypy",
@@ -787,7 +857,7 @@
       "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
       "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
       "source_page": "https://pypi.org/project/packaging/26.3/",
-      "purpose": "development/build",
+      "purpose": "desktop runtime and Agent integration",
       "signature_status": "not_applicable: wheel verified by lock SHA256",
       "license": "Apache-2.0 OR BSD-2-Clause",
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
@@ -1101,6 +1171,20 @@
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
     },
     {
+      "path": "deployment/packages/python/requests-2.34.2-py3-none-any.whl",
+      "kind": "python-wheel",
+      "name": "requests",
+      "version": "2.34.2",
+      "size": 73075,
+      "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+      "source_page": "https://pypi.org/project/requests/2.34.2/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "Apache-2.0",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
       "path": "deployment/packages/python/rpds_py-2026.9.1-cp312-cp312-win_amd64.whl",
       "kind": "python-wheel",
       "name": "rpds-py",
@@ -1241,6 +1325,20 @@
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
     },
     {
+      "path": "deployment/packages/python/urllib3-2.8.0-py3-none-any.whl",
+      "kind": "python-wheel",
+      "name": "urllib3",
+      "version": "2.8.0",
+      "size": 135717,
+      "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl",
+      "source_page": "https://pypi.org/project/urllib3/2.8.0/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "MIT",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
       "path": "deployment/packages/python/uv-0.12.18-py3-none-win_amd64.whl",
       "kind": "python-wheel",
       "name": "uv",
@@ -1266,6 +1364,34 @@
       "purpose": "desktop runtime and Agent integration",
       "signature_status": "not_applicable: wheel verified by lock SHA256",
       "license": "BSD-3-Clause",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
+      "path": "deployment/packages/python/wrapt-2.5.2-cp312-cp312-win_amd64.whl",
+      "kind": "python-wheel",
+      "name": "wrapt",
+      "version": "2.5.2",
+      "size": 106220,
+      "sha256": "36021ef761856bdbc10d5f3da9a95af93ef60d6acf9c72c8f849937ba2b902aa",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/7d/0a/ab645f8b4c594cac2db49bbc805bff97a9d3f2944061b865f67e0351b6c8/wrapt-2.5.2-cp312-cp312-win_amd64.whl",
+      "source_page": "https://pypi.org/project/wrapt/2.5.2/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "BSD-2-Clause",
+      "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
+    },
+    {
+      "path": "deployment/packages/python/zeroconf-0.154.0-cp312-cp312-win_amd64.whl",
+      "kind": "python-wheel",
+      "name": "zeroconf",
+      "version": "0.154.0",
+      "size": 1078502,
+      "sha256": "e80c8b82c8c41091eaea0076e296159742d64a0596c3588d6f7d8b8ea5747eb1",
+      "source": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/5a/e8/d7d63ba8bc8ed924a801b1ccf53bd437a8baab529763e14d68cfd99c2f44/zeroconf-0.154.0-cp312-cp312-win_amd64.whl",
+      "source_page": "https://pypi.org/project/zeroconf/0.154.0/",
+      "purpose": "desktop runtime and Agent integration",
+      "signature_status": "not_applicable: wheel verified by lock SHA256",
+      "license": "LGPL-2.1-or-later",
       "validation": "installed version verified; wheel size/hash from uv.lock; clean-machine acceptance pending"
     }
   ],

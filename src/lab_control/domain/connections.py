@@ -40,6 +40,7 @@ class ConnectionConfig:
             "tlpmx",
             "pm100d",
             "pico",
+            "moku",
             "tserve",
             "kplusk",
             "mock",
@@ -97,7 +98,7 @@ def network_host(resource: str) -> str:
     if value.upper().startswith("TCPIP"):
         parts = value.split("::")
         return parts[1].lower() if len(parts) >= 3 else ""
-    if value.lower().startswith(("tcp://", "vicp://")):
+    if value.lower().startswith(("tcp://", "vicp://", "moku://")):
         return urlparse(value).hostname or ""
     if value.lower().startswith("mock://"):
         return ""

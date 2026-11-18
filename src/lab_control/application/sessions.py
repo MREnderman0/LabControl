@@ -383,6 +383,11 @@ class SessionManager:
                 raise DeviceError(
                     "Device already has a session; disconnect explicitly first", "resource_busy"
                 )
+            from lab_control.instruments.registry import DEVICE_DEFINITIONS
+
+            definition = DEVICE_DEFINITIONS.get(config.adapter)
+            if config.expected_serial and definition and definition.canonical_serial:
+                config = replace(config, expected_serial=definition.canonical_serial(config.expected_serial))
             resources = connection_claims(config)
             # An explicit adapter/resource pair is safe to open alongside another
             # selected device even when the model protocol cannot report a serial

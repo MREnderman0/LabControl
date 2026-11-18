@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.application.bulk_connection import device_label
-from lab_control.application.catalog import instrument_category
+from lab_control.application.catalog import instrument_categories, instrument_category
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.discovery.presence import LIVE_CONNECTIONS
 from lab_control.ui.kit import (
@@ -94,10 +94,11 @@ class WorkspaceChrome:
         alerts = dict.fromkeys(categories, False)
         for device_id, record in window.controller.records.items():
             state = window.controller.states.get(device_id, {})
-            category = instrument_category(record)
-            if category in counts and state.get("connectionState") in LIVE_CONNECTIONS:
-                counts[category] += 1
-                alerts[category] |= state.get("connectionState") in {"degraded", "error"}
+            if state.get("connectionState") in LIVE_CONNECTIONS:
+                for category in instrument_categories(record):
+                    if category in counts:
+                        counts[category] += 1
+                        alerts[category] |= state.get("connectionState") in {"degraded", "error"}
         signature = tuple(categories)
         if signature != self._category_signature:
             self._category_signature = signature
@@ -176,7 +177,7 @@ class WorkspaceChrome:
                 identity.get("model") or record.get("adapterId", ""),
                 device_label(record),
                 slots.label(slot, window.controller.mode) if slot else "",
-                CATEGORY_LABELS.get(instrument_category(record), ""),
+                " / ".join(CATEGORY_LABELS.get(role, role) for role in instrument_categories(record)),
             ]
             text = " · ".join(dict.fromkeys(p for p in parts if p))
             entries.append((text, device_id))

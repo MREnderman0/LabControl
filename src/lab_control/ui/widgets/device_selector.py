@@ -5,7 +5,7 @@ from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from lab_control.application.bulk_connection import device_label
-from lab_control.application.catalog import instrument_category, surface_applicable
+from lab_control.application.catalog import instrument_categories, instrument_category, surface_applicable
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.domain.workspace import channel_label
 from lab_control.ui.controller import WorkspaceController, display_connection_state, state_label
@@ -85,10 +85,12 @@ class DeviceSelector(QWidget):
         *,
         compact=False,
         surface: str | None = None,
+        bound_device: str = "",
     ) -> None:
         super().__init__(parent)
         self.controller, self.category, self.surface = controller, category, surface
-        self.device_id = ""
+        self.bound_device = bound_device
+        self.device_id = bound_device
         self._chip_count = 0
         self._names_key: tuple | None = None
         self.signature: tuple[tuple[str, str], ...] | None = None
@@ -131,14 +133,15 @@ class DeviceSelector(QWidget):
 
     def _records(self) -> tuple[dict, ...]:
         records = self.controller.connected_records(self.category)
-        if self.category == "power_supply" and self.surface:
-            return tuple(sorted(records, key=lambda r: not surface_applicable(r, self.surface)))
+        surface = self.surface
+        if self.category == "power_supply" and surface:
+            return tuple(sorted(records, key=lambda r: not surface_applicable(r, surface)))
         return tuple(
             record for record in records if self.surface is None or surface_applicable(record, self.surface)
         )
 
     def refresh(self) -> None:
-        records = self._records()
+        records = sorted(self._records(), key=lambda r: len(instrument_categories(r)))
         entries = []
         chips = []
         slots = self.controller.runtime.repository.function_slots
@@ -162,11 +165,18 @@ class DeviceSelector(QWidget):
         if signature != self.signature:
             initial = (
                 self.signature is None
+                and not self.bound_device
                 and bool(records)
+                and len(instrument_categories(records[0])) == 1
                 and (not self.surface or surface_applicable(records[0], self.surface))
             )
             self.signature = signature
             self.combo.replace_items(entries, select_first=initial)
+            if self.bound_device:
+                index = self.combo.findData(self.bound_device)
+                self.device_id = self.bound_device if index >= 0 else ""
+                with QSignalBlocker(self.combo):
+                    self.combo.setCurrentIndex(index)
         self.combo.setPlaceholderText("选择已连接设备" if entries else "暂无已连接设备")
         self._chip_count = len(chips)
         if 1 < len(chips) <= 6:
@@ -255,7 +265,11 @@ class DeviceSelector(QWidget):
         if device_id == self.device_id:
             return
         record = self.controller.records.get(device_id)
-        if self.surface and record and not surface_applicable(record, self.surface):
+        if record and (
+            self.bound_device
+            or len(instrument_categories(record)) > 1
+            or (self.surface and not surface_applicable(record, self.surface))
+        ):
             with QSignalBlocker(self.combo):
                 self.combo.setCurrentIndex(self.combo.findData(self.device_id))
             self.controller.navigate.emit("仪器测控", self.category, device_id)

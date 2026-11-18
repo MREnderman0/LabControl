@@ -51,6 +51,9 @@ for definition in registry.DEVICE_DEFINITIONS.values():
     hardware = "lab_control.instruments.devices." + definition.root.name + ".hardware"
     if importlib.util.find_spec(hardware + ".readonly") is not None:
         importlib.import_module(hardware + ".readonly")
+    elif importlib.util.find_spec(hardware + ".preflight") is not None:
+        assert callable(definition.readonly_probe), definition.adapter_id
+        assert callable(importlib.import_module(hardware + ".preflight").preflight)
     else:
         # Some packages expose the registered read-only check from hardware.verify.
         assert callable(definition.readonly_check), definition.adapter_id

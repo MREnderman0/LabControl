@@ -161,6 +161,8 @@ class MonitoringService:
             task = self.tasks.get(device_id)
             if task and task.stopping:
                 raise DeviceError("Wait until the current monitoring batch has stopped", "task_busy")
+            if task and task.running and task.record_kinds is not None:
+                raise DeviceError("独立面板正在采集，请从对应面板管理", "task_busy")
             if task and task.running and task.mode != mode:
                 raise DeviceError("Stop monitoring before assigning another recording mode", "task_busy")
             if task and task.running and once:
@@ -270,6 +272,62 @@ class MonitoringService:
         if preparation is not None and not background:
             preparation.result()
         return preparation
+
+    def start_role(self, device_id, request, *, recording=False, mode=GENERAL):
+        """One request per panel; share the physical worker, clock and bounded writer."""
+        request.validate()
+        with self.lock:
+            task = self.tasks.get(device_id)
+            if not task or not task.running:
+                future = self.start(
+                    device_id,
+                    (request,),
+                    interval=0.5,
+                    record_interval=None,
+                    recording=recording,
+                    background=True,
+                    mode=mode,
+                )
+                self.tasks[device_id].record_kinds = {request.kind} if recording else set()
+                return future
+            if task.record_kinds is None or task.mode != mode or task.recovery or task.once:
+                raise DeviceError("请先结束其他采集任务", "task_busy")
+            old = next((r for r in task.requests if r.kind == request.kind), None)
+            if old and old != request:
+                raise DeviceError("请先停止本面板再换通道", "task_busy")
+            # Do not bump request_revision: an already reserved frame still belongs to its writer.
+            previous = task.requests
+            if not old:
+                task.requests += (request,)
+            try:
+                future = (
+                    self._begin_recording_locked(device_id, task, mode=mode)
+                    if recording and not task.recording
+                    else None
+                )
+            except Exception:
+                task.requests = previous
+                raise
+            if recording:
+                task.record_kinds.add(request.kind)
+            self.wake.set()
+            return future
+
+    def stop_role(self, device_id, kind):
+        with self.lock:
+            task = self.tasks.get(device_id)
+            if not task or not task.running or task.record_kinds is None:
+                return None
+            remaining = tuple(r for r in task.requests if r.kind != kind)
+            if not remaining:
+                return self.stop(device_id)
+            task.requests = remaining
+            task.record_kinds.discard(kind)
+            if not task.record_kinds:
+                task.recording = False
+                task.recording_cancelled = True
+            self.wake.set()
+            return None
 
     def sync_watch(self, device_id, requests, interval, cadence, stop_revision):
         """Share an existing task, or own an idle device until the last subscriber leaves."""
@@ -734,6 +792,10 @@ class MonitoringService:
                     "error": task.error,
                     "sequence": task.sequence,
                     "monitoring_context_id": task.monitoring_context_id,
+                    "kinds": tuple(r.kind for r in task.requests),
+                    "recording_kinds": tuple(sorted(task.record_kinds or ()))
+                    if task.running and (task.recording or task.recording_preparation is not None)
+                    else (),
                     "last_path": task.last_path,
                     "mode": task.mode,
                     "interval": task.interval,

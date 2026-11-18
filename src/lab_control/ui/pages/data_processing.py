@@ -42,7 +42,7 @@ def processing_notice(results):
 
 
 class DataProcessingPage(QWidget):
-    open_device_requested = Signal(str, object)
+    open_device_requested = Signal(str, object, str)
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -386,9 +386,13 @@ class DataProcessingPage(QWidget):
             if series not in selected:
                 channels = {row.get("channel") for row in selected}
                 channel = next(iter(channels)) if len(channels) == 1 else None
+                quantities = {row.get("quantity") for row in selected}
+                quantity = next(iter(quantities)) if len(quantities) == 1 else None
             else:
                 channel = series.get("channel")
-            self.open_device_requested.emit(device_id, channel if type(channel) is int else None)
+                quantity = series.get("quantity")
+            category = {"spectrum": "spectrum_analyzer", "voltage": "oscilloscope"}.get(quantity or "", "")
+            self.open_device_requested.emit(device_id, channel if type(channel) is int else None, category)
 
     def show_device(self) -> None:
         if self.entry is None or self.devices.currentIndex() < 0:

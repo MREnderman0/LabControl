@@ -272,6 +272,7 @@ class MonitorScheduler:
                 request = task.requests[task.index % len(task.requests)]
                 save_due = bool(
                     task.recording
+                    and (task.record_kinds is None or request.kind in task.record_kinds)
                     and (task.record_interval is None or time.monotonic() >= task.next_record_at)
                 )
                 if (

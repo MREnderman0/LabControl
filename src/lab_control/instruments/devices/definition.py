@@ -106,6 +106,12 @@ class DeviceDefinition:
     # Optional fixed edges of the default live dBm viewport (bottom, top).
     spectrum_view_dbm: tuple[float | None, float | None] = (None, None)
 
+    # Additional views of one physical asset (never separate inventory or sessions).
+    role_categories: tuple[str, ...] = ()
+    role_page_factory: Callable[..., Any] | None = None
+    canonical_serial: Callable[[str], str] | None = None
+    readonly_probe: Callable[[ConnectionConfig], DeviceIdentity] | None = None
+
     def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
         return self.manual_usb_id is None or self.manual_usb_id == (
             descriptor.get("vid"),

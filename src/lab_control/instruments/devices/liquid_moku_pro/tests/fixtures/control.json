@@ -1,0 +1,5 @@
+{
+  "fixture_origin": "Scripted REST responses in test_protocol.py, no hardware output.",
+  "adapter": "liquid.moku_pro",
+  "operation": "standard_waveform"
+}

@@ -247,7 +247,14 @@ def generate_pngs(
                     key = group_key(sample)
                     y = sample["values"].reshape(-1)
                     x = np.arange(y.size) if sample["axis"] is None else sample["axis"].reshape(-1)
-                    frames.setdefault(key, []).append((f"CH {sample.get('channel', 1)}", x, y))
+                    frames.setdefault(key, []).append(
+                        (
+                            sample.get("metadata", {}).get("channel_label")
+                            or f"CH {sample.get('channel', 1)}",
+                            x,
+                            y,
+                        )
+                    )
                 for key, curves in frames.items():
                     draw(
                         key,

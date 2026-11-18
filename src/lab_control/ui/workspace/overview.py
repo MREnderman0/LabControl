@@ -39,7 +39,7 @@ from lab_control.ui.workspace.categories import (
     CATEGORIES,
     CATEGORY_DESCRIPTIONS,
     applicable,
-    category_for,
+    categories_for,
 )
 from lab_control.ui.workspace.overview_side import OverviewSide
 
@@ -460,8 +460,8 @@ class WorkspaceOverview:
             window.tree.takeTopLevelItem(window.tree.indexOfTopLevelItem(item))
         visible_cards = []
         for category in CATEGORIES:
-            records = [item for item in current_records.values() if category_for(item) == category]
-            history_count = sum(category_for(item) == category for item in window.records.values()) - len(
+            records = [item for item in current_records.values() if category in categories_for(item)]
+            history_count = sum(category in categories_for(item) for item in window.records.values()) - len(
                 records
             )
             live = sum(
@@ -567,7 +567,7 @@ class WorkspaceOverview:
             if badges_changed:
                 # Both badges come from hidden columns; invalidate the visible card too.
                 window.tree.viewport().update(window.tree.visualItemRect(row))
-            show = not window.active_category or category_for(record) == window.active_category
+            show = not window.active_category or window.active_category in categories_for(record)
             if presence_scope == "current":
                 show &= device_id in current_records
             elif presence_scope == "history":
@@ -609,8 +609,9 @@ class WorkspaceOverview:
         row = window.rows.get(device_id)
         if row is None:
             return
-        category = category_for(window.records[device_id])
-        if window.active_category and window.active_category != category:
+        categories = categories_for(window.records[device_id])
+        if window.active_category and window.active_category not in categories:
+            category = categories[0]
             window.category_filter.setCurrentIndex(window.category_filter.findData(category))
         if row.isHidden():
             window.filter.setCurrentIndex(window.filter.findData("all"))
@@ -639,7 +640,7 @@ class WorkspaceOverview:
                 button.setText("打开设备工作页")
                 button.setVisible(bool(record and instrument_category(record) in CATEGORY_LABELS))
             elif key == "monitor":
-                button.hide()
+                button.setVisible(False)
             enabled = bool(record)
             if key == "connect":
                 enabled &= not bool(state) and bool(

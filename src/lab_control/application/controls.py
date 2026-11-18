@@ -32,6 +32,10 @@ OPERATION_LABELS = dict(
 input_raw=输入寄存器原始值
 waveform=波形
 control_state=控制状态
+connect_generator_channel=连接信号源通道
+shared_frontend=共享模拟前端
+attach_workspace=连接现有四槽配置
+select_measurement_input=连接测量通道
 standard_waveform=标准波形
 waveform_stop=停止标准波形
 normal_mode=常规模式
@@ -497,6 +501,12 @@ class DataSource:
 def data_sources(config: ConnectionConfig) -> tuple[DataSource, ...]:
     schema = describe(config)
     category = schema.category
+    definition = DEVICE_DEFINITIONS.get(config.adapter)
+    if definition and definition.role_categories:
+        return tuple(
+            DataSource(k, {"waveform": "时域波形", "spectrum": "频谱"}.get(k, k), k)
+            for k in definition.acquisition_kinds
+        )
     if category == "output_switch":
         return ()
     if category == "signal_generator":

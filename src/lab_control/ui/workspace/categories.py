@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lab_control.application.catalog import instrument_category, mode_applicable
+from lab_control.application.catalog import instrument_categories, instrument_category, mode_applicable
 
 CATEGORIES = {
     "signal_generator": "信号源",
@@ -26,6 +26,11 @@ CATEGORY_DESCRIPTIONS = {
     "load_drivers": "电子负载、泵浦驱动与开关板",
     "unknown": "待确认身份与设备协议",
 }
+
+
+def categories_for(record):
+    roles = instrument_categories(record)
+    return roles if len(roles) > 1 else (category_for(record),)
 
 
 def category_for(record: dict[str, Any]) -> str:

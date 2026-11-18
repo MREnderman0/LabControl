@@ -133,7 +133,10 @@ def _table(
     signature: list[Any] = [array]
     for index, (sample, data, axis) in enumerate(zip(samples, values, axes, strict=True)):
         quantity, unit = sample["quantity"], sample.get("unit", "")
-        label = f"CH{sample.get('channel', 1)}{LABELS.get(quantity, quantity)}"
+        label = (
+            sample.get("metadata", {}).get("channel_label")
+            or f"CH{sample.get('channel', 1)}{LABELS.get(quantity, quantity)}"
+        )
         if label in names:
             label += f"_{index + 1}"
         names.add(label)
