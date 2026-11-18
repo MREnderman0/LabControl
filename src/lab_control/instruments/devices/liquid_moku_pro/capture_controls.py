@@ -1,39 +1,30 @@
-"""Graphite acquisition parameter editors shared by the two Moku measurement pages."""
+"""Grouped parameter cards for the Moku measurement workspaces."""
 
-from PySide6.QtWidgets import QFormLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
+from math import isfinite
 
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QScrollArea,
+    QSizePolicy,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from lab_control.domain.instruments import DeviceCommand, Parameter, ValidationError
 from lab_control.domain.oscilloscope import engineering
+from lab_control.ui.kit import Card, Section, Segmented, button
 from lab_control.ui.pages.device_control.editors import UNIT_CHOICES, ParameterEditor
+from lab_control.ui.pages.monitoring.oscilloscope_controls import ScopeSlider
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
-from .capture_settings import ACK_ONLY, CAPTURE, FREQUENCY, TOKENS, field
-
-GROUPS = {
-    "scope_timebase": (
-        "时基",
-        (("t1", "时窗起点", -0.001), ("t2", "时窗终点", 0.001), ("max_length", "点数上限", 1024)),
-    ),
-    "scope_trigger": (
-        "边沿触发",
-        (
-            ("source", "触发源", "CURRENT"),
-            ("mode", "触发模式", "AUTO"),
-            ("edge", "触发边沿", "RISING"),
-            ("level", "触发电平", 0),
-        ),
-    ),
-    "scope_acquisition": ("采集模式", (("mode", "采集模式", "NORMAL"),)),
-    "scope_interpolation": ("波形插值", (("interpolation", "插值方式", "SINX"),)),
-    "spectrum_span": ("起止频率", (("frequency1", "起始频率", 0), ("frequency2", "终止频率", 30000))),
-    "spectrum_center": ("中心频率与跨度", (("center", "中心频率", 15000), ("span", "频率跨度", 30000))),
-    "spectrum_rbw": ("分辨率带宽", (("mode", "RBW 模式", "AUTO"), ("rbw_value", "手动 RBW", 100))),
-    "spectrum_window": ("窗函数", (("window", "窗函数", "HANN"),)),
-    "spectrum_averaging": ("帧平均", (("target_duration", "目标帧时长", 0.1),)),
-}
-
-
-def operation(group):
-    return "spectrum_span" if group == "spectrum_center" else group
+from .adapter import FRONTEND
+from .capture_settings import ACK_ONLY, CAPTURE, FREQUENCY, TOKENS, field, wire_parameters
+from .display_controls import DisplayControls
 
 
 def display_value(editor, value):
@@ -47,140 +38,537 @@ def display_value(editor, value):
         editor.set_value(value, readback=True)
 
 
-class CaptureControls(QWidget):
+class CaptureControls(Card):
     def __init__(self, page):
-        super().__init__()
+        super().__init__("参数", padding=0, spacing=0)
         self.page = page
-        self.groups = WorkspaceComboBox()
-        self.forms = QStackedWidget()
+        self.scope = page.kind == "waveform"
         self.editors = {}
+        self.front_fields = {}
+        self.defaults = {}
         self.dirty = {}
-        self.seen = {}
-        self.receipts = {}
-        self.session = None
-        layout = QVBoxLayout(self)
+        self.context = None
+        self.active = None
+        self.reading = None
+        self.writable = False
+        self.frequency_pair = None
+        self.display = DisplayControls(page)
+        self.feedback = QLabel("等待读回")
+        self.feedback.setObjectName("spectrumHealth")
+        self.feedback.setFixedHeight(22)
+        self.header().addWidget(self.feedback)
+        self.header().addStretch()
+        self.refresh_button = button("刷新参数", "ghost", "refresh", "sm")
+        self.refresh_button.clicked.connect(self.refresh)
+        self.header().addWidget(self.refresh_button)
+        self.receipt = QLabel()
+        self.receipt.setObjectName("inputFeedback")
+        self.receipt.setWordWrap(True)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        self.column = QVBoxLayout(body)
+        self.column.setContentsMargins(0, 0, 0, 0)
+        self.column.setSpacing(0)
+        self.scroll.setWidget(body)
+        if self.scope:
+            self.build_scope()
+        else:
+            self.build_spectrum()
+        self.column.addStretch()
+        self.body.addWidget(self.scroll, 1)
+        foot = self.footer()
+        foot.addWidget(self.receipt, 1)
+        self.apply_button = button("应用修改", "primary")
+        self.apply_button.clicked.connect(self.apply)
+        foot.addWidget(self.apply_button)
+        self.setMinimumWidth(330)
+        self.setMaximumWidth(430)
+
+    def section(self, label, parent):
+        section = Section(label)
+        section.layout_.setContentsMargins(15, 8, 15, 9)
+        section.layout_.setSpacing(4)
+        parent.addWidget(section)
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(3)
+        for col in (0, 1):
+            grid.setColumnStretch(col, 1)
+        section.layout_.addLayout(grid)
+        return grid
+
+    def cell(self, grid, index, title, widget, extra=None):
+        row, col = divmod(index, 2)
+        heading = QHBoxLayout()
+        label = QLabel(title)
+        label.setObjectName("controlTitle")
+        heading.addWidget(label)
+        heading.addStretch()
+        if extra is not None:
+            heading.addWidget(extra)
+        widget.setAccessibleName(title)
+        widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        widget.setMinimumWidth(0)
+        grid.addLayout(heading, row * 2, col)
+        grid.addWidget(widget, row * 2 + 1, col)
+
+    def editor(self, grid, index, group, key, title, default, spec=None):
+        editor = ParameterEditor(spec or CAPTURE[group][1][key], simplified=True, label=title)
+        editor.range_hidden = True
+        if editor.spec.kind == "enum":
+            for i, token in enumerate(editor.spec.choices):
+                editor.input.setItemText(
+                    i, {"CURRENT": "当前通道", "EXTERNAL": "外部"}.get(token, TOKENS[token])
+                )
+        if key == "max_length":
+            editor.unit.hide()
+        display_value(editor, default)
+        self.cell(grid, index, title, editor)
+        self.editors.setdefault(group, {})[key] = editor
+        self.defaults[group, key] = default
+        editor.changed.connect(lambda: self.edit(group, key))
+        return editor
+
+    def front(self, grid, index, key, label):
+        box = WorkspaceComboBox()
+        box.addItem("保持当前", None)
+        for value in FRONTEND[key]:
+            box.addItem(value, value)
+        self.cell(grid, index, label, box)
+        self.front_fields[key] = box
+        box.currentIndexChanged.connect(self.buttons)
+
+    def build_scope(self):
+        names = ("水平", "垂直", "触发", "采集")
+        self.tabs = Segmented(tuple((name, index) for index, name in enumerate(names)))
+        self.tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        bar = QHBoxLayout()
+        bar.setContentsMargins(14, 10, 14, 4)
+        bar.addWidget(self.tabs)
+        self.body.addLayout(bar)
+        self.pages = QStackedWidget()
+        self.column.addWidget(self.pages)
+        self.tabs.changed.connect(self.pages.setCurrentIndex)
+        self.tabs.set_current(0)
+        grids = []
+        for name in names:
+            tab = QWidget()
+            layout = QVBoxLayout(tab)
+            layout.setContentsMargins(0, 0, 0, 0)
+            grids.append(self.section("", layout))
+            layout.addStretch()
+            self.pages.addWidget(tab)
+        self.range_group = "scope_timebase"
+        self.endpoints = ("t1", "t2")
+        self.alternate = ("seconds_per_div", "center")
+        h, v, t, a = grids
+        self.editor(
+            h, 0, self.range_group, "seconds_per_div", "时基（每格）", 0.0002, Parameter(unit="s", minimum=0)
+        )
+        self.editor(h, 1, self.range_group, "center", "水平偏移", 0, Parameter(unit="s"))
+        self.editor(h, 2, self.range_group, "t1", "时窗起点", -0.001)
+        self.editor(h, 3, self.range_group, "t2", "时窗终点", 0.001)
+        self.sliders = {}
+        for idx, (key, title) in enumerate((("seconds_per_div", "时基"), ("center", "偏移"))):
+            slider = ScopeSlider(title, "s", coarse=idx == 0)
+            slider.committed.connect(lambda value, k=key: self.slider_edit(k, value))
+            self.sliders[key] = slider
+            h.addWidget(slider, 4 + idx, 0, 1, 2)
+        self.sync_sliders(0.0002, 0)
+        self.cell(v, 0, "显示档位", self.display.top, self.display.auto)
+        self.cell(v, 1, "垂直中心", self.display.offset)
+        for i, (key, title) in enumerate(zip(FRONTEND, ("输入阻抗", "输入耦合", "输入衰减", "模拟带宽")), 2):
+            self.front(v, i, key, title)
+        for i, slider in enumerate(self.display.sliders, 6):
+            v.addWidget(slider, i, 0, 1, 2)
+        for i, (key, title, default) in enumerate(
+            (
+                ("source", "触发源", "CURRENT"),
+                ("mode", "触发模式", "AUTO"),
+                ("edge", "边沿", "RISING"),
+                ("level", "触发电平", 0),
+            )
+        ):
+            self.editor(t, i, "scope_trigger", key, title, default)
+        self.editor(a, 0, "scope_acquisition", "mode", "采集模式", "NORMAL")
+        self.editor(a, 1, "scope_interpolation", "interpolation", "插值方式", "SINX")
+        self.editor(a, 2, self.range_group, "max_length", "帧点数上限", 1024)
+        self.settings = QLabel("等待首帧")
+        self.settings.setObjectName("scopeSampleRate")
+        self.settings.setMinimumHeight(self.settings.fontMetrics().lineSpacing() * 3 + 6)
+        h.addWidget(self.settings, 6, 0, 1, 2)
+        self.readback = QLabel()
+        self.readback.setWordWrap(True)
+        self.readback.setObjectName("rangeHint")
+        v.addWidget(self.readback, 8, 0, 1, 2)
+
+    def build_spectrum(self):
+        self.range_group = "spectrum_span"
+        self.endpoints = ("frequency1", "frequency2")
+        self.alternate = ("center", "span")
+        f = self.section("频率", self.column)
+        for i, (key, label, default) in enumerate(
+            (
+                ("frequency1", "起始频率", 0),
+                ("frequency2", "终止频率", 30000),
+                ("center", "中心频率", 15000),
+                ("span", "扫宽", 30000),
+            )
+        ):
+            self.editor(f, i, self.range_group, key, label, default, FREQUENCY)
+        a = self.section("幅度", self.column)
+        self.cell(a, 0, "显示参考电平", self.display.top, self.display.auto)
+        self.front(a, 1, "attenuation", "输入衰减")
+        b = self.section("带宽", self.column)
+        self.editor(b, 0, "spectrum_rbw", "mode", "RBW 模式", "AUTO")
+        self.editor(b, 1, "spectrum_rbw", "rbw_value", "分辨率带宽", 100)
+        self.editor(b, 2, "spectrum_window", "window", "窗函数", "HANN")
+        self.editor(b, 3, "spectrum_averaging", "target_duration", "帧平均时长", 0.1)
+        self.update_rbw()
+        marker = Section("")
+        marker.layout_.setContentsMargins(15, 6, 15, 8)
+        self.column.addWidget(marker)
+        row = QHBoxLayout()
+        title = QLabel("Marker · 软件标记")
+        title.setObjectName("sectionTitle")
+        row.addWidget(title)
+        row.addStretch()
+        self.add_marker = button("添加标记", "ghost", "plus", "sm")
+        self.add_marker.clicked.connect(self.page.add_center_marker)
+        row.addWidget(self.add_marker)
+        marker.layout_.addLayout(row)
+        self.page.marker_list = QListWidget()
+        self.page.marker_list.setObjectName("spectrumMarkerList")
+        self.page.marker_list.setFixedHeight(60)
+        marker.layout_.addWidget(self.page.marker_list)
+        more = button("更多前端设置", "ghost", size="sm")
+        more.setCheckable(True)
+        self.column.addWidget(more)
+        front = QWidget()
+        self.column.addWidget(front)
+        front.hide()
+        more.toggled.connect(front.setVisible)
+        layout = QVBoxLayout(front)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.groups)
-        layout.addWidget(self.forms)
-        prefix = "scope_" if page.kind == "waveform" else "spectrum_"
-        for group, (label, fields) in GROUPS.items():
-            if not group.startswith(prefix):
-                continue
-            self.groups.addItem(label, group)
-            box = QWidget()
-            form = QFormLayout(box)
-            form.setContentsMargins(0, 4, 0, 0)
-            self.forms.addWidget(box)
-            self.editors[group] = {}
-            for key, title, default in fields:
-                spec = FREQUENCY if group == "spectrum_center" else CAPTURE[group][1][key]
-                editor = ParameterEditor(spec, simplified=True, label=title)
-                if spec.kind == "enum":
-                    for index, token in enumerate(spec.choices):
-                        editor.input.setItemText(
-                            index,
-                            {"CURRENT": "当前物理通道", "EXTERNAL": "外部触发"}.get(token, TOKENS[token]),
-                        )
-                editor.range_hidden = True
-                if key == "max_length":
-                    editor.unit.hide()
-                display_value(editor, default)
-                editor.changed.connect(lambda g=group: self.mark_edited(g))
-                self.editors[group][key] = editor
-                form.addRow(title, editor)
-            if operation(group) == "spectrum_span":
-                limit = QLabel("超过 300 MHz 时，所选输入需启用 600 MHz 模拟带宽。")
-                limit.setObjectName("rangeHint")
-                limit.setWordWrap(True)
-                form.addRow(limit)
-        if "spectrum_rbw" in self.editors:
-            self.editors["spectrum_rbw"]["mode"].changed.connect(self.update_rbw)
-            self.update_rbw()
-        self.apply_button = page._button(layout, "应用参数", self.apply, variant="primary")
-        self.feedback = QLabel()
-        self.feedback.setWordWrap(True)
-        self.feedback.setObjectName("rangeHint")
-        layout.addWidget(self.feedback)
-        self.groups.currentIndexChanged.connect(self.select)
-        self.select()
-
-    def select(self):
-        self.forms.setCurrentIndex(self.groups.currentIndex())
-        self.feedback.setText(self.receipts.get(operation(self.groups.currentData()), ""))
-
-    def mark_edited(self, group):
-        self.dirty[group] = self.dirty.get(group, 0) + 1
+        extended = self.section("共享模拟前端", layout)
+        for i, (key, title) in enumerate(
+            (("impedance", "输入阻抗"), ("coupling", "输入耦合"), ("bandwidth", "模拟带宽"))
+        ):
+            self.front(extended, i, key, title)
+        self.readback = QLabel()
+        self.readback.setWordWrap(True)
+        self.settings = QLabel()
+        for i, label in enumerate((self.readback, self.settings), 4):
+            label.setObjectName("rangeHint")
+            extended.addWidget(label, i, 0, 1, 2)
 
     def update_rbw(self):
         editors = self.editors["spectrum_rbw"]
         editors["rbw_value"].setEnabled(editors["mode"].input.currentData() == "MANUAL")
 
-    def reset_session(self, session):
-        if self.session != session:
-            self.session = session
-            self.receipts.clear()
-            self.seen.clear()
-            self.dirty.clear()
-            for group, editors in self.editors.items():
-                for key, _, default in GROUPS[group][1]:
-                    display_value(editors[key], default)
-            if "spectrum_rbw" in self.editors:
-                self.update_rbw()
-            self.select()
+    def slider_edit(self, key, value):
+        display_value(self.editors[self.range_group][key], value)
+        self.edit(self.range_group, key)
+
+    def sync_sliders(self, scale, center):
+        # A quick adjustment around the current window. Numeric inputs keep the full device range.
+        for key, value, low, high in (
+            ("seconds_per_div", scale, scale / 100, scale * 100),
+            ("center", center, center - 5 * scale, center + 5 * scale),
+        ):
+            slider = self.sliders[key]
+            if not (isfinite(low) and isfinite(high) and low < high and scale >= 1e-300 and scale <= 1e300):
+                slider.setEnabled(False)
+                continue
+            slider.setEnabled(True)
+            slider.configure(value, Parameter(unit="s", minimum=low, maximum=high), scale)
+            slider.slider.setToolTip("拖动调整草稿，点击「应用修改」发送到仪器。")
+
+    def buttons(self):
+        if hasattr(self, "apply_button"):
+            modified = bool(self.dirty or any(box.currentData() for box in self.front_fields.values()))
+            available = self.writable and self.active is None and self.reading is None
+            self.apply_button.setEnabled(bool(available and modified))
+            self.refresh_button.setEnabled(available)
+            if modified:
+                self.feedback.setText("待应用")
+
+    def edit(self, group, key):
+        self.dirty[group] = self.dirty.get(group, 0) + 1
+        if group == self.range_group and key in self.endpoints + self.alternate:
+            self.frequency_pair = self.endpoints if key in self.endpoints else self.alternate
+            try:
+                self.link_range()
+            except (ValidationError, ValueError):
+                pass  # Allow an unfinished numeric draft.
+        if group == "spectrum_rbw":
+            self.update_rbw()
+        self.buttons()
+
+    def link_range(self):
+        editors = self.editors[self.range_group]
+        pair = self.frequency_pair or self.endpoints
+        a, b = (editors[k].draft() for k in pair)
+        x, y = float(a["value"]) * a["factor"], float(b["value"]) * b["factor"]
+        if not (isfinite(x) and isfinite(y)):
+            raise ValidationError("请输入有限数值")
+        if pair == self.endpoints:
+            low, high = x, y
+        elif self.scope:
+            low, high = y - 5 * x, y + 5 * x
+        else:
+            low, high = x - y / 2, x + y / 2
+        if not all(isfinite(v) for v in (low, high, high - low, (low + high) / 2)) or high <= low:
+            raise ValidationError("终点必须大于起点")
+        if not self.scope and not (0 <= low < high <= FREQUENCY.maximum):
+            raise ValidationError("扫频端点须在 0 至 600 MHz 之间")
+        if pair == self.endpoints:
+            self.show_derived(low, high)
+        else:
+            for key, value in zip(self.endpoints, (low, high), strict=True):
+                display_value(editors[key], value)
+            if self.scope:
+                self.sync_sliders(x, y)
+        return dict(zip(self.endpoints, (low, high), strict=True))
+
+    def show_derived(self, low, high):
+        center, width = (low + high) / 2, high - low
+        values = (width / 10, center) if self.scope else (center, width)
+        for key, value in zip(self.alternate, values, strict=True):
+            display_value(self.editors[self.range_group][key], value)
+        if self.scope:
+            self.sync_sliders(*values)
+
+    def bind(self, session, channel):
+        if self.context == (session, channel):
+            return
+        if self.active is not None:
+            self.finish_group()
+        self.context = (session, channel)
+        self.dirty.clear()
+        self.reading = None
+        self.frequency_pair = None
+        self.display.bind(channel)
+        for (op, key), default in self.defaults.items():
+            display_value(self.editors[op][key], default)
+        for box in self.front_fields.values():
+            box.setItemText(0, "保持当前")
+            box.setCurrentIndex(0)
+        if self.scope:
+            self.sync_sliders(0.0002, 0)
+        else:
+            self.update_rbw()
+        self.feedback.setText("等待读回")
+        self.receipt.clear()
+        self.buttons()
+
+    def refresh(self):
+        context = self.context
+        if (
+            self.active is not None
+            or not self.writable
+            or self.page.device_id in self.page.controller.group_devices
+        ):
+            return
+
+        def read(_result=None):
+            if context != self.context:
+                return
+            names = tuple(op for op in self.editors if CAPTURE[op][0] not in ACK_ONLY) + ("shared_frontend",)
+            if self.scope:
+                names += ("scope_samplerate",)
+            self.reading = context
+            self.buttons()
+            try:
+                future = self.page.controller.runtime.sessions.submit(
+                    self.page.device_id, "read_settings", (names, self.page.channel)
+                )
+                self.page.controller.watch(future, received, failed)
+            except Exception as exc:
+                failed(exc)
+
+        def failed(exc):
+            if self.reading == context:
+                self.reading = None
+                self.receipt.setText(str(exc))
+                self.buttons()
+
+        def received(rows):
+            if context != self.context or self.reading != context:
+                return
+            data = {}
+            for row in rows:
+                if not isinstance(row.value, dict):
+                    failed(row.error or "当前参数读回不可用")
+                    return
+                if row.operation == "shared_frontend":
+                    self.show_frontend(row.value)
+                elif row.operation == "scope_samplerate":
+                    data["samplerate"] = row.value
+                else:
+                    data[CAPTURE[row.operation][0]] = row.value
+            self.reading = None
+            self.sync(data)
+            self.settings.setText(self.page.show_settings(data))
+            self.receipt.setText("参数已刷新")
+            self.buttons()
+
+        if self.page._attached():
+            read()
+        else:
+            self.page.command("attach_workspace", {}, "连接已有仪器槽并读取参数？", on_success=read)
+
+    def finish_group(self):
+        self.active = None
+        self.page.controller.end_group(self.page.device_id, refresh=False)
+        self.buttons()
 
     def sync(self, settings):
-        for group, editors in self.editors.items():
-            method, _ = CAPTURE[operation(group)]
-            data = settings.get(method)
-            if not data or group in self.dirty or data == self.seen.get(group):
+        for op, editors in self.editors.items():
+            data = settings.get(CAPTURE[op][0])
+            if not data or op in self.dirty:
                 continue
-            self.seen[group] = data.copy()
-            if group == "spectrum_center":
-                low, high = field(data, "frequency1"), field(data, "frequency2")
-                if not all(type(n) in (float, int) for n in (low, high)):
-                    continue
-                data = {"center": (low + high) / 2, "span": high - low}
             for key, editor in editors.items():
-                val = field(data, key)
-                if isinstance(val, str):
-                    val = val.upper()
-                    if key == "window" and val == "HANNING":
-                        val = "HANN"
-                if val is not None:
-                    display_value(editor, val)
-            if group == "spectrum_rbw":
+                value = field(data, key)
+                if isinstance(value, str):
+                    value = value.upper()
+                    if key == "window" and value == "HANNING":
+                        value = "HANN"
+                if value is not None and not editor.hasFocus() and not editor.input.hasFocus():
+                    display_value(editor, value)
+            if op == self.range_group:
+                low, high = (field(data, key) for key in self.endpoints)
+                if all(type(n) in (int, float) for n in (low, high)):
+                    self.show_derived(low, high)
+            if op == "spectrum_rbw":
                 self.update_rbw()
+        if not self.dirty and not any(box.currentData() for box in self.front_fields.values()):
+            self.feedback.setText("已同步")
+
+    def show_frontend(self, read):
+        for key, box in self.front_fields.items():
+            value = read.get(key)
+            box.setItemText(0, str(value) if value is not None else "保持当前")
+        self.readback.setText("前端读回　" + " / ".join(str(read.get(k, "—")) for k in FRONTEND))
+
+    def commands(self):
+        result = []
+        front = {key: box.currentData() for key, box in self.front_fields.items() if box.currentData()}
+        if front:
+            result.append(("shared_frontend", front))
+        caps = self.page.controller.capabilities(self.page.device_id, self.page.channel)
+        for op in self.dirty:
+            editors = self.editors[op]
+            if op == self.range_group:
+                params = self.link_range()
+                if self.scope:
+                    params["max_length"] = editors["max_length"].value()
+            else:
+                params = {k: editor.value() for k, editor in editors.items() if editor.isEnabled()}
+            wire_parameters(op, caps.get(op).validate(params))
+            if op == "spectrum_span" and params["frequency2"] > 300e6 and front.get("bandwidth") == "300MHz":
+                raise ValidationError("当前扫频范围需要 600 MHz 模拟带宽")
+            result.append((op, params))
+        return result
 
     def apply(self):
-        group = self.groups.currentData()
-        op = operation(group)
-        fields = self.editors[group]
-        params = {key: editor.value() for key, editor in fields.items() if editor.isEnabled()}
-        if group == "spectrum_center":
-            center, half = params["center"], params["span"] / 2
-            params = {"frequency1": center - half, "frequency2": center + half}
-        label = GROUPS[group][0]
-        ch, session = self.page.channel, self.session
-        revision = self.dirty.get(group, 0)
+        if (
+            self.active is not None
+            or self.reading is not None
+            or not self.writable
+            or self.page.device_id in self.page.controller.group_devices
+        ):
+            return
+        try:
+            queue = self.commands()
+        except (ValueError, ValidationError) as exc:
+            self.receipt.setText(str(exc))
+            return
+        if not queue or not self.page._confirm(
+            "应用这些修改？测量参数作用于当前仪器槽，前端设置由同一物理输入共用。"
+        ):
+            return
+        try:
+            self.page.controller.begin_group(self.page.device_id)
+        except Exception as exc:
+            self.receipt.setText(str(exc))
+            return
+        ticket = self.active = object()
+        versions = self.dirty.copy()
+        self.buttons()
+        done = []
+        channel = self.page.channel
 
-        def completed(result):
-            if self.session != session:
+        def failed(reason):
+            if self.active is ticket:
+                self.finish_group()
+                self.receipt.setText(f"已应用 {len(done)} 组。{reason}")
+                self.buttons()
+
+        def submit():
+            if self.active is not ticket:
                 return
-            method, specs = CAPTURE[op]
-            actual = result.readback
-            parts = []
-            for key, value in actual.items():
-                spec = specs.get(key)
-                parts.append(engineering(value, spec.unit) if spec and spec.unit else str(value))
-            prefix = "设置回执" if method in ACK_ONLY else "设备读回"
-            self.receipts[op] = f"{prefix} · " + " / ".join(parts)
-            if op == "scope_trigger" and params["source"] == "CURRENT":
-                self.receipts[op] += f"（CH {ch}）"
-            if self.dirty.get(group, 0) == revision:
-                self.dirty.pop(group, None)
-                self.seen.pop(group, None)
-            self.sync({method: actual})
-            self.select()
+            live = next(
+                (
+                    s
+                    for s in self.page.controller.runtime.sessions.snapshots()
+                    if s["stableDeviceId"] == self.page.device_id
+                ),
+                {},
+            )
+            if (live.get("sessionId"), self.page.channel) != self.context:
+                failed("会话或通道已切换")
+                return
+            op, params = queue.pop(0)
 
-        target = f"CH {ch}" if op == "scope_trigger" else "当前仪器槽的所有通道"
-        self.page.command(op, params, f"将{label}设置应用到{target}？", on_success=completed)
+            def accepted(result):
+                if self.active is not ticket:
+                    return
+                if result.outcome != "success":
+                    failed(result.error)
+                    return
+                if op == "shared_frontend":
+                    self.show_frontend(result.readback)
+                    for key, value in params.items():
+                        if self.front_fields[key].currentData() == value:
+                            self.front_fields[key].setCurrentIndex(0)
+                    done.append("前端已读回")
+                else:
+                    method, specs = CAPTURE[op]
+                    actual = result.readback
+                    if self.dirty.get(op) == versions[op]:
+                        self.dirty.pop(op)
+                    self.sync({method: actual})
+                    if op == "scope_trigger":
+                        self.page.show_trigger(actual, channel if params["source"] == "CURRENT" else None)
+                    values = [
+                        engineering(v, specs[k].unit) if k in specs and specs[k].unit else str(v)
+                        for k, v in actual.items()
+                    ]
+                    done.append(
+                        ("设置回执" if method in ACK_ONLY else "设备读回") + " · " + " / ".join(values)
+                    )
+                if queue:
+                    submit()
+                else:
+                    self.finish_group()
+                    self.receipt.setText(done[-1] if len(done) == 1 else f"已应用 {len(done)} 组修改")
+                    self.receipt.setToolTip("\n".join(done))
+                    self.feedback.setText("已应用")
+                    self.buttons()
+
+            try:
+                self.page.controller.apply(
+                    self.page.device_id,
+                    DeviceCommand(op, params, channel, confirmed=True),
+                    accepted,
+                    failed,
+                    group_member=True,
+                )
+            except Exception as exc:
+                failed(exc)
+
+        submit()

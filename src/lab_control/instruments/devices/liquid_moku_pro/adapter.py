@@ -13,11 +13,13 @@ from lab_control.domain.instruments import (
     Measurement,
     MeasurementBatch,
     Parameter,
+    ParameterReading,
+    Quality,
     Unsupported,
     ValidationError,
 )
 
-from .capture_settings import CAPTURE, apply_capture, capture_capabilities, wire_parameters
+from .capture_settings import ACK_ONLY, CAPTURE, apply_capture, capture_capabilities, wire_parameters
 from .protocol import ADAPTER, CHANNELS, Rest
 
 ROLES = {
@@ -50,6 +52,7 @@ def schema(config):
                     for key, options in FRONTEND.items()
                 },
                 writable=True,
+                readable=True,
                 requires_confirmation=True,
                 channel_scoped=True,
                 partial_update="native",
@@ -119,7 +122,32 @@ class Adapter:
         return schema(self.config)
 
     def read_settings(self, operations, channel=1):
-        return ()  # no SCPI-like independent frequency/amplitude/output readbacks
+        readable = {op for op, (method, _) in CAPTURE.items() if method not in ACK_ONLY}
+        requested = [
+            op for op in operations if op in readable or op in {"shared_frontend", "scope_samplerate"}
+        ]
+        if not requested:
+            return ()
+        if channel not in CHANNELS:
+            raise ValidationError("无效的物理输入通道")
+        if not self.api.key:
+            return tuple(
+                ParameterReading(op, channel, quality=Quality.STALE, error="等待连接已有仪器槽")
+                for op in requested
+            )
+        self._attach()
+        readings = []
+        for op in requested:
+            if op == "shared_frontend":
+                data = self._frontend(channel)
+            else:
+                role = "oscilloscope" if op.startswith("scope_") else "spectrum_analyzer"
+                method = "samplerate" if op == "scope_samplerate" else CAPTURE[op][0]
+                data = self._slot(role, "GET", "get_" + method)
+                if not isinstance(data, dict) or not data:
+                    raise DeviceError("采集参数读回无效")
+            readings.append(ParameterReading(op, channel, data, "instrument"))
+        return tuple(readings)
 
     @property
     def capability_details(self):
@@ -280,7 +308,10 @@ class Adapter:
         ch, op = command.channel, command.operation
         if type(ch) is not int or ch not in CHANNELS or not command.confirmed:
             raise ValidationError("选择有效通道并明确确认操作")
-        params = self.capabilities().get(op).validate(command.parameters)
+        cap = self.capabilities().get(op)
+        if not cap.writable:
+            raise Unsupported("此参数只支持读回")
+        params = cap.validate(command.parameters)
         if op == "shared_frontend" and not params:
             raise ValidationError("请选择要修改的模拟前端参数")
         if op in CAPTURE:

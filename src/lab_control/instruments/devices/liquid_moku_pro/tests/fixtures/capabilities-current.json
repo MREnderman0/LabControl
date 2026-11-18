@@ -82,7 +82,7 @@
             "resolution": null
           }
         },
-        "readable": false,
+        "readable": true,
         "writable": true,
         "requires_confirmation": true,
         "channel_scoped": true,
@@ -100,6 +100,21 @@
         "readable": false,
         "writable": true,
         "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "scope_samplerate",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
         "channel_scoped": false,
         "source": "",
         "section": "",
@@ -152,7 +167,7 @@
             "resolution": null
           }
         },
-        "readable": false,
+        "readable": true,
         "writable": true,
         "requires_confirmation": true,
         "channel_scoped": false,
@@ -247,7 +262,7 @@
             "resolution": null
           }
         },
-        "readable": false,
+        "readable": true,
         "writable": true,
         "requires_confirmation": true,
         "channel_scoped": false,
@@ -277,7 +292,7 @@
             "resolution": null
           }
         },
-        "readable": false,
+        "readable": true,
         "writable": true,
         "requires_confirmation": true,
         "channel_scoped": false,
@@ -313,7 +328,7 @@
             "resolution": null
           }
         },
-        "readable": false,
+        "readable": true,
         "writable": true,
         "requires_confirmation": true,
         "channel_scoped": false,
@@ -353,7 +368,7 @@
             "resolution": null
           }
         },
-        "readable": false,
+        "readable": true,
         "writable": true,
         "requires_confirmation": true,
         "channel_scoped": false,
@@ -389,7 +404,7 @@
             "resolution": null
           }
         },
-        "readable": false,
+        "readable": true,
         "writable": true,
         "requires_confirmation": true,
         "channel_scoped": false,

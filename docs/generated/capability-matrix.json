@@ -101,7 +101,7 @@
               "resolution": null
             }
           },
-          "readable": false,
+          "readable": true,
           "writable": true,
           "requires_confirmation": true,
           "channel_scoped": true,
@@ -138,6 +138,27 @@
           "protocol_fixture_tested": false,
           "hardware_passed": false,
           "ui_label": "连接现有四槽配置",
+          "ui_location": ""
+        },
+        {
+          "name": "scope_samplerate",
+          "parameters": {},
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "示波器采样率",
           "ui_location": ""
         },
         {
@@ -183,7 +204,7 @@
               "resolution": null
             }
           },
-          "readable": false,
+          "readable": true,
           "writable": true,
           "requires_confirmation": true,
           "channel_scoped": false,
@@ -290,7 +311,7 @@
               "resolution": null
             }
           },
-          "readable": false,
+          "readable": true,
           "writable": true,
           "requires_confirmation": true,
           "channel_scoped": false,
@@ -326,7 +347,7 @@
               "resolution": null
             }
           },
-          "readable": false,
+          "readable": true,
           "writable": true,
           "requires_confirmation": true,
           "channel_scoped": false,
@@ -368,7 +389,7 @@
               "resolution": null
             }
           },
-          "readable": false,
+          "readable": true,
           "writable": true,
           "requires_confirmation": true,
           "channel_scoped": false,
@@ -414,7 +435,7 @@
               "resolution": null
             }
           },
-          "readable": false,
+          "readable": true,
           "writable": true,
           "requires_confirmation": true,
           "channel_scoped": false,
@@ -456,7 +477,7 @@
               "resolution": null
             }
           },
-          "readable": false,
+          "readable": true,
           "writable": true,
           "requires_confirmation": true,
           "channel_scoped": false,

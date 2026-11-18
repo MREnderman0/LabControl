@@ -4,10 +4,12 @@ import json
 
 import numpy as np
 import pytest
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from lab_control.app import load_stylesheet, load_ui_font
+from lab_control.ui.pages.monitoring.spectrum_markers import MarkerDialog
 from lab_control.ui.real_window import RealWindow
 
 from .test_protocol import Wire
@@ -106,18 +108,24 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
 
     def configure(page, group, **values):
         controls = page.capture
-        controls.groups.setCurrentIndex(controls.groups.findData(group))
+        if controls.scope:
+            controls.tabs.button(
+                {"scope_timebase": 0, "scope_trigger": 2, "scope_acquisition": 3, "scope_interpolation": 3}[
+                    group
+                ]
+            ).click()
         for key, val in values.items():
             editor = controls.editors[group][key]
             if editor.spec.kind == "enum":
                 editor.input.setCurrentIndex(editor.input.findData(val))
             else:
                 editor.set_value(val)
+                editor.changed.emit()
         wait(controls.apply_button.isEnabled)
-        before = controls.feedback.text()
+        before = controls.receipt.text()
         controls.apply_button.click()
-        wait(lambda: controls.feedback.text() and controls.feedback.text() != before)
-        return controls.feedback.text()
+        wait(lambda: controls.receipt.text() and controls.receipt.text() != before)
+        return controls.receipt.text()
 
     results = []
     try:
@@ -135,14 +143,15 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 capture(source, "signal-generator")
             scope = open_role("oscilloscope")
             if frequency == 10000:
+                scope.capture.tabs.button(1).click()
+                bandwidth = scope.capture.front_fields["bandwidth"]
+                bandwidth.setCurrentIndex(bandwidth.findData("600MHz"))
                 with monkeypatch.context() as cancel:
                     cancel.setattr(QMessageBox, "question", lambda *_: QMessageBox.StandardButton.No)
                     count = len(wire.calls)
                     scope.capture.apply_button.click()
                     assert len(wire.calls) == count
-                bandwidth = scope.front_fields["bandwidth"]
-                bandwidth.setCurrentIndex(bandwidth.findData("600MHz"))
-                scope.apply_front.click()
+                scope.capture.apply_button.click()
                 wait(lambda: "600MHz" in scope.readback.text())
                 assert "设置回执" in configure(
                     scope, "scope_trigger", mode="AUTO", edge="FALLING", level=0.01
@@ -150,7 +159,9 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 assert wire.settings["trigger"]["source"] == "ChannelB"
                 assert "Precision" in configure(scope, "scope_acquisition", mode="PRECISION")
                 assert "Linear" in configure(scope, "scope_interpolation", interpolation="LINEAR")
-                assert "设备读回" in configure(scope, "scope_timebase", t1=-0.0002, t2=0.0002, max_length=512)
+                assert "设备读回" in configure(
+                    scope, "scope_timebase", seconds_per_div=40e-6, center=0, max_length=512
+                )
                 scope.monitor_button.click()
                 wait(lambda: scope.last and "Precision / Linear" in scope.settings.text())
                 measurement = scope.last.batch.measurements[0]
@@ -158,6 +169,22 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 zero = np.argmin(abs(measurement.axis))
                 assert measurement.values[zero] == pytest.approx(0.01, abs=15e-6)
                 assert measurement.values[zero - 1] > measurement.values[zero + 1]
+                assert scope.plot.grid_range == pytest.approx((-0.0002, 0.0002))
+                assert scope.capture.editors["scope_timebase"]["seconds_per_div"].value() == pytest.approx(
+                    40e-6
+                )
+                scope.capture.tabs.button(1).click()
+                scope.capture.display.auto.setChecked(False)
+                scope.capture.display.top.setValue(20)
+                scope.capture.display.offset.setValue(5)
+                assert scope.plot.display_specs[1].reference_value == pytest.approx(0.005)
+                assert scope.plot.display_specs[1].units_per_div == pytest.approx(0.02)
+                capture(scope, "scope-vertical")
+                scope.capture.tabs.button(2).click()
+                capture(scope, "scope-trigger")
+                scope.capture.tabs.button(3).click()
+                capture(scope, "scope-acquisition")
+                scope.capture.tabs.button(0).click()
                 capture(scope, "scope-settings")
                 # A new frame must leave an unfinished edit intact.
                 editor = scope.capture.editors["scope_timebase"]["t1"]
@@ -167,6 +194,9 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 wait(lambda: scope.last.sequence > sequence)
                 assert editor.input.text() == "-125"
                 assert wire.settings["timebase"]["t1"] == -0.0002
+                scope.capture.refresh_button.click()
+                wait(lambda: scope.capture.receipt.text() == "参数已刷新")
+                assert editor.input.text() == "-125"
                 scope.stop_button.click()
                 wait(lambda: not scope.stop_button.isEnabled())
                 spectrum = open_role("spectrum_analyzer")
@@ -175,13 +205,50 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 wideband_readback = wire.settings["span"].copy()
                 assert "Hamming" in configure(spectrum, "spectrum_window", window="HAMMING")
                 assert "设置回执" in configure(spectrum, "spectrum_averaging", target_duration=0.2)
-                assert "设备读回" in configure(spectrum, "spectrum_center", center=15000, span=20000)
-                assert "300 Hz" in configure(spectrum, "spectrum_rbw", mode="MANUAL", rbw_value=275)
+                assert "设备读回" in configure(spectrum, "spectrum_span", center=15000, span=20000)
+                attenuation = spectrum.capture.front_fields["attenuation"]
+                attenuation.setCurrentIndex(attenuation.findData("20dB"))
+                assert "2 组" in configure(spectrum, "spectrum_rbw", mode="MANUAL", rbw_value=275)
+                assert wire.front[1]["attenuation"] == "20dB"
+                assert "300 Hz" in spectrum.capture.receipt.toolTip()
                 spectrum.monitor_button.click()
                 wait(lambda: spectrum.last and "300 Hz" in spectrum.settings.text())
                 assert "600MHz" in spectrum.readback.text()
                 np.testing.assert_allclose(spectrum.last.batch.measurements[0].axis[[0, -1]], [5000, 25000])
+                spectrum.capture.display.auto.setChecked(False)
+                spectrum.capture.display.top.setValue(-10)
+
+                def set_marker(frequency, tracking):
+                    dialog = QApplication.activeModalWidget()
+                    assert isinstance(dialog, MarkerDialog)
+                    dialog.frequency.set_value(frequency)
+                    dialog.tracking.setChecked(tracking)
+                    dialog.search_width.set_value(2500)
+                    dialog.save()
+
+                QTimer.singleShot(0, lambda: set_marker(10000, True))
+                spectrum.capture.add_marker.click()
+                wait(lambda: spectrum.plot.readings.get(1) and spectrum.plot.readings[1].position == 10000)
+                assert spectrum.plot.readings[1].amplitude == pytest.approx(-16.02, abs=0.05)
+                QTimer.singleShot(0, lambda: set_marker(15000, False))
+                spectrum.capture.add_marker.click()
+                assert spectrum.plot.readings[2].position == 15000
+                rows = spectrum.marker_list
+                wait(
+                    lambda: (
+                        rows.viewport().rect().contains(rows.visualItemRect(rows.item(1)))
+                        and rows.parentWidget().height() >= rows.y() + rows.height()
+                    )
+                )
+                marker_readings = {
+                    str(n): {"hz": r.position, "dbm": r.amplitude} for n, r in spectrum.plot.readings.items()
+                }
+                assert spectrum.plot.plot.viewRange()[1] == pytest.approx([-110, -10])
                 capture(spectrum, "spectrum-settings")
+                window.resize(1100, 700)
+                qtbot.wait(60)
+                assert spectrum.capture.scroll.horizontalScrollBar().maximum() == 0
+                window.resize(1430, 900)
                 spectrum.stop_button.click()
                 wait(lambda: not spectrum.stop_button.isEnabled())
                 scope = open_role("oscilloscope")
@@ -235,6 +302,7 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                     "wideband_span_readback_hz": wideband_readback,
                     "capture_settings": wire.settings,
                     "max_scope_points": wire.max_length,
+                    "software_markers_at_10khz": marker_readings,
                 },
                 indent=2,
             ),

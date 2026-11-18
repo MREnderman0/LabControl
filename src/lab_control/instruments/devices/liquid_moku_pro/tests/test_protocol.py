@@ -108,6 +108,27 @@ class Wire:
         raise AssertionError(path)
 
 
+def test_settings_readback_and_readonly_samplerate():
+    wire = Wire()
+    dev = Adapter(ConnectionConfig("moku://lab.invalid", ADAPTER, "moku", expected_serial="88"), wire)
+    operations = ("scope_trigger", "spectrum_averaging", "scope_samplerate")
+    (unavailable,) = dev.read_settings(operations)
+    assert unavailable.operation == "scope_samplerate" and unavailable.value is None and unavailable.error
+    assert not wire.calls
+    dev.apply(DeviceCommand("attach_workspace", confirmed=True))
+    wire.calls.clear()
+    (rate,) = dev.read_settings(operations)
+    assert rate.value == {"sample_rate": 1e6}
+    assert wire.calls == [
+        ("GET", "mim/get_instruments", None),
+        ("GET", "slot1/oscilloscope/get_samplerate", None),
+    ]
+    wire.calls.clear()
+    with pytest.raises(DeviceError):
+        dev.apply(DeviceCommand("scope_samplerate", {}, 1, True))
+    assert not wire.calls
+
+
 def instrument():
     wire = Wire()
     dev = Adapter(ConnectionConfig("moku://lab.invalid", ADAPTER, "moku", expected_serial="88"), wire)

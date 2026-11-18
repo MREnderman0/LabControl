@@ -37,6 +37,7 @@ shared_frontend=共享模拟前端
 attach_workspace=连接现有四槽配置
 select_measurement_input=连接测量通道
 scope_timebase=示波器时基
+scope_samplerate=示波器采样率
 scope_trigger=示波器边沿触发
 scope_acquisition=示波器采集模式
 scope_interpolation=示波器波形插值

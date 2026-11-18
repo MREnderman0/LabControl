@@ -21,9 +21,13 @@
 
 ## 可调采集参数
 
+石墨示波器面板使用“水平、垂直、触发、采集”四个页签。时基按每格秒数输入，与水平偏移、触发相对时窗联动。十格时轴与八格电压网格沿用项目的示波器图表，显示当前通道的每格电压、峰峰值、有效值和估算频率。手动显示档位与垂直中心调整本地视图，输入衰减、带宽和触发设置写入设备。
+
+石墨频谱面板把频率、幅度、带宽和软件 Marker 直接列在参数卡上。两组频率输入联动。显示参考电平控制本地 dBm 纵轴的上边界，手动范围宽度为 100 dB；输入衰减控制物理前端。固定 Marker 显示指定频点的读数，跟踪 Marker 在选定搜索范围内逐帧寻峰。Marker 按设备和物理通道保存。两个面板都支持刷新设备参数、保留未提交的草稿和按一次“应用修改”依次写入已改项目。
+
 两个面板均可设置物理输入的阻抗、耦合、衰减和 300 / 600 MHz 模拟带宽，默认保留已有带宽。应用后立即读回，随后两个面板的采集帧也携带相同物理输入的前端快照。[四槽模式模拟前端](https://apis.liquidinstruments.com/api/reference/mim/set_frontend.html)
 
-示波器的“采集参数”可设触发点两侧的时窗和帧点数上限（128 至 16384 的二次幂）、普通或精密采集、Linear / SinX / Gaussian 插值。边沿触发支持当前物理输入对应的显示通道或外部触发源、Auto / Normal、上升沿 / 下降沿 / 双沿和 −20 至 +20 V 电平。面板独立读回时窗、采样率、采集模式与插值方式，实际点数取自返回帧。触发设置显示写入回执。[厂商时基](https://apis.liquidinstruments.com/api/reference/oscilloscope/set_timebase.html) · [边沿触发](https://apis.liquidinstruments.com/api/reference/oscilloscope/set_trigger.html) · [示波器读回](https://apis.liquidinstruments.com/api/reference/oscilloscope/getters.html)
+示波器面板可设触发点两侧的时窗和帧点数上限（128 至 16384 的二次幂）、普通或精密采集、Linear / SinX / Gaussian 插值。边沿触发支持当前物理输入对应的显示通道或外部触发源、Auto / Normal、上升沿 / 下降沿 / 双沿和 −20 至 +20 V 电平。面板独立读回时窗、采样率、采集模式与插值方式，实际点数取自返回帧。触发设置显示写入回执。[厂商时基](https://apis.liquidinstruments.com/api/reference/oscilloscope/set_timebase.html) · [边沿触发](https://apis.liquidinstruments.com/api/reference/oscilloscope/set_trigger.html) · [示波器读回](https://apis.liquidinstruments.com/api/reference/oscilloscope/getters.html)
 
 频谱仪支持按起止频率或中心频率与跨度设置频段。厂商的频段函数页列出 Pro 的常规范围 0 至 300 MHz；4.1.1 版本说明及 API 总览说明了 600 MHz 扩展模式。面板在发送超过 300 MHz 的请求前，先读回所选物理输入的带宽；只有确认前端为 600 MHz 时才发送，随后核对仪器槽的实际频段。[频段函数](https://apis.liquidinstruments.com/api/reference/specan/set_span.html) · [频谱扩展说明](https://apis.liquidinstruments.com/api/reference/) · [4.1.1 变更记录](https://apis.liquidinstruments.com/api/changelog/changelog.html)
 

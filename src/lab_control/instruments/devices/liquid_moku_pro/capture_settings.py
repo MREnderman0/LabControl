@@ -83,9 +83,15 @@ ALIASES = {
 
 
 def capture_capabilities():
-    for name, (_, fields) in CAPTURE.items():
+    yield Capability("scope_samplerate", readable=True)
+    for name, (method, fields) in CAPTURE.items():
         yield Capability(
-            name, fields, writable=True, requires_confirmation=True, channel_scoped=name == "scope_trigger"
+            name,
+            fields,
+            readable=method not in ACK_ONLY,
+            writable=True,
+            requires_confirmation=True,
+            channel_scoped=name == "scope_trigger",
         )
 
 
