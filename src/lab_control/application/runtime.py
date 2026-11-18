@@ -208,6 +208,8 @@ class ApplicationRuntime:
         if self.hardware and requires_manual_connection(config.adapter):
             raise ValidationError("该设备需要手动选择串口，扫描只枚举资源")
         definition = DEVICE_DEFINITIONS.get(config.adapter)
+        if definition and definition.readonly_probe:
+            return definition.readonly_probe(config), config.adapter
         if config.adapter and (
             not candidate.safe_scpi or (definition is not None and definition.identity_requires_adapter)
         ):

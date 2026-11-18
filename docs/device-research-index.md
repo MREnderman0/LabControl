@@ -38,6 +38,7 @@
 <!-- device-modules:start -->
 | 型号 | 注册 ID | 连接路线 | 归档 |
 | --- | --- | --- | --- |
+| Moku:Pro | `liquid.moku_pro` | LAN · Moku REST 4.4 | [卡片](devices/oscilloscopes/moku-pro.md) |
 | PicoScope 6404E | `pico.6404e` | USB 3.x + ps6000a SDK | [卡片](devices/oscilloscopes/picoscope-6404e.md) |
 | Thorlabs PM100D + S154C | `thorlabs.pm100d` | PM100D USB；S154C 接控制台传感器接口 | [卡片](devices/measurement-analyzers/thorlabs-pm100d-s154c.md) |
 | R&S RTM3004 | `rs.rtm3004` | LAN / USB VISA | [卡片](devices/oscilloscopes/rtm3004.md) |

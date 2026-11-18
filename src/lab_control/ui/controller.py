@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 
-from lab_control.application.catalog import instrument_category, mode_applicable
+from lab_control.application.catalog import instrument_categories, mode_applicable
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import control_capabilities
 from lab_control.application.runtime import ApplicationRuntime
@@ -279,7 +279,7 @@ class WorkspaceController(QObject):
         return tuple(
             record
             for key, record in self.records.items()
-            if self.has_connected_session(key) and (not category or instrument_category(record) == category)
+            if self.has_connected_session(key) and (not category or category in instrument_categories(record))
         )
 
     def ensure_applicable(self, device_id: str, *, workspace_mode: str | None = None) -> None:

@@ -12,6 +12,8 @@ dependencies = [
     "pyqtgraph>=0.14,<0.15",
     "mcp==2.3.0",
     "cryptography>=46,<48",
+    "moku==4.4.0",
+    "zeroconf>=0.47",
 ]
 
 [project.scripts]

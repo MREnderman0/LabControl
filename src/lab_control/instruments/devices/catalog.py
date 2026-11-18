@@ -11,6 +11,7 @@ from importlib import import_module
 from lab_control.instruments.devices.definition import DeviceDefinition
 
 DEVICE_MODULES = (
+    "lab_control.instruments.devices.liquid_moku_pro",
     "lab_control.instruments.devices.pico_6404e",
     "lab_control.instruments.devices.thorlabs_pm100d",
     "lab_control.instruments.devices.rs_rtm3004",

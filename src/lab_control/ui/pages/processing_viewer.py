@@ -155,7 +155,7 @@ class ProcessingViewer(QWidget):
         self._poll()
 
     def _channel_name(self, series) -> str:
-        return channel_label(
+        return series.get("metadata", {}).get("channel_label") or channel_label(
             self.info.get("recording", {}).get("channel_names", {}), series.get("channel", 1)
         )
 

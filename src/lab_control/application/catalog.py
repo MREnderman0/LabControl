@@ -13,6 +13,13 @@ def instrument_category(record: dict[str, Any]) -> str:
     return PROFILES[adapter].category if adapter in PROFILES else SDK_ADAPTERS.get(adapter, "unknown")
 
 
+def instrument_categories(record: dict[str, Any]) -> tuple[str, ...]:
+    definition = DEVICE_DEFINITIONS.get(record.get("adapterId", ""))
+    if definition and definition.role_categories:
+        return definition.role_categories
+    return (instrument_category(record),)
+
+
 def mode_applicable(record: dict[str, Any], mode: str) -> bool:
     category = instrument_category(record)
     # Legacy mode values remain valid metadata, never a device-type gate.

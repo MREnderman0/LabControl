@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.application.bulk_connection import device_label
-from lab_control.application.catalog import instrument_category
+from lab_control.application.catalog import instrument_categories, instrument_category
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.domain.instruments import jsonable
@@ -104,6 +104,8 @@ class WorkspaceActions:
                 window.controller.watch(window.runtime.monitoring.stop(device_id))
             elif key in {"manage", "monitor"}:
                 category = instrument_category(window.records[device_id])
+                if window.active_category in instrument_categories(window.records[device_id]):
+                    category = window.active_category
                 if category in CATEGORY_LABELS:
                     window.navigate("设备管理" if key == "manage" else "实时监测", category, device_id)
             elif key == "diagnostic":

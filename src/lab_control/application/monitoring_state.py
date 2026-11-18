@@ -100,6 +100,7 @@ class MonitorTask:
     recovery: Recovery | None = None
     recovery_pending: Future[Any] | None = None
 
+    record_kinds: set[str] | None = None
     watch_owned: bool = False
     watch_session: str = ""
 

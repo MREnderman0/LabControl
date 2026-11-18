@@ -4,6 +4,7 @@
 
 | 型号 | 接入路线 | 文档 |
 | --- | --- | --- |
+| Moku:Pro | LAN · Moku REST 4.4 | [型号说明](moku-pro.md) |
 | PicoScope 6404E | USB 3.x + ps6000a SDK | [型号说明](picoscope-6404e.md) |
 | R&S RTM3004 | LAN / USB VISA | [型号说明](rtm3004.md) |
 | R&S RTO64 | LAN / USB VISA | [型号说明](rto64.md) |

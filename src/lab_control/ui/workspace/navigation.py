@@ -9,9 +9,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from lab_control.application.catalog import instrument_category, surface_applicable
+from lab_control.application.catalog import instrument_categories, surface_applicable
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.discovery.presence import LIVE_CONNECTIONS
+from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.pages.data_processing import DataProcessingPage
 from lab_control.ui.pages.device_control.coremorrow_e00 import CoreMorrowE00Page
 from lab_control.ui.pages.device_control.electronic_load import ElectronicLoadPage
@@ -65,9 +66,10 @@ class WorkspaceNavigation:
         if states is None:
             states = window.controller.states
         return frozenset(
-            instrument_category(record)
+            role
             for device_id, record in records.items()
             if states.get(device_id, {}).get("connectionState") in LIVE_CONNECTIONS
+            for role in instrument_categories(record)
         )
 
     def _submenu_categories(
@@ -101,7 +103,7 @@ class WorkspaceNavigation:
             for device_id, record in records.items()
             if states.get(device_id, {}).get("connectionState") in LIVE_CONNECTIONS
         )
-        available = {instrument_category(record) for record in connected}
+        available = {role for record in connected for role in instrument_categories(record)}
         return tuple(
             value
             for value in CATEGORY_LABELS
@@ -110,7 +112,7 @@ class WorkspaceNavigation:
             and any(
                 surface_applicable(record, "management" if module == "设备管理" else "monitoring")
                 for record in connected
-                if instrument_category(record) == value
+                if value in instrument_categories(record)
             )
         )
 
@@ -201,7 +203,10 @@ class WorkspaceNavigation:
         picker.hide()
         if module == "仪器测控" and category:
             options = [s for s in ("设备管理", "实时监测") if category in self._submenu_categories(s)]
-            requested = window.controller.records.get(device_id)
+            candidates = window.controller.connected_records(category)
+            if not device_id and len(candidates) == 1:
+                device_id = candidates[0]["id"]
+            requested = next((rec for rec in candidates if rec["id"] == device_id), None)
             available = [
                 s
                 for s in options
@@ -219,6 +224,17 @@ class WorkspaceNavigation:
             picker.setCurrentIndex(picker.findData(surface))
             picker.blockSignals(False)
             picker.setVisible(len(options) > 1)
+            definition = DEVICE_DEFINITIONS.get((requested or {}).get("adapterId", ""))
+            if definition and definition.role_page_factory and category in definition.role_categories:
+                key = (device_id, category)
+                page = window.page_map.get(key)
+                if page is None:
+                    page = definition.role_page_factory(window.controller, device_id, category)
+                    window.page_map[key] = page
+                    window.stack.addWidget(page)
+                picker.hide()
+                window.stack.setCurrentWidget(page)
+                return
             module = surface
         if module == "首页":
             page = window.overview_page

@@ -6,6 +6,228 @@
   "ui_location_note": "control_page identifies the model page only. ui_location is a legacy empty field: operation-level GUI entries are not inferred from protocol capabilities. See the current user guide.",
   "models": [
     {
+      "adapter_id": "liquid.moku_pro",
+      "model": "Moku:Pro",
+      "category": "oscilloscope",
+      "control_page": "实时监测 / 示波器",
+      "channels": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "source": "https://apis.liquidinstruments.com/api/getting-started/starting-mim.html",
+      "revision": "4.4",
+      "acquisition": "waveform/spectrum",
+      "metric_profiles": [],
+      "channel_limits": {},
+      "hardware_passed": false,
+      "operations": [
+        {
+          "name": "connect_generator_channel",
+          "parameters": {},
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": true,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "连接信号源通道",
+          "ui_location": ""
+        },
+        {
+          "name": "shared_frontend",
+          "parameters": {
+            "impedance": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "50OHM",
+                "1MOHM"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "coupling": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "AC",
+                "DC"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "attenuation": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "0DB",
+                "20DB",
+                "40DB"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": true,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "共享模拟前端",
+          "ui_location": ""
+        },
+        {
+          "name": "attach_workspace",
+          "parameters": {},
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "连接现有四槽配置",
+          "ui_location": ""
+        },
+        {
+          "name": "standard_waveform",
+          "parameters": {
+            "frequency": {
+              "kind": "number",
+              "unit": "Hz",
+              "minimum": 1,
+              "maximum": 1000000.0,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "amplitude": {
+              "kind": "number",
+              "unit": "Vpp",
+              "minimum": 0.004,
+              "maximum": 0.1,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": true,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": true,
+          "hardware_passed": false,
+          "ui_label": "标准波形",
+          "ui_location": ""
+        },
+        {
+          "name": "waveform_stop",
+          "parameters": {},
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": true,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "停止标准波形",
+          "ui_location": ""
+        },
+        {
+          "name": "select_measurement_input",
+          "parameters": {
+            "role": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "WAVEFORM",
+                "SPECTRUM"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": true,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "连接测量通道",
+          "ui_location": ""
+        }
+      ]
+    },
+    {
       "adapter_id": "pico.6404e",
       "model": "PicoScope 6404E",
       "category": "oscilloscope",

@@ -1,0 +1,183 @@
+{
+  "fixture_origin": "Initial 4.4 software capability contract; not hardware acceptance",
+  "adapter": "liquid.moku_pro",
+  "capabilities": {
+    "category": "oscilloscope",
+    "channels": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "operations": [
+      {
+        "name": "connect_generator_channel",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "shared_frontend",
+        "parameters": {
+          "impedance": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "50OHM",
+              "1MOHM"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "coupling": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "AC",
+              "DC"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "attenuation": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "0DB",
+              "20DB",
+              "40DB"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "attach_workspace",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "standard_waveform",
+        "parameters": {
+          "frequency": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 1,
+            "maximum": 1000000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "amplitude": {
+            "kind": "number",
+            "unit": "Vpp",
+            "minimum": 0.004,
+            "maximum": 0.1,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "waveform_stop",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "select_measurement_input",
+        "parameters": {
+          "role": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "WAVEFORM",
+              "SPECTRUM"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      }
+    ]
+  },
+  "profile": null,
+  "commands": {}
+}

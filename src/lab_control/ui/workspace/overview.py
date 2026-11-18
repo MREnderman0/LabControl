@@ -37,7 +37,7 @@ from lab_control.ui.workspace.categories import (
     CATEGORIES,
     CATEGORY_DESCRIPTIONS,
     applicable,
-    category_for,
+    categories_for,
 )
 
 if TYPE_CHECKING:
@@ -395,8 +395,8 @@ class WorkspaceOverview:
             window.tree.takeTopLevelItem(window.tree.indexOfTopLevelItem(item))
         visible_cards = []
         for category in CATEGORIES:
-            records = [item for item in current_records.values() if category_for(item) == category]
-            history_count = sum(category_for(item) == category for item in window.records.values()) - len(
+            records = [item for item in current_records.values() if category in categories_for(item)]
+            history_count = sum(category in categories_for(item) for item in window.records.values()) - len(
                 records
             )
             live = sum(
@@ -501,7 +501,7 @@ class WorkspaceOverview:
             if badges_changed:
                 # Both badges come from hidden columns; invalidate the visible card too.
                 window.tree.viewport().update(window.tree.visualItemRect(row))
-            show = not window.active_category or category_for(record) == window.active_category
+            show = not window.active_category or window.active_category in categories_for(record)
             if presence_scope == "current":
                 show &= device_id in current_records
             elif presence_scope == "history":
@@ -565,7 +565,11 @@ class WorkspaceOverview:
                         record
                         and (
                             not surface_applicable(record, "management")
-                            or instrument_category(record)
+                            or (
+                                window.active_category
+                                if window.active_category in categories_for(record)
+                                else instrument_category(record)
+                            )
                             in {"spectrum_analyzer", "oscilloscope", "power_supply", "optical_power_meter"}
                         )
                     )
