@@ -1,0 +1,514 @@
+{
+  "fixture_origin": "MokuOS 4.4 capture controls, official API and simulator coverage",
+  "adapter": "liquid.moku_pro",
+  "capabilities": {
+    "category": "oscilloscope",
+    "channels": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "operations": [
+      {
+        "name": "connect_generator_channel",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "shared_frontend",
+        "parameters": {
+          "impedance": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "50OHM",
+              "1MOHM"
+            ],
+            "required": false,
+            "range_source": "model",
+            "resolution": null
+          },
+          "coupling": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "DC",
+              "AC"
+            ],
+            "required": false,
+            "range_source": "model",
+            "resolution": null
+          },
+          "attenuation": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "0DB",
+              "20DB",
+              "40DB"
+            ],
+            "required": false,
+            "range_source": "model",
+            "resolution": null
+          },
+          "bandwidth": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "300MHZ",
+              "600MHZ"
+            ],
+            "required": false,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "native"
+      },
+      {
+        "name": "attach_workspace",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "scope_timebase",
+        "parameters": {
+          "t1": {
+            "kind": "number",
+            "unit": "s",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "t2": {
+            "kind": "number",
+            "unit": "s",
+            "minimum": null,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "max_length": {
+            "kind": "integer",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "128",
+              "256",
+              "512",
+              "1024",
+              "2048",
+              "4096",
+              "8192",
+              "16384"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "scope_trigger",
+        "parameters": {
+          "source": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "CURRENT",
+              "EXTERNAL"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "mode": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "AUTO",
+              "NORMAL"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "edge": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "RISING",
+              "FALLING",
+              "BOTH"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "level": {
+            "kind": "number",
+            "unit": "V",
+            "minimum": -20,
+            "maximum": 20,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "scope_acquisition",
+        "parameters": {
+          "mode": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "NORMAL",
+              "PRECISION"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "scope_interpolation",
+        "parameters": {
+          "interpolation": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "LINEAR",
+              "SINX",
+              "GAUSSIAN"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "spectrum_span",
+        "parameters": {
+          "frequency1": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": 300000000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "frequency2": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": 300000000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "spectrum_rbw",
+        "parameters": {
+          "mode": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "AUTO",
+              "MANUAL",
+              "MINIMUM"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "rbw_value": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 0,
+            "maximum": null,
+            "choices": [],
+            "required": false,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "spectrum_window",
+        "parameters": {
+          "window": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "RECTANGULAR",
+              "BARTLETT",
+              "HAMMING",
+              "HANN",
+              "BLACKMANHARRIS",
+              "FLATTOP",
+              "NUTTALL",
+              "GAUSSIAN",
+              "KAISER"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "spectrum_averaging",
+        "parameters": {
+          "target_duration": {
+            "kind": "number",
+            "unit": "s",
+            "minimum": 0,
+            "maximum": null,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": false,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "standard_waveform",
+        "parameters": {
+          "frequency": {
+            "kind": "number",
+            "unit": "Hz",
+            "minimum": 1,
+            "maximum": 1000000.0,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          },
+          "amplitude": {
+            "kind": "number",
+            "unit": "Vpp",
+            "minimum": 0.004,
+            "maximum": 0.1,
+            "choices": [],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "waveform_stop",
+        "parameters": {},
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      },
+      {
+        "name": "select_measurement_input",
+        "parameters": {
+          "role": {
+            "kind": "enum",
+            "unit": "",
+            "minimum": null,
+            "maximum": null,
+            "choices": [
+              "WAVEFORM",
+              "SPECTRUM"
+            ],
+            "required": true,
+            "range_source": "model",
+            "resolution": null
+          }
+        },
+        "readable": false,
+        "writable": true,
+        "requires_confirmation": true,
+        "channel_scoped": true,
+        "source": "",
+        "section": "",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      }
+    ]
+  },
+  "profile": null,
+  "commands": {}
+}

@@ -147,7 +147,7 @@ def test_buttons_prepare_selected_ports_and_join_recording_without_writes(qtbot,
         monkeypatch.setattr(QMessageBox, "question", lambda *_: QMessageBox.StandardButton.Yes)
         click(spectrum, "逐帧记录")
         until(lambda: spectrum.last and spectrum.last.request.channels == (3,))
-        assert "20 kHz" in spectrum.settings.text() and "Hanning" in spectrum.settings.text()
+        assert "20 kHz" in spectrum.settings.text() and "Hann" in spectrum.settings.text()
         assert spectrum.plot.trace.unit == "dBm"
         assert wire.routes["Slot3InA"] == "Input3"
         scope = panel("oscilloscope")

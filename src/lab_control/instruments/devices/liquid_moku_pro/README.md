@@ -19,6 +19,14 @@
 
 三个面板统一显示 ch1、ch2、ch3、ch4。信号源通道对应同号物理输出，并不暗含回环。零偏置正弦的软件范围为 1 Hz～1 MHz、4～100 mVpp；要求独占的信号源至物理输出路由、0 dB 增益及 50 Ω 终端设置，并由操作者确认实际负载。选择通道不发命令；点“开启输出”或“开始监测 / 逐帧记录”时自动核对现有四槽并分配所选端口，不必先手工接通道。首次使用需确认已有可恢复备份；不自动部署、不强占。开始监测不会开启输出，关闭输出也不会创建路由。记录期间参数锁生效：另一测量面板可以加入已经接好的输入，需改路由时提示先停止记录。信号源仅连接已读回为关闭且未驱动其他目的端的空闲逻辑通道，不替换现有其他来源。已有示波器显示源须启用。不同角色不使用第四槽。关闭面板不释放整机所有权；最后在设备池断开设备。断开不等于关闭输出。
 
+## 可调采集参数
+
+两个面板均可设置物理输入的阻抗、耦合、衰减和 300 / 600 MHz 模拟带宽，默认保留已有带宽。应用后立即读回，随后两个面板的采集帧也携带相同物理输入的前端快照。[四槽模式模拟前端](https://apis.liquidinstruments.com/api/reference/mim/set_frontend.html)
+
+示波器的“采集参数”可设触发点两侧的时窗和帧点数上限（128 至 16384 的二次幂）、普通或精密采集、Linear / SinX / Gaussian 插值。边沿触发支持当前物理输入对应的显示通道或外部触发源、Auto / Normal、上升沿 / 下降沿 / 双沿和 −20 至 +20 V 电平。面板独立读回时窗、采样率、采集模式与插值方式，实际点数取自返回帧。触发设置显示写入回执。[厂商时基](https://apis.liquidinstruments.com/api/reference/oscilloscope/set_timebase.html) · [边沿触发](https://apis.liquidinstruments.com/api/reference/oscilloscope/set_trigger.html) · [示波器读回](https://apis.liquidinstruments.com/api/reference/oscilloscope/getters.html)
+
+频谱仪支持起止频率或中心频率与跨度两种输入方式，Moku:Pro 的 4.4 API 端点范围为 0 至 300 MHz。RBW 可选自动、手动或最小，面板显示设备取整后的实际带宽。可选九种窗函数，也可按秒设置帧平均的目标时长。频段、RBW 和窗函数有独立读回，平均时长显示写入回执。时基、频段等设置作用于所在仪器槽的全部通道。[频段](https://apis.liquidinstruments.com/api/reference/specan/set_span.html) · [RBW](https://apis.liquidinstruments.com/api/reference/specan/set_rbw.html) · [窗函数](https://apis.liquidinstruments.com/api/reference/specan/set_window.html) · [帧平均](https://apis.liquidinstruments.com/api/reference/specan/set_averaging.html)
+
 ## 文件与公共依赖
 
 [协议](protocol.py)、[适配器](adapter.py)、[DNS-SD](discovery.py)、[工作页](workspace.py)、[实机计划](hardware/README.md)。锁、调度、记录、回放与文件布局复用公共层。
@@ -27,7 +35,7 @@
 
 石墨工作区从信号源、示波器和频谱仪三个分类打开同一台 Moku:Pro。运行
 `python -m pytest src/lab_control/instruments/devices/liquid_moku_pro/tests/test_graphite_loopback.py`
-可复现 CH1 模拟回接。用例通过面板设置 100 mVpp 的 10 kHz 和 20 kHz 正弦波，验证时域周期、频谱主峰、独立停止记录与关闭输出后的对照，在 pytest 临时目录保存三张面板截图和模拟读数。
+可复现 CH1 模拟回接。用例通过面板设置 100 mVpp 的 10 kHz 和 20 kHz 正弦波，验证时窗、下降沿触发点、频段、手动 RBW 读回、独立停止记录与关闭输出后的对照，在 pytest 临时目录保存面板截图和模拟读数。
 
 | 功能 / 通道 | 证据 | 分项结果 |
 |---|---|---|

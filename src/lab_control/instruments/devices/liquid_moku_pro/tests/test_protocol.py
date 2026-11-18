@@ -27,6 +27,15 @@ class Wire:
         }
         self.frame = None
         self.change = False
+        self.settings = {
+            "timebase": {"t1": 0, "t2": 0.0005},
+            "acquisition_mode": {"mode": "Normal"},
+            "interpolation": {"interpolation": "SinX"},
+            "span": {"frequency1": 0, "frequency2": 20000},
+            "rbw": {"mode": "Auto", "value": 100},
+            "window": {"window": "Hann"},
+        }
+        self.max_length = 1024
 
     def close(self):
         pass
@@ -60,10 +69,20 @@ class Wire:
                 {k: params[k] for k in ("bandwidth", "attenuation", "coupling", "impedance")}
             )
             return self.front[params["channel"]].copy()
-        if path.endswith("/get_rbw"):
-            return {"rbw_value": 100}
-        if path.endswith("/get_window"):
-            return {"window": "Hanning"}
+        action = path.rsplit("/", 1)[-1]
+        if action.startswith("get_") and action[4:] in self.settings:
+            assert method == "GET"
+            return self.settings[action[4:]].copy()
+        if action.startswith("set_") and action[4:] in (*self.settings, "trigger", "averaging"):
+            assert method == "POST" and params["strict"] is True
+            name = action[4:]
+            actual = {k: v for k, v in params.items() if k != "strict"}
+            if name == "timebase":
+                self.max_length = actual.pop("max_length")
+            if name == "rbw":
+                actual["value"] = max(100, round(actual.pop("rbw_value", 100) / 100) * 100)
+            self.settings[name] = actual
+            return actual.copy()
         if path.endswith("/get_samplerate"):
             return {"sample_rate": 1e6}
         if path.endswith("/summary"):
@@ -76,10 +95,6 @@ class Wire:
             return params.copy()
         if path == "slot1/oscilloscope/get_sources":
             return [{"channel": 2, "enabled": True, "source": "Input1"}]
-        if path.endswith("/get_timebase"):
-            return {"timebase1": 0, "timebase2": 0.0005}
-        if path.endswith("/get_span"):
-            return {"frequency1": 0, "frequency2": 20000}
         if path.endswith("/get_data"):
             if self.change:
                 self.front[1]["coupling"] = "AC"
@@ -99,6 +114,80 @@ def instrument():
     assert not wire.calls
     dev.apply(DeviceCommand("attach_workspace", confirmed=True))
     return dev, wire
+
+
+@pytest.mark.parametrize(
+    "op,params",
+    [
+        ("scope_timebase", {"t1": -0.002, "t2": -0.002, "max_length": 128}),
+        ("scope_timebase", {"t1": 0, "t2": 0.001, "max_length": 500}),
+        ("scope_trigger", {"source": "CURRENT", "mode": "AUTO", "edge": "BOTH", "level": 21}),
+        ("spectrum_span", {"frequency1": 10, "frequency2": 5}),
+        ("spectrum_span", {"frequency1": 0, "frequency2": 300e6 + 1}),
+        ("spectrum_rbw", {"mode": "Manual"}),
+        ("spectrum_rbw", {"mode": "Manual", "rbw_value": 0}),
+        ("spectrum_rbw", {"mode": "Auto", "rbw_value": 100}),
+        ("spectrum_averaging", {"target_duration": -0.1}),
+    ],
+)
+def test_invalid_capture_settings_send_no_packets(op, params):
+    dev, wire = instrument()
+    wire.calls.clear()
+    with pytest.raises(DeviceError):
+        dev.apply(DeviceCommand(op, params, 1, True))
+    assert not wire.calls
+
+
+@pytest.mark.parametrize("mode", ["Auto", "Minimum", "Manual"])
+def test_rbw_uses_actual_bandwidth_and_scoped_routes(mode):
+    dev, wire = instrument()
+    params = {"mode": mode, **({"rbw_value": 275} if mode == "Manual" else {})}
+    result = dev.apply(DeviceCommand("spectrum_rbw", params, 4, True))
+    assert wire.calls[-2:] == [
+        ("POST", "slot3/spectrumanalyzer/set_rbw", {**params, "strict": True}),
+        ("GET", "slot3/spectrumanalyzer/get_rbw", None),
+    ]
+    assert result.readback == {"mode": mode, "rbw_value": 300 if mode == "Manual" else 100}
+
+
+def test_external_trigger_without_input_and_hardware_format_ack(monkeypatch):
+    dev, wire = instrument()
+    original = wire.call
+
+    def response(method, path, params=None):
+        reply = original(method, path, params)
+        if path.endswith("/set_trigger"):
+            return {
+                "Trigger channel": reply["source"],
+                "Trigger type": "Edge",
+                "Trigger mode": reply["mode"],
+                "Trigger edge": reply["edge"],
+                "level": reply["level"],
+            }
+        return reply
+
+    monkeypatch.setattr(wire, "call", response)
+    params = {"source": "External", "mode": "Normal", "edge": "Both", "level": -0.25}
+    result = dev.apply(DeviceCommand("scope_trigger", params, 4, True))
+    assert result.acknowledged and result.readback["source"] == "External"
+    assert wire.calls[-1][1] == "slot1/oscilloscope/set_trigger"
+    with pytest.raises(DeviceError):
+        dev.apply(DeviceCommand("scope_trigger", {**params, "source": "Current"}, 4, True))
+    assert sum(path.endswith("/set_trigger") for _, path, _ in wire.calls) == 1
+
+
+def test_capture_readback_mismatch_does_not_repeat_write(monkeypatch):
+    dev, wire = instrument()
+    original = wire.call
+
+    def response(method, path, params=None):
+        reply = original(method, path, params)
+        return {"window": "Rectangular"} if path.endswith("/get_window") else reply
+
+    monkeypatch.setattr(wire, "call", response)
+    with pytest.raises(DeviceError):
+        dev.apply(DeviceCommand("spectrum_window", {"window": "Hamming"}, 1, True))
+    assert sum(path.endswith("/set_window") for _, path, _ in wire.calls) == 1
 
 
 @pytest.mark.parametrize("ch", CHANNELS)
@@ -192,6 +281,14 @@ def test_shared_frontend_readback_and_fourth_slot_protection():
     with pytest.raises(DeviceError):
         dev.apply(DeviceCommand("shared_frontend", params, 1, True))
     assert len([p for _, p, _ in wire.calls if p == "mim/set_frontend"]) == 1
+
+
+def test_editing_only_bandwidth_preserves_live_frontend():
+    dev, wire = instrument()
+    wire.front[1].update(impedance="1MOhm", coupling="AC", attenuation="20dB")
+    result = dev.apply(DeviceCommand("shared_frontend", {"bandwidth": "600MHz"}, 1, True))
+    assert result.readback == dict(impedance="1MOhm", coupling="AC", attenuation="20dB", bandwidth="600MHz")
+    assert dev.acquire(AcquisitionRequest("spectrum")).configuration["frontend"] == result.readback
 
 
 def test_first_output_allocates_after_safety_checks_and_stop_never_allocates():

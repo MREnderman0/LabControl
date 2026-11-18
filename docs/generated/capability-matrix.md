@@ -10,7 +10,7 @@ JSON 的 control_page 表示型号所在页面，不保证每项底层能力都�
 
 | 型号 | 注册 ID | 操作数 | 采集 | 详情 |
 | --- | --- | --- | --- | --- |
-| Moku:Pro | `liquid.moku_pro` | 6 | waveform/spectrum | [型号卡片](../devices/oscilloscopes/moku-pro.md) |
+| Moku:Pro | `liquid.moku_pro` | 14 | waveform/spectrum | [型号卡片](../devices/oscilloscopes/moku-pro.md) |
 | PicoScope 6404E | `pico.6404e` | 6 | block/streaming | [型号卡片](../devices/oscilloscopes/picoscope-6404e.md) |
 | Thorlabs PM100D + S154C | `thorlabs.pm100d` | 8 | scalar | [型号卡片](../devices/measurement-analyzers/thorlabs-pm100d-s154c.md) |
 | R&S RTM3004 | `rs.rtm3004` | 34 | rtm | [型号卡片](../devices/oscilloscopes/rtm3004.md) |

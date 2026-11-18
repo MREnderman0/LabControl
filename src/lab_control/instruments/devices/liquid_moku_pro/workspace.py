@@ -32,7 +32,9 @@ from lab_control.ui.pages.monitoring.spectrum_markers import SpectrumPlot
 from lab_control.ui.widgets.device_selector import DeviceSelector
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
-from .adapter import LABELS
+from .adapter import FRONTEND, LABELS
+from .capture_controls import CaptureControls
+from .capture_settings import field
 from .protocol import CHANNELS
 from .source_card import GeneratorCard
 
@@ -161,23 +163,31 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.settings = QLabel("等待首帧")
         self.settings.setWordWrap(True)
         side.addWidget(self.settings)
+        self.capture = CaptureControls(self)
+        side.addWidget(self.capture)
         front_title = QLabel("共享模拟前端")
         front_title.setObjectName("sectionTitle")
         side.addWidget(front_title)
         fields = QFormLayout()
         side.addLayout(fields)
-        self.impedance, self.coupling, self.attenuation = (WorkspaceComboBox() for _ in range(3))
-        for label, box, options in (
-            ("输入阻抗", self.impedance, ("50Ohm", "1MOhm")),
-            ("输入耦合", self.coupling, ("DC", "AC")),
-            ("输入衰减", self.attenuation, ("0dB", "20dB", "40dB")),
-        ):
-            box.addItems(options)
-            fields.addRow(label, box)
+        titles = {
+            "impedance": "输入阻抗",
+            "coupling": "输入耦合",
+            "attenuation": "输入衰减",
+            "bandwidth": "模拟带宽",
+        }
+        self.front_fields = {}
+        for key, options in FRONTEND.items():
+            box = self.front_fields[key] = WorkspaceComboBox()
+            box.addItem("保持当前", None)
+            for option in options:
+                box.addItem(option, option)
+            fields.addRow(titles[key], box)
+            box.currentIndexChanged.connect(self.refresh_status)
         self.readback = QLabel("未读回")
         self.readback.setWordWrap(True)
         side.addWidget(self.readback)
-        self.apply_front = self._button(panel.footer(), "应用前端", self.apply_frontend, variant="primary")
+        self.apply_front = self._button(side, "应用前端", self.apply_frontend)
         if isinstance(self.plot, SpectrumPlot):
             self.marker_plot = self.plot
             self.markers = []
@@ -209,15 +219,30 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.controller.frame_ready.connect(self.refresh_plot)
 
     def apply_frontend(self):
+        params = {key: box.currentData() for key, box in self.front_fields.items() if box.currentData()}
+        if not params:
+            return
+        ch, session = self.channel, self.state.get("sessionId")
+
+        def completed(result):
+            if self.channel == ch and self.state.get("sessionId") == session:
+                self.show_frontend(result.readback)
+                for key, value in params.items():
+                    if self.front_fields[key].currentData() == value:
+                        self.front_fields[key].setCurrentIndex(0)
+
         self.command(
             "shared_frontend",
-            {
-                "impedance": self.impedance.currentText(),
-                "coupling": self.coupling.currentText(),
-                "attenuation": self.attenuation.currentText(),
-            },
-            f"修改 ch{self.channel} 的阻抗、耦合和衰减？两个测量面板共用这一物理前端。",
+            params,
+            f"将模拟前端设置应用到 CH {self.channel}？示波器与频谱仪共用这一物理输入。",
+            on_success=completed,
         )
+
+    def show_frontend(self, frontend):
+        for key, box in self.front_fields.items():
+            current = frontend.get(key)
+            box.setItemText(0, "当前 · " + str(current) if current is not None else "保持当前")
+        self.readback.setText("读回：" + " / ".join(str(frontend.get(key, "—")) for key in FRONTEND))
 
     def add_center_marker(self):
         trace = self.marker_plot.trace
@@ -277,17 +302,24 @@ class RolePage(SpectrumMarkerActions, QWidget):
             == QMessageBox.StandardButton.Yes
         )
 
-    def command(self, op, params, message, *, channel=None):
+    def command(self, op, params, message, *, channel=None, on_success=None):
         ch = self.channel if channel is None else channel
         if not self._confirm(message):
             return
+
+        def finished(result):
+            if result.outcome != "success":
+                self.status.setText(result.error)
+                return
+            self.status.setText(f"CH {ch} · 设备已确认命令")
+            if on_success:
+                on_success(result)
+
         try:
             self.controller.apply(
                 self.device_id,
                 DeviceCommand(op, params, ch, confirmed=True),
-                lambda r: self.status.setText(
-                    f"CH {ch} · 设备已确认命令" if r.outcome == "success" else r.error
-                ),
+                finished,
                 lambda e: self.status.setText(str(e)),
             )
         except Exception as exc:
@@ -394,13 +426,18 @@ class RolePage(SpectrumMarkerActions, QWidget):
         pending = self._start_ticket is not None
         running = bool(snap.get("running") and self.kind in snap.get("kinds", ()))
         recording = self.kind in snap.get("recording_kinds", ())
+        writable = writable and not snap.get("recording_kinds")
         show_state(self.dot, {**snap, "running": running, "recording": recording}, connected)
         self.monitor_button.setEnabled(connected and not pending and not running)
         self.record_button.setEnabled(connected and not pending and not recording)
         self.record_button.setText("记录中" if recording else "逐帧记录")
         self.stop_button.setEnabled(pending or running)
         self.channels.setEnabled(not (pending or running))
-        self.apply_front.setEnabled(writable and not pending)
+        self.apply_front.setEnabled(
+            writable and not pending and any(box.currentData() for box in self.front_fields.values())
+        )
+        self.capture.reset_session(state.get("sessionId"))
+        self.capture.apply_button.setEnabled(writable and not pending)
         self.export_button.setEnabled(self.last is not None and not snap.get("display_saving"))
         actual = snap.get("frame_interval")
         self.actual.setText(f"整机实际 {actual:.2f} s/帧" if actual is not None else "实际 — s/帧")
@@ -420,7 +457,9 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.settings.setText("等待首帧")
         self.last = None
         self.export_button.setEnabled(False)
-        self.frontend_draft_started = False
+        for box in self.front_fields.values():
+            box.setItemText(0, "保持当前")
+            box.setCurrentIndex(0)
         if self.kind == "spectrum":
             self.marker_key = f"spectrum-markers/{self.controller.mode}/{self.device_id}/ch{self.channel}"
             self.markers = []
@@ -433,12 +472,14 @@ class RolePage(SpectrumMarkerActions, QWidget):
 
     def show_settings(self, settings):
         def value(group, key, unit):
-            raw = settings.get(group, {}).get(key)
+            raw = field(settings.get(group, {}), key)
             return engineering(raw, unit) if isinstance(raw, (int, float)) and isfinite(raw) else "—"
 
         if self.kind == "waveform":
-            low, high = (value("timebase", k, "s") for k in ("timebase1", "timebase2"))
-            return f"时窗　{low} ～ {high}\n采样率　{value('samplerate', 'sample_rate', 'Sa/s')}"
+            low, high = (value("timebase", k, "s") for k in ("t1", "t2"))
+            mode = field(settings.get("acquisition_mode"), "mode") or "—"
+            interpolation = field(settings.get("interpolation"), "interpolation") or "—"
+            return f"时窗　{low} ～ {high}\n采样率　{value('samplerate', 'sample_rate', 'Sa/s')}\n采集　{mode} / {interpolation}"
         low, high = (value("span", k, "Hz") for k in ("frequency1", "frequency2"))
         window = settings.get("window", {}).get("window", "—")
         return f"频段　{low} ～ {high}\nRBW　{value('rbw', 'rbw_value', 'Hz')}\n窗函数　{window}"
@@ -471,20 +512,9 @@ class RolePage(SpectrumMarkerActions, QWidget):
             self.readouts.set("peak", engineering(float(m.axis[peak]), "Hz"))
             self.readouts.set("level", f"{m.values[peak]:.2f} {m.unit}")
         self.readouts.set("samples", str(m.values.size))
-        self.readback.setText(
-            "读回：" + " / ".join(str(f.get(k, "—")) for k in ("impedance", "coupling", "attenuation"))
-        )
+        self.show_frontend(f)
         self.settings.setText(self.show_settings(frame.batch.configuration["settings"]))
-        if not self.frontend_draft_started:
-            for key, box in (
-                ("impedance", self.impedance),
-                ("coupling", self.coupling),
-                ("attenuation", self.attenuation),
-            ):
-                idx = box.findText(str(f.get(key, "")), Qt.MatchFlag.MatchFixedString)
-                if idx >= 0:
-                    box.setCurrentIndex(idx)
-            self.frontend_draft_started = True
+        self.capture.sync(frame.batch.configuration["settings"])
         self.last = frame
         self.service.displayed(self.device_id, frame)
         self.export_button.setEnabled(True)

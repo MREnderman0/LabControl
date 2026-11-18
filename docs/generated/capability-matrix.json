@@ -56,7 +56,7 @@
                 "50OHM",
                 "1MOHM"
               ],
-              "required": true,
+              "required": false,
               "range_source": "model",
               "resolution": null
             },
@@ -66,10 +66,10 @@
               "minimum": null,
               "maximum": null,
               "choices": [
-                "AC",
-                "DC"
+                "DC",
+                "AC"
               ],
-              "required": true,
+              "required": false,
               "range_source": "model",
               "resolution": null
             },
@@ -83,7 +83,20 @@
                 "20DB",
                 "40DB"
               ],
-              "required": true,
+              "required": false,
+              "range_source": "model",
+              "resolution": null
+            },
+            "bandwidth": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "300MHZ",
+                "600MHZ"
+              ],
+              "required": false,
               "range_source": "model",
               "resolution": null
             }
@@ -98,7 +111,7 @@
           "option": "",
           "available": true,
           "reason": "",
-          "partial_update": "none",
+          "partial_update": "native",
           "implementation": "implemented",
           "schema_tested": false,
           "protocol_fixture_tested": false,
@@ -125,6 +138,372 @@
           "protocol_fixture_tested": false,
           "hardware_passed": false,
           "ui_label": "连接现有四槽配置",
+          "ui_location": ""
+        },
+        {
+          "name": "scope_timebase",
+          "parameters": {
+            "t1": {
+              "kind": "number",
+              "unit": "s",
+              "minimum": null,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "t2": {
+              "kind": "number",
+              "unit": "s",
+              "minimum": null,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "max_length": {
+              "kind": "integer",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "128",
+                "256",
+                "512",
+                "1024",
+                "2048",
+                "4096",
+                "8192",
+                "16384"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "示波器时基",
+          "ui_location": ""
+        },
+        {
+          "name": "scope_trigger",
+          "parameters": {
+            "source": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "CURRENT",
+                "EXTERNAL"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "mode": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "AUTO",
+                "NORMAL"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "edge": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "RISING",
+                "FALLING",
+                "BOTH"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "level": {
+              "kind": "number",
+              "unit": "V",
+              "minimum": -20,
+              "maximum": 20,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": true,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "示波器边沿触发",
+          "ui_location": ""
+        },
+        {
+          "name": "scope_acquisition",
+          "parameters": {
+            "mode": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "NORMAL",
+                "PRECISION"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "示波器采集模式",
+          "ui_location": ""
+        },
+        {
+          "name": "scope_interpolation",
+          "parameters": {
+            "interpolation": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "LINEAR",
+                "SINX",
+                "GAUSSIAN"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "示波器波形插值",
+          "ui_location": ""
+        },
+        {
+          "name": "spectrum_span",
+          "parameters": {
+            "frequency1": {
+              "kind": "number",
+              "unit": "Hz",
+              "minimum": 0,
+              "maximum": 300000000.0,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "frequency2": {
+              "kind": "number",
+              "unit": "Hz",
+              "minimum": 0,
+              "maximum": 300000000.0,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "频谱分析频段",
+          "ui_location": ""
+        },
+        {
+          "name": "spectrum_rbw",
+          "parameters": {
+            "mode": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "AUTO",
+                "MANUAL",
+                "MINIMUM"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            },
+            "rbw_value": {
+              "kind": "number",
+              "unit": "Hz",
+              "minimum": 0,
+              "maximum": null,
+              "choices": [],
+              "required": false,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "频谱分辨率带宽",
+          "ui_location": ""
+        },
+        {
+          "name": "spectrum_window",
+          "parameters": {
+            "window": {
+              "kind": "enum",
+              "unit": "",
+              "minimum": null,
+              "maximum": null,
+              "choices": [
+                "RECTANGULAR",
+                "BARTLETT",
+                "HAMMING",
+                "HANN",
+                "BLACKMANHARRIS",
+                "FLATTOP",
+                "NUTTALL",
+                "GAUSSIAN",
+                "KAISER"
+              ],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "频谱窗函数",
+          "ui_location": ""
+        },
+        {
+          "name": "spectrum_averaging",
+          "parameters": {
+            "target_duration": {
+              "kind": "number",
+              "unit": "s",
+              "minimum": 0,
+              "maximum": null,
+              "choices": [],
+              "required": true,
+              "range_source": "model",
+              "resolution": null
+            }
+          },
+          "readable": false,
+          "writable": true,
+          "requires_confirmation": true,
+          "channel_scoped": false,
+          "source": "",
+          "section": "",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": false,
+          "hardware_passed": false,
+          "ui_label": "频谱帧平均",
           "ui_location": ""
         },
         {
