@@ -81,7 +81,7 @@ def desktop_commands(python: Path, output: Path) -> list[list[str]]:
             "scripts/check_desktop.py",
             "--check-agent-default",
             "--bundle",
-            str(output / "bundle/TF-LabControl"),
+            str(output / "bundle/LabControl"),
             "--report",
             str(output / "frozen-smoke.json"),
         ],

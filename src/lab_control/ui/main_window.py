@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
         self.current_submenu = "总览"
         self.nav_buttons: dict[str, QPushButton] = {}
         self.submenu_buttons: list[QPushButton] = []
-        self.setWindowTitle("TF LabControl · 设计演示")
+        self.setWindowTitle("LabControl · 设计演示")
         self.resize(1440, 900)
         self.setMinimumSize(1180, 760)
         self._build()

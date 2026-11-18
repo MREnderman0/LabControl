@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import re
 import ssl
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import urlencode, urlsplit
 
 import httpx2
+import mcp.types as types
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.lowlevel import Server
@@ -54,6 +57,77 @@ async def remote_client(config, verify):
             yield client
 
 
+async def client_call(client, config, verify, name, arguments):
+    from lab_control.storage.frame_files import directory, filename, publish
+
+    remote_save = (
+        name == "save_frame" and arguments.get("destination") == "client" and arguments.get("directory")
+    )
+    if name != "download_frame" and not remote_save:
+        return await client.call_tool(name, arguments)
+    try:
+        folder = directory(arguments["directory"])
+        folder.mkdir(parents=True, exist_ok=True)
+        grant = arguments["grant_id"]
+        if remote_save:
+            submitted = await client.call_tool(name, {**arguments, "directory": ""})
+            if submitted.is_error:
+                return submitted
+            task_id = submitted.structured_content["data"]["id"]
+        else:
+            task_id = arguments["task_id"]
+        while True:
+            status = await client.call_tool("get_task_status", {"grant_id": grant, "task_id": task_id})
+            if status.is_error:
+                return status
+            task = status.structured_content["data"]
+            if task["id"] != task_id:
+                raise ValueError("Unexpected task identity")
+            if task["state"] not in {"accepted", "running", "stopping"}:
+                break
+            await asyncio.sleep(0.25)
+        result = task["result"]
+        if (
+            task["state"] != "completed"
+            or result.get("operation") != "save_frame"
+            or result["destination"] != "client"
+        ):
+            raise ValueError(task.get("error") or "Task has no completed client frame")
+        stem = filename(result["stem"])
+        expected = {"both": ["png", "csv"], "png": ["png"], "csv": ["csv"]}[result["mode"]]
+        if [f["format"] for f in result["files"]] != expected:
+            raise ValueError("Incomplete frame manifest")
+        with TemporaryDirectory(dir=folder, prefix=".frame-") as stage:
+            staged = {}
+            for info in result["files"]:
+                ext = info["format"]
+                path = Path(stage) / ("frame." + ext)
+                await asyncio.to_thread(download, config, verify, info["artifact_id"], grant, path)
+                with path.open("rb") as stream:
+                    if (
+                        path.stat().st_size != info["size"]
+                        or hashlib.file_digest(stream, "sha256").hexdigest() != info["sha256"]
+                    ):
+                        raise ValueError("Incomplete frame download")
+                staged[ext] = path
+            last = await client.call_tool(
+                "get_artifact", {"grant_id": grant, "artifact_id": info["artifact_id"]}
+            )
+            if last.is_error:
+                return last
+            targets = publish(folder, stem, staged)
+        for info in result["files"]:
+            info["path"] = str(targets[info["format"]])
+        payload = {"ok": True, "data": task}
+    except (OSError, ValueError, KeyError, httpx2.HTTPError) as exc:
+        payload = {"ok": False, "message": str(exc), "task_id": locals().get("task_id", "")}
+    return types.CallToolResult(
+        is_error=not payload["ok"],
+        structured_content=payload,
+        content=[types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
+    )
+
+
 async def bridge(config, verify, *, check=False):
     async with remote_client(config, verify) as client:
         if check:
@@ -62,15 +136,31 @@ async def bridge(config, verify, *, check=False):
             return 1 if result.is_error else 0
 
         async def list_tools(_context, params):
-            return await client.list_tools(cursor=params.cursor if params else None, cache_mode="refresh")
+            listing = await client.list_tools(cursor=params.cursor if params else None, cache_mode="refresh")
+            if any(tool.name == "save_frame" for tool in listing.tools):
+                listing.tools.append(
+                    types.Tool(
+                        name="download_frame",
+                        description="下载原单帧任务到本机目录，可在传输中断后重试。",
+                        input_schema={
+                            "type": "object",
+                            "properties": {
+                                k: {"type": "string"} for k in ("grant_id", "task_id", "directory")
+                            },
+                            "required": ["grant_id", "task_id", "directory"],
+                            "additionalProperties": False,
+                        },
+                    )
+                )
+            return listing
 
         async def call_tool(_context, params):
             # The remote service owns accepted task lifetimes and request IDs.
             # Losing this stdio connection must not cancel its device work.
-            return await client.call_tool(params.name, params.arguments or {})
+            return await client_call(client, config, verify, params.name, params.arguments or {})
 
         server = Server(
-            "TF LabControl connector", version="1.0", on_list_tools=list_tools, on_call_tool=call_tool
+            "LabControl connector", version="1.0", on_list_tools=list_tools, on_call_tool=call_tool
         )
         async with stdio_server() as (read, write):
             await server.run(read, write, server.create_initialization_options())
@@ -79,7 +169,7 @@ async def bridge(config, verify, *, check=False):
 
 async def call_once(config, verify, name, arguments):
     async with remote_client(config, verify) as client:
-        result = await client.call_tool(name, arguments)
+        result = await client_call(client, config, verify, name, arguments)
         payload = result.structured_content
         if payload is None:
             payload = {"ok": not result.is_error, "content": [item.model_dump() for item in result.content]}
@@ -118,7 +208,7 @@ def download(config, verify, artifact: str, grant: str, output: Path):
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="TF LabControl MCP connector (no instrument access)")
+    parser = argparse.ArgumentParser(description="LabControl MCP connector (no instrument access)")
     parser.add_argument("--connection", required=True, type=Path)
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--check", action="store_true")

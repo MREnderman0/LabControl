@@ -105,10 +105,13 @@ class AgentLedger:
         return [v for v in values if v["state"] in ACTIVE] if active_only else values
 
     def save_artifact(self, value: dict) -> None:
+        self.save_artifacts([value])
+
+    def save_artifacts(self, values: list[dict]) -> None:
         with self.repository.lock, self.repository.db:
-            self.repository.db.execute(
+            self.repository.db.executemany(
                 "INSERT OR REPLACE INTO agent_artifacts VALUES (?, ?)",
-                (value["id"], json.dumps(value, ensure_ascii=False)),
+                [(value["id"], json.dumps(value, ensure_ascii=False)) for value in values],
             )
 
     def artifacts(self, task_id: str = "") -> list[dict]:

@@ -108,7 +108,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="New output directory; existing builds are preserved")
     args = parser.parse_args()
     output = (args.output or ROOT / "dist" / args.distribution).resolve()
-    if (output / "TF-LabControl").exists():
+    if (output / "LabControl").exists():
         parser.error("Output already exists; use --output with a new directory to preserve this build")
     command = [sys.executable, str(ROOT / "scripts/check_deployment.py"), "--distribution", args.distribution]
     for cache in args.cache or []:
@@ -174,7 +174,10 @@ def main() -> int:
         env={**build_environment(), "LABCONTROL_BUILD_MANIFEST": str(destination / "release-manifest.json")},
         check=True,
     )
-    target = output / "TF-LabControl"
+    target = output / "LabControl"
+    # Existing shortcuts and exported connector configurations may use the old EXE names.
+    for executable in ("LabControl.exe", "LabControl-Agent.exe"):
+        shutil.copy2(target / executable, target / ("TF-" + executable))
     if args.distribution == "offline":
         stage_offline_packages(target, components, tuple(args.cache) if args.cache else None)
     maintenance = target / "maintenance"

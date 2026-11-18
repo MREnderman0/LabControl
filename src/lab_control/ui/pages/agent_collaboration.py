@@ -434,7 +434,7 @@ class AgentCollaborationPanel(QWidget):
         if not destination:
             return
         if getattr(sys, "frozen", False):
-            command = str(Path(sys.executable).with_name("TF-LabControl-Agent.exe"))
+            command = str(Path(sys.executable).with_name("LabControl-Agent.exe"))
             args = ["--agent-connector", "--connection", connection]
         else:
             command = sys.executable

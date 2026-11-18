@@ -39,7 +39,7 @@
 
 reviews/archive 报告及模板必须有对应标记；redirect 必须指向一个本地规范 Markdown，不允许跳转链或循环，保留的旧锚点必须在目标存在。现行命令禁止裸 `uv run/build/sync/pip/lock/export`，使用已有项目环境；历史证据不改写旧命令。旧文件与旧标题锚点保留后，现行导航应直接链接规范目标。
 
-命令检查只读取源码 AST，不导入目标脚本、不运行命令或 `--help`。检查现行 shell 代码块及缩进命令中的 `python scripts/...py` / `python examples/...py`（含项目解释器路径）的脚本存在性；对本文件直接构建且参数声明完整的 argparse，检查未知选项及可静态确认的字面量 choices。正式 `run.bat`、`lab-control`、`TF-LabControl.exe` 和 `python -m lab_control` 的 GUI/CLI 参数按对应源码检查；旧 run_* 启动器、演示启动器和绕过模块分发的启动方式会报错。
+命令检查只读取源码 AST，不导入目标脚本、不运行命令或 `--help`。检查现行 shell 代码块及缩进命令中的 `python scripts/...py` / `python examples/...py`（含项目解释器路径）的脚本存在性；对本文件直接构建且参数声明完整的 argparse，检查未知选项及可静态确认的字面量 choices。正式 `run.bat`、`lab-control`、`LabControl.exe` 和 `python -m lab_control` 的 GUI/CLI 参数按对应源码检查；旧 run_* 启动器、演示启动器和绕过模块分发的启动方式会报错。
 
 动态参数名、导入的 parser 工厂及继承 parser 无法静态列全选项时，不猜测未知参数；变量、占位符和非 shell 示例不执行求值。当前不验证参数值类型、必填值数量、子命令位置、配置/设备内容，也不解析 PowerShell 安装脚本、任意第三方模块或行内命令。这些边界须由对应软件测试覆盖，不能把文档检查通过当作命令已实际执行。
 

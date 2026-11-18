@@ -59,7 +59,7 @@ def test_desktop_checks_use_offline_materials_and_unique_output(tmp_path):
     commands = entry["desktop_commands"](tmp_path / "python.exe", tmp_path / "new-run")
     assert "--offline" in commands[0] and "--no-build-isolation" in commands[0]
     assert commands[2][-2:] == ["--output", str(tmp_path / "new-run/bundle")]
-    assert str(tmp_path / "new-run/bundle/TF-LabControl") in commands[3]
+    assert str(tmp_path / "new-run/bundle/LabControl") in commands[3]
     assert all("dist/" not in value.replace("\\", "/") for command in commands for value in command)
 
 

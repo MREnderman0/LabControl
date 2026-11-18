@@ -63,7 +63,7 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
     connection = runtime.repository.root / "connector.json"
     service.server.export_connection(connection, lan=True)
     if connector is None and getattr(sys, "frozen", False):
-        connector = Path(sys.executable).with_name("TF-LabControl-Agent.exe")
+        connector = Path(sys.executable).with_name("LabControl-Agent.exe")
     command = str(connector) if connector else sys.executable
     arguments = ([] if connector else ["-m", "lab_control"]) + [
         "--agent-connector",
@@ -74,7 +74,8 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
 
     async def flow():
         async with Client(parameters, mode="legacy", read_timeout_seconds=20) as remote:
-            assert len((await remote.list_tools()).tools) == 26
+            tools = (await remote.list_tools()).tools
+            assert len(tools) == 28 and {"save_frame", "download_frame"} <= {t.name for t in tools}
 
             async def call(name, **kwargs):
                 result = await remote.call_tool(name, kwargs)
@@ -105,6 +106,32 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
             scope = {"grant_id": grant, "device_id": device}
             await settled(await call("connect_device", **scope, request_id="sdk-connect"))
             await call("get_capabilities", **scope)
+            folder = runtime.repository.root / "连接器 本机导出"
+            frame = await call(
+                "save_frame",
+                **scope,
+                source="waveform",
+                channel=1,
+                mode="both",
+                destination="client",
+                directory=str(folder),
+                stem="同一帧",
+                request_id="sdk-frame",
+            )
+            assert frame["state"] == "completed" and {f["format"] for f in frame["result"]["files"]} == {
+                "csv",
+                "png",
+            }
+            assert all(
+                Path(f["path"]).parent == folder and Path(f["path"]).stat().st_size == f["size"]
+                for f in frame["result"]["files"]
+            )
+            copied = await call(
+                "download_frame", grant_id=grant, task_id=frame["id"], directory=str(folder / "重传")
+            )
+            assert copied["id"] == frame["id"] and all(
+                Path(f["path"]).is_file() for f in copied["result"]["files"]
+            )
             preview = await call("preview_change", **scope, operation="timebase", parameters={"value": 0.002})
             await settled(
                 await call("apply_change", **scope, preview_id=preview["id"], request_id="sdk-apply")
@@ -188,7 +215,7 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
         "tls": True,
         "legacy_protocol": True,
         "tokenless": True,
-        "tools": 26,
+        "tools": 28,
         "single_call_json": True,
         "waveform_metrics": True,
         "download_bytes": artifact["size"],

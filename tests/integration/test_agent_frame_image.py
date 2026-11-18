@@ -211,3 +211,139 @@ def test_desktop_auto_grant_new_conflicting_serialless_revoke_restart(tmp_path, 
         refreshed = grants(runtime)[0]
         assert refreshed["id"] != grant["id"] and len(refreshed["devices"]) == 3
         panel.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("model", "source", "mode"),
+    [
+        ("rs.rto64", "waveform", "both"),
+        ("rigol.dsa815", "spectrum", "png"),
+        ("pangu.kt616r", "reading", "csv"),
+    ],
+)
+def test_named_frame(experiment, tmp_path, monkeypatch, model, source, mode):
+    import csv
+    import hashlib
+
+    from lab_control.ui.widgets import publication_figure
+
+    agent = experiment.agent
+    device = connect(experiment, model)
+    grant = agent.grant_all_devices()[0]
+    scope = ("internal", grant, device)
+    folder = tmp_path / "试验 A"
+    folder.mkdir()
+    (folder / "无关.txt").write_bytes(b"private")
+    adapter = experiment.sessions.sessions[device].adapter
+    acquire = adapter.acquire
+    reads = []
+
+    def read(request):
+        batch = acquire(request)
+        reads.append(batch)
+        return batch
+
+    monkeypatch.setattr(adapter, "acquire", read)
+    plotted = []
+    render = publication_figure.export_figure
+
+    def plot(path, curves, *args, **kwargs):
+        plotted.extend(curves)
+        return render(path, curves, *args, **kwargs)
+
+    monkeypatch.setattr(publication_figure, "export_figure", plot)
+
+    def call(key, dest="labcontrol", **override):
+        options = dict(
+            source=source,
+            channel=1,
+            mode=mode,
+            destination=dest,
+            stem="工况 A",
+            request_id=key,
+            directory=str(folder),
+        )
+        return agent.save_frame(*scope, **(options | override))
+
+    task = call("first")
+    status = wait(agent, scope, task)
+    assert status["state"] == "completed", status
+    result = status["result"]
+    assert call("first")["id"] == task["id"] and len(reads) == 1
+    files = {f["format"]: Path(f["path"]) for f in result["files"]}
+    assert set(files) == ({"png", "csv"} if mode == "both" else {mode})
+    for info in result["files"]:
+        path = files[info["format"]]
+        assert path == folder / ("工况 A." + info["format"])
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == info["sha256"]
+        assert (
+            agent.artifact_path("internal", grant, info["artifact_id"])[1].read_bytes() == path.read_bytes()
+        )
+    assert len(agent.list_artifacts("internal", grant, task["id"])) == len(files)
+    if "csv" in files:
+        with files["csv"].open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream))
+        assert len(rows) == result["points"] and {r["timestamp"] for r in rows} == {result["timestamp"]}
+        assert all(row["unit"] and row["channel"] == "1" for row in rows)
+        if mode == "both":
+            np.testing.assert_allclose([float(r["real"]) for r in rows], plotted[0][2])
+            np.testing.assert_allclose([float(r["axis"]) for r in rows], plotted[0][1])
+    if "png" in files:
+        assert QImage(str(files["png"])).width() > 500
+    again = wait(agent, scope, call("second"))["result"]
+    assert all(Path(f["path"]).stem == "工况 A-02" for f in again["files"])
+    staged = wait(agent, scope, call("client", "client", directory="X:/only-exists-on-client"))
+    assert staged["state"] == "completed" and all("path" not in f for f in staged["result"]["files"])
+    assert len(reads) == 3
+    bad = wait(agent, scope, call("bad", directory=str(folder / "无关.txt")))
+    assert bad["state"] == "failed" and len(reads) == 3
+    if mode == "csv":
+        assert wait(agent, scope, call("bad-mode", mode="both"))["state"] == "failed"
+        assert len(reads) == 3
+
+
+@pytest.mark.parametrize("failure", ["cancel", "revoke", "journal"])
+def test_named_frame_aborted_set_keeps_existing_files(experiment, tmp_path, monkeypatch, failure):
+    from lab_control.application.agents import single_frame
+
+    agent = experiment.agent
+    device = connect(experiment, "rigol.dsa815")
+    grant = agent.grant_all_devices()[0]
+    scope = ("internal", grant, device)
+    folder = tmp_path / "实验"
+    folder.mkdir()
+    before = folder / "已有.csv"
+    before.write_bytes(b"before")
+    started, release = Event(), Event()
+    render = single_frame.render
+
+    def paused(*args):
+        started.set()
+        assert release.wait(6)
+        return render(*args)
+
+    monkeypatch.setattr(single_frame, "render", paused)
+    if failure == "journal":
+
+        def denied(_entries):
+            raise OSError("test artifact journal failure")
+
+        monkeypatch.setattr(agent.ledger, "save_artifacts", denied)
+    task = agent.save_frame(*scope, "spectrum", 1, "both", "labcontrol", "已有", "abort", str(folder))
+    try:
+        assert started.wait(4)
+        if failure == "cancel":
+            agent.stop_task("internal", grant, task["id"], "abort-stop")
+        if failure == "revoke":
+            agent.policy.revoke_grant(grant)
+    finally:
+        release.set()
+    end = monotonic() + 8
+    while monotonic() < end:
+        state = agent.ledger.get(task["id"])
+        if state["state"] in {"failed", "cancelled"}:
+            break
+        sleep(0.03)
+    assert state["state"] in {"failed", "cancelled"}, state
+    assert list(folder.iterdir()) == [before] and before.read_bytes() == b"before"
+    assert not agent.ledger.artifacts(task["id"])

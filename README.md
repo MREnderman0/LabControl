@@ -1,11 +1,11 @@
-# TF LabControl
+# LabControl
 
 Windows 实验室设备控制与监测软件，使用 PySide6、独立型号兼容模块及真实通信服务。界面采用用户选定的[石墨分类工作区](direction-approved.md)；软件验证与真实设备验收分别记录。
 
 ## 安装和启动
 
 - **源码环境：** Windows 10/11 x64、Python 3.12 x64；唯一开发启动脚本为根目录 `run.bat`，使用项目 `.venv-dev`。环境准备和下载策略见[开发环境](docs/development/environment.md)。
-- **目录式测试包：** 保留完整目录，运行其中的 `TF-LabControl.exe`，无需另外安装 Python/Qt。正式应用安装器与交付验收仍待完成，现有构建和组件准备见[桌面部署](docs/development/desktop-deployment.md)。
+- **目录式测试包：** 保留完整目录，运行其中的 `LabControl.exe`，无需另外安装 Python/Qt。正式应用安装器与交付验收仍待完成，现有构建和组件准备见[桌面部署](docs/development/desktop-deployment.md)。
 
 ## 快速开始
 

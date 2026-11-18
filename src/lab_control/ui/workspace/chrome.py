@@ -250,7 +250,7 @@ class WorkspaceChrome:
         window.message.setWordWrap(False)
         window.message.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(window.message, 2)
-        self.status_version = QLabel(f"TF LabControl {VERSION}".strip())
+        self.status_version = QLabel(f"LabControl {VERSION}".strip())
         self.status_version.setObjectName("appStatusText")
         row.addWidget(self.status_version)
         return bar

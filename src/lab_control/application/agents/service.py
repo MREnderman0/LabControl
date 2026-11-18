@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from lab_control.application.agents import frame_image
+from lab_control.application.agents import frame_image, single_frame
 from lab_control.application.agents.command_processing import LOCAL_COMMAND_PROFILE
 from lab_control.application.agents.policy import COMMAND_CLIENT, AgentPolicy, fail
 from lab_control.domain.instruments import (
@@ -95,7 +95,7 @@ class AgentService:
         self.refresh_desktop_grant()
         grants = [g for g in self.policy.snapshot()["grants"] if g["client_id"] == client and g["enabled"]]
         return {
-            "name": "TF LabControl",
+            "name": "LabControl",
             "api_version": 1,
             "simulation": not self.runtime.hardware,
             "grants": grants,
@@ -324,6 +324,7 @@ class AgentService:
                 if source["kind"] in {"waveform", "spectrum", "trace", "timed_phase"}
                 else "other"
             )
+            source["frame_modes"] = single_frame.supported_modes(source, grant, definition)
             multiple = (
                 definition.acquisition_channel_selection == "multiple"
                 and source["key"] in definition.multi_channel_sources
@@ -833,6 +834,27 @@ class AgentService:
             request.kind == "waveform"
             and DEVICE_DEFINITIONS[self.runtime.sessions.sessions[device].config.adapter].category
             == "oscilloscope"
+        )
+
+    def save_frame(
+        self, client, grant_id, device_id, source, channel, mode, destination, stem, request_id, directory=""
+    ):
+        payload = dict(
+            source=source,
+            channels=[channel],
+            mode=mode,
+            destination=destination,
+            stem=stem,
+            directory=directory,
+        )
+        return self._task(
+            client,
+            grant_id,
+            device_id,
+            "acquire",
+            request_id,
+            payload,
+            lambda ctx: single_frame.start_frame(self, ctx, client, grant_id, device_id, payload),
         )
 
     def acquire_once(self, client, grant_id, device_id, request, request_id):

@@ -860,7 +860,7 @@ def test_mcp_new_tools_flow(metrics):
     async def flow():
         async with remote_client(config, True) as client:
             tools = (await client.list_tools()).tools
-            assert len(tools) == 26
+            assert len(tools) == 27
             scope = {"grant_id": grant, "device_id": device}
             result = await client.call_tool("get_processing_capabilities", scope)
             assert result.structured_content["data"]["supported"]

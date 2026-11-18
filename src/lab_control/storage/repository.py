@@ -297,7 +297,11 @@ class Repository:
 
     @staticmethod
     def _export_legacy_csv(batch: MeasurementBatch, folder: Path) -> None:
-        with (folder / "samples.csv").open("w", newline="", encoding="utf-8-sig") as stream:
+        Repository.write_frame_csv(batch, folder / "samples.csv")
+
+    @staticmethod
+    def write_frame_csv(batch: MeasurementBatch, path: Path) -> None:
+        with path.open("w", newline="", encoding="utf-8-sig") as stream:
             writer = csv.writer(stream)
             writer.writerow(
                 [

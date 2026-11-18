@@ -127,7 +127,7 @@ def test_sdk_http_without_token_enforces_origin_and_grants(experiment):
     async def run():
         async with remote_client({"url": url}, True) as remote:
             listed = await remote.list_tools()
-            assert len(listed.tools) == 26
+            assert len(listed.tools) == 27 and "save_frame" in {tool.name for tool in listed.tools}
             runtime.bind_slot(device, "oscilloscope:1", "general")
             slots = await remote.call_tool("list_slots", {"grant_id": grant})
             assert not slots.is_error
@@ -322,7 +322,8 @@ def test_stdio_connector_has_only_protocol_stdout(experiment, tmp_path):
             args=["-m", "lab_control", "--agent-connector", "--connection", str(path)],
         )
         async with Client(parameters, read_timeout_seconds=10) as client:
-            assert len((await client.list_tools()).tools) == 26
+            listed = (await client.list_tools()).tools
+            assert len(listed) == 28 and {"save_frame", "download_frame"} <= {tool.name for tool in listed}
             result = await client.call_tool("get_server_info", {})
             assert not result.is_error and result.structured_content["data"]["simulation"]
 

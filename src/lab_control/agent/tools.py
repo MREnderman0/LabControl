@@ -88,6 +88,15 @@ class Capture(Request):
     request: Acquisition
 
 
+class SaveFrame(Request):
+    source: str = Field(min_length=1, max_length=128)
+    channel: int = Field(ge=1)
+    mode: Literal["png", "csv", "both"]
+    destination: Literal["labcontrol", "client"]
+    stem: str = Field(min_length=1, max_length=180)
+    directory: str = Field(default="", max_length=32767)
+
+
 class Monitor(Capture):
     interval: float = Field(default=0.5, ge=0.05, le=60)
 
@@ -163,6 +172,12 @@ TOOLS = (
     ("read_parameters", Read, "通过设备原 worker 读取参数；需设备读取权限，记录期间可能拒绝。", False),
     ("preview_change", Preview, "校验并预览单项修改；五分钟有效，绑定会话及配置版本。", True),
     ("apply_change", Apply, "执行已预览且获授权的修改；request_id 防重，冲突需重新规划。", False),
+    (
+        "save_frame",
+        SaveFrame,
+        "采集指定数据源一次，保存 PNG、CSV 或两者。client 目标返回可下载的任务文件；目录由客户端解释。",
+        False,
+    ),
     ("acquire_once", Capture, "采集一帧并保存，立即返回 task_id；不接受客户端确认标志。", False),
     ("start_monitoring", Monitor, "启动监测并返回任务；软件负责采集节奏，断线不停止。", False),
     ("start_recording", Monitor, "启动逐帧记录并返回任务；参数锁保留至二进制收尾完成。", False),
@@ -246,7 +261,7 @@ def create_mcp_server(service, *, local_commands=None) -> Server:
             )
 
     return Server(
-        "TF LabControl",
+        "LabControl",
         version="1.0",
         instructions=(
             "先查看授权与设备能力。仅操作明确选定的资产。写入先预览，使用唯一 request_id。"

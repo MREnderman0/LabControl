@@ -2,6 +2,14 @@
 
 在“系统设置 → Agent 协作实验”中，为本机或实验网内的 Agent 开放当前桌面软件的设备服务。新安装默认关闭。设备发现、适配器选择、资产核对和授权只由本机界面完成；远程工具不提供扫描、原始命令、任意文件访问或扩大授权的入口。
 
+## 按步骤保存单帧
+
+先从 `get_capabilities.data_sources` 选择数据源的 `key`、授权通道和该源公布的 `frame_modes`。调用 `save_frame` 时传入 `grant_id`、`device_id`、唯一的 `request_id`、`source`、`channel`、`mode`、`destination` 和 `stem`。模式 `png`、`csv`、`both` 分别生成曲线图、完整采样数据或同一帧的两种文件。标量设备支持 CSV。
+
+保存到采数机时使用 `destination=labcontrol`，在 `directory` 填写采数机的绝对目录。原始 HTTP MCP 返回异步任务，完成后在 `get_task_status.result.files` 查看实际路径或下载标识。保存到客户端时使用 `destination=client`。OFC Host 或 stdio 连接器在自己的电脑上解释目录，下载后校验完整性并写入。断线后凭原任务号、授权号和本地目录调用连接器的 `download_frame` 可重新下载。文件主名由步骤填写，扩展名自动添加。重名时同一组使用相同的编号。
+
+发行包包含 `LabControl.exe` 和 `LabControl-Agent.exe`，同时提供旧名 EXE 供已有启动配置使用。原库存和设备锁继续使用原运行目录。
+
 ## 首次连接
 
 1. 按[控制与监测](control-and-monitoring.md)完成设备发现及资产核对。确认完整型号、序列号与稳定资产 ID；不能读取序列号时，本机核对铭牌与地址映射。
@@ -21,10 +29,10 @@ OFC Host v0.1.6 的“远程设备控制”支持从示波器或频谱仪当前�
 
 客户端用 `get_server_info` 取得授权。两种授权的 `expires_at` 均为 `null`，直到手动撤销或软件退出。全部授权带有 `full_device_access: true`，其中空的 `channels` 和 `operations` 表示授权范围采用型号支持的全部通道和参数能力，具体能力用 `get_capabilities` 查询。
 
-发行连接器与 GUI 共用 `launcher.main`，但在导入 Qt、创建 Runtime 或加载硬件前进入连接器分支。`TF-LabControl.exe` 保持无控制台；`TF-LabControl-Agent.exe` 提供标准输入输出。GUI 仍由唯一 `run.bat` 或正式安装入口启动。
+发行连接器与 GUI 共用 `launcher.main`，但在导入 Qt、创建 Runtime 或加载硬件前进入连接器分支。`LabControl.exe` 保持无控制台；`LabControl-Agent.exe` 提供标准输入输出。GUI 仍由唯一 `run.bat` 或正式安装入口启动。
 
 ```powershell
-.\TF-LabControl-Agent.exe --agent-connector --connection .\lab-control-connection.json --check
+.\LabControl-Agent.exe --agent-connector --connection .\lab-control-connection.json --check
 # 源码开发环境中的同一分发入口
 .venv-dev\Scripts\python.exe -m lab_control --agent-connector --connection .\lab-control-connection.json --check
 ```
@@ -84,7 +92,7 @@ OFC 自动化外壳目前先接入连接配置与待配置条目，实际 SSH �
 
 另一台电脑可以通过 SSH 在采数电脑执行现有连接器命令，使用 UTF-8 JSON 收发。采数电脑的桌面软件须已运行并启用 Agent。连接 JSON 使用导出的本机地址配置，SSH 登录沿用系统配置。
 
-以下是 SSH **远端执行**的命令；先将工作目录设为项目目录，发行版可替换为完整发行目录内的 `TF-LabControl-Agent.exe`：
+以下是 SSH **远端执行**的命令；先将工作目录设为项目目录，发行版可替换为完整发行目录内的 `LabControl-Agent.exe`：
 
 ```powershell
 .venv-dev\Scripts\python.exe -m lab_control --agent-connector --connection .\connection.json --call get_server_info
@@ -117,7 +125,7 @@ OFC 自动化外壳目前先接入连接配置与待配置条目，实际 SSH �
 `get_artifact` 返回下载路径。下载请求按 `grant_id` 再次校验设备和通道结果授权。文件以已登记的产物 ID 引用。可用连接器独立下载：
 
 ```powershell
-.\TF-LabControl-Agent.exe --agent-connector --connection .\lab-control-connection.json --download <产物ID> --grant <当前授权ID> --output .\experiment.csv
+.\LabControl-Agent.exe --agent-connector --connection .\lab-control-connection.json --download <产物ID> --grant <当前授权ID> --output .\experiment.csv
 ```
 
 已有目标文件拒绝覆盖；下载失败保留 `.partial`，不能当作完整结果。授权包含多个通道的文件要求调用者拥有其中所有通道的权限。软件记录成功、设备读回成功和物理输出测量是不同结论，Agent 必须分别报告。

@@ -48,11 +48,11 @@ def main() -> int:
     from lab_control.application.runtime import ApplicationRuntime
     from lab_control.ui.real_window import RealWindow
 
-    parser = argparse.ArgumentParser(description="TF LabControl real instrument overview")
+    parser = argparse.ArgumentParser(description="LabControl real instrument overview")
     parser.add_argument("--config", type=Path)
     args = parser.parse_args()
     app = QApplication(sys.argv)
-    app.setApplicationName("TF LabControl")
+    app.setApplicationName("LabControl")
     app.setFont(ui_font())
     app.setStyle("Fusion")
     app.setStyleSheet(load_stylesheet())

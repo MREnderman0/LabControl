@@ -23,8 +23,8 @@ for destination, source, kind in a.binaries:
     if not any(Path(source).resolve().is_relative_to(folder) for folder in allowed):
         raise ValueError(f"Unregistered native build dependency: {source}")
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="TF-LabControl", debug=False,
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="LabControl", debug=False,
           bootloader_ignore_signals=False, strip=False, upx=False, console=False)
-connector = EXE(pyz, a.scripts, [], exclude_binaries=True, name="TF-LabControl-Agent", debug=False,
+connector = EXE(pyz, a.scripts, [], exclude_binaries=True, name="LabControl-Agent", debug=False,
                 bootloader_ignore_signals=False, strip=False, upx=False, console=True)
-coll = COLLECT(exe, connector, a.binaries, a.datas, strip=False, upx=False, name="TF-LabControl")
+coll = COLLECT(exe, connector, a.binaries, a.datas, strip=False, upx=False, name="LabControl")
