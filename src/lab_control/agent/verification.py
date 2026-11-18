@@ -35,6 +35,7 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
             "read_parameters",
             "apply",
             "acquire",
+            "output_trigger",  # The simulated scope arms a trigger for single capture.
             "monitor",
             "record",
             "stop",
