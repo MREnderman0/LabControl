@@ -58,6 +58,26 @@ class WorkspaceNavigation:
         ):
             page.focus_card(spec)
 
+    def open_recorded_device(self, device_id: str, channel: int | None) -> None:
+        self.navigate("仪器测控", "", device_id)
+        page = self.window.stack.currentWidget()
+        selector = getattr(page, "selector", None)
+        if channel is None or selector is None or selector.device_id != device_id:
+            return
+        if isinstance(page, (OscilloscopeMonitoringPage, SignalSourcePage)):
+            page.focus_card({"device_id": device_id, "channels": [channel]})
+            return
+        selector.select(device_id, channel)
+        if isinstance(page, PowerMonitoringPage) and page.controls and channel in page.controls.panels:
+            page.controls.scroller.ensureWidgetVisible(page.controls.panels[channel])
+        elif isinstance(page, MonitoringPage) and page.scan_page and page.scan_page.isVisible():
+            if card := page.scan_page.cards.get(channel):
+                page.scan_page.readout_scroll.ensureWidgetVisible(card)
+        elif isinstance(page, OpticalPowerMonitoringPage) and channel in page.cards:
+            page.readout_scroll.ensureWidgetVisible(page.cards[channel])
+        elif check := getattr(page, "channel_checks", {}).get(channel):
+            check.setFocus()
+
     def _connected_categories(
         self,
         records: dict[str, dict[str, Any]] | None = None,
@@ -259,6 +279,7 @@ class WorkspaceNavigation:
             page = window.page_map.get((module, ""))
             if page is None:
                 page = DataProcessingPage(window.controller)
+                page.open_device_requested.connect(self.open_recorded_device)
                 window.page_map[(module, "")] = page
                 window.stack.addWidget(page)
             assert isinstance(page, DataProcessingPage)

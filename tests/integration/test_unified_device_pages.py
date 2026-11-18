@@ -2,6 +2,7 @@ from contextlib import contextmanager
 
 from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
+from lab_control.domain.processing import RecordedDevice, RecordingEntry
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.real_window import RealWindow
 
@@ -94,6 +95,18 @@ def test_scope_card_focus_depth_and_pico_frame(qtbot, tmp_path, monkeypatch):
         assert controls.pages.currentWidget().layout() is controls.tab_pages["垂直"]
         qtbot.waitUntil(lambda: page.readouts.cells["points"].value.text() == "AUTO")
         assert not writes
+        controls.show_channel(1)
+        window.navigate("数据处理")
+        history = window.stack.currentWidget()
+        recording = RecordedDevice(tmp_path, {"device_id": device})
+        history.open_entry(RecordingEntry(tmp_path, "single_device", "", (recording,)))
+        history.viewer.info = {
+            "series": [{"quantity": "waveform", "unit": "V", "axis_unit": "s", "channel": 2, "id": "CH2"}]
+        }
+        history.viewer.group.addItem("波形", ("waveform", "V", "s"))
+        history.open_device_button.click()
+        assert window.stack.currentWidget() is page and page.device_id == device
+        assert controls.channel_tabs.current() == 2 and not writes
         controls.set_points("12000")
         qtbot.waitUntil(lambda: page.readouts.cells["points"].value.text() == "12,000")
         assert [(cmd.operation, cmd.parameters) for cmd in writes] == [("record_length", {"value": "12000"})]

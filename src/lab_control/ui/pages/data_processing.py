@@ -6,7 +6,7 @@ from concurrent.futures import Future
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -42,6 +42,8 @@ def processing_notice(results):
 
 
 class DataProcessingPage(QWidget):
+    open_device_requested = Signal(str, object)
+
     def __init__(self, controller, parent=None):
         super().__init__(parent)
         self.controller = controller
@@ -378,7 +380,15 @@ class DataProcessingPage(QWidget):
 
     def open_device_page(self) -> None:
         if device_id := self.selected_device_id():
-            self.controller.navigate.emit("仪器测控", "", device_id)
+            selected = self.viewer.selected()
+            current = self.viewer.channels.currentItem()
+            series = current.data(0, Qt.ItemDataRole.UserRole) if current and current.isSelected() else None
+            if series not in selected:
+                channels = {row.get("channel") for row in selected}
+                channel = next(iter(channels)) if len(channels) == 1 else None
+            else:
+                channel = series.get("channel")
+            self.open_device_requested.emit(device_id, channel if type(channel) is int else None)
 
     def show_device(self) -> None:
         if self.entry is None or self.devices.currentIndex() < 0:
