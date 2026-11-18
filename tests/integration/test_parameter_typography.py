@@ -36,12 +36,12 @@ def test_typing_clear_and_undo_keep_height_cursor_and_typography(numeric, qtbot)
     height, unit_height = field.height(), numeric.unit.height()
     assert field.placeholderText() == "请输入幅度"
     assert field.font().pixelSize() == 13
-    assert numeric.unit.font().pixelSize() == 13
+    assert numeric.unit.font().pixelSize() == 12  # Unit selector inside the field box.
     assert height == unit_height
     qtbot.keyClicks(field, "0.25")
     qtbot.wait(10)
-    assert field.font().pixelSize() == 16
-    assert field.font().weight() == QFont.Weight.Normal
+    assert field.font().pixelSize() == 14
+    assert field.font().weight() == QFont.Weight.DemiBold
     assert field.cursorPosition() == 4
     assert (field.height(), numeric.unit.height()) == (height, unit_height)
     field.selectAll()
@@ -50,7 +50,7 @@ def test_typing_clear_and_undo_keep_height_cursor_and_typography(numeric, qtbot)
     assert field.font().pixelSize() == 13
     qtbot.keyClick(field, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
     assert field.text() == "0.25"
-    assert field.font().pixelSize() == 16
+    assert field.font().pixelSize() == 14
     assert field.height() == height
     assert numeric.value() == 0.25
 
@@ -61,11 +61,11 @@ def test_readback_and_blocked_draft_restore_refresh_style_without_edits(numeric,
     height = numeric.input.height()
     numeric.set_value(0)
     assert numeric.input.text() == "0"
-    assert numeric.input.font().pixelSize() == 16
+    assert numeric.input.font().pixelSize() == 14
     numeric.restore({"value": None, "factor": 1})
     assert numeric.input.font().pixelSize() == 13
     numeric.restore({"value": "500", "factor": 1e-3})
-    assert numeric.input.font().pixelSize() == 16
+    assert numeric.input.font().pixelSize() == 14
     assert numeric.value() == 0.5
     qtbot.wait(20)
     assert numeric.input.height() == height

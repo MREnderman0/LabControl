@@ -26,8 +26,9 @@ from lab_control.application.controls import OPERATION_LABELS
 from lab_control.domain.instruments import Capability, DeviceCommand, DeviceError
 from lab_control.domain.readback import boolean_value
 from lab_control.ui.controller import WorkspaceController, display_connection_state
+from lab_control.ui.kit import style_button
 from lab_control.ui.pages.device_control.form import OperationEditor, concise
-from lab_control.ui.pages.device_control.source_settings import SourceSettingsDialog, settings_icon
+from lab_control.ui.pages.device_control.source_settings import SourceSettingsDialog
 from lab_control.ui.widgets.device_selector import DeviceSelector
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -552,9 +553,10 @@ class SignalSourcePage(QWidget):
         self.last_columns = 0
         self.settings_dialog: SourceSettingsDialog | None = None
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(14)
         toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
         self.selector = DeviceSelector(controller, "signal_generator", compact=True)
         self.selector.info.hide()
         self.selector.channel.hide()
@@ -562,8 +564,11 @@ class SignalSourcePage(QWidget):
         toolbar.addWidget(self.selector, 1)
         self.connection_label = QLabel("未选择", self)
         self.connection_label.setObjectName("sourceConnectionState")
+        self.connection_label.hide()  # The device card shows the connection state.
         toolbar.addWidget(self.connection_label)
         self.refresh_button = QPushButton("刷新范围")
+        self.refresh_button.setProperty("buttonSize", "compact")
+        style_button(self.refresh_button, "", "refresh")
         self.refresh_button.clicked.connect(self.refresh_ranges)
         toolbar.addWidget(self.refresh_button)
         self.monitor_button = monitor = QPushButton("实时监测 ↗", self)
@@ -574,8 +579,8 @@ class SignalSourcePage(QWidget):
         monitor.hide()
         self.settings_button = QPushButton("高级设置", self)
         self.settings_button.setObjectName("sourceSettingsButton")
-        self.settings_button.setIcon(settings_icon())
-        self.settings_button.setIconSize(QSize(18, 18))
+        self.settings_button.setProperty("buttonSize", "compact")
+        style_button(self.settings_button, "", "gear")
         self.settings_button.clicked.connect(self.open_settings)
         self.settings_button.show()
         toolbar.addWidget(self.settings_button)

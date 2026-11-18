@@ -21,6 +21,14 @@ from lab_control.domain.instruments import AcquisitionRequest, DeviceError
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.pages.monitoring.channel_selection import selected_input, selection_key, single_input
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
+from lab_control.ui.pages.monitoring.frame import (
+    chart_card,
+    empty_label,
+    header_row,
+    page_layout,
+    run_button,
+    show_state,
+)
 from lab_control.ui.pages.monitoring.plot import LivePlot
 from lab_control.ui.pages.monitoring.recording_state import (
     RecordingButton,
@@ -51,8 +59,7 @@ class FrequencyCounterMonitoringPage(QWidget):
             self.preferences = {}
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 12)
-        layout.setSpacing(8)
+        page_layout(layout)
         header = QHBoxLayout()
         self.selector = DeviceSelector(controller, "frequency_counter", self, compact=True)
         header.addWidget(self.selector, 1)
@@ -67,8 +74,8 @@ class FrequencyCounterMonitoringPage(QWidget):
         layout.addLayout(header)
 
         self.empty = QLabel("请先从总览连接频率计数器，再选择设备。")
-        self.empty.setObjectName("mutedText")
-        layout.addWidget(self.empty)
+        empty_label(self.empty)
+        layout.addWidget(self.empty, 1)
 
         self.channel_frame = QFrame()
         self.channel_frame.setObjectName("operationCard")
@@ -101,7 +108,9 @@ class FrequencyCounterMonitoringPage(QWidget):
         self.status.setWordWrap(True)
         chart_layout.addWidget(self.status)
         layout.addWidget(self.chart, 1)
-
+        run_button(self.toggle_button)
+        header_row(header, connection=self.connection, actions=(self.record_button,))
+        self.status_dot = chart_card(self.chart, status=self.status)
         self.selector.selected.connect(self.select_device)
         controller.refreshed.connect(self.refresh)
         controller.frame_ready.connect(self.refresh_frame)
@@ -294,6 +303,8 @@ class FrequencyCounterMonitoringPage(QWidget):
         self.toggle_button.setText(
             "收尾中…" if draining else "停止监测" if task.get("running") else "开始监测"
         )
+        run_button(self.toggle_button, bool(task.get("running")))
+        show_state(self.status_dot, task, connected)
         self.toggle_button.setEnabled(
             bool((connected or task.get("running")) and self.channels() and not draining)
         )

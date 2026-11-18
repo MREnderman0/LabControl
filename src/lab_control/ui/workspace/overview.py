@@ -29,8 +29,8 @@ from lab_control.ui.controller import (
     display_connection_state,
     display_task,
 )
+from lab_control.ui.kit import ElideLabel, Pill, icons, style_button
 from lab_control.ui.styles import tokens as tk
-from lab_control.ui.widgets import icons
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool, DeviceRowDelegate
 from lab_control.ui.widgets.popup_surface import WorkspaceMenu
@@ -41,6 +41,7 @@ from lab_control.ui.workspace.categories import (
     applicable,
     category_for,
 )
+from lab_control.ui.workspace.overview_side import OverviewSide
 
 if TYPE_CHECKING:
     from lab_control.ui.real_window import RealWindow
@@ -57,8 +58,8 @@ class WorkspaceOverview:
         root = QWidget()
         root.setObjectName("shellRoot")
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(24, 18, 24, 14)
-        layout.setSpacing(12)
+        layout.setContentsMargins(24, 20, 24, 16)
+        layout.setSpacing(16)
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
         heading_column = QVBoxLayout()
@@ -66,20 +67,28 @@ class WorkspaceOverview:
         heading = QLabel("设备总览")
         heading.setObjectName("overviewTitle")
         heading_column.addWidget(heading)
-        window.summary = QLabel()
+        window.summary = ElideLabel()
         window.summary.setObjectName("overviewNote")
         heading_column.addWidget(window.summary)
-        toolbar.addLayout(heading_column)
-        toolbar.addStretch()
+        toolbar.addLayout(heading_column, 1)
+        toolbar.addSpacing(18)
+        # At-a-glance counts, as status pills beside the title.
+        window.overview_pills = {
+            "online": Pill("在线 0", "ok", dot=True),
+            "offline": Pill("未连接 0", "neutral", dot=True),
+            "errors": Pill("异常 0", "neutral", dot=True),
+            "running": Pill("采集中 0", "neutral", dot=True),
+        }
+        for pill in window.overview_pills.values():
+            toolbar.addWidget(pill, 0, Qt.AlignmentFlag.AlignTop)
+        toolbar.addStretch(1)
         window.scan_button = QPushButton("扫描设备")
         window.scan_button.setObjectName("primaryButton")
         window.scan_button.clicked.connect(window.scan)
         window.cancel_button = QPushButton("取消扫描")
         window.cancel_button.clicked.connect(lambda: window.runtime.discovery.cancel())
         window.connect_all_button = QPushButton("一键连接")
-        window.connect_all_button.setObjectName("primaryButton")
         window.connect_all_button.clicked.connect(window.connect_all)
-        toolbar.addWidget(window.connect_all_button)
         window.stop_connect_button = QPushButton("停止连接")
         window.stop_connect_button.clicked.connect(window.runtime.cancel_connect_all)
         toolbar.addWidget(window.stop_connect_button)
@@ -96,8 +105,7 @@ class WorkspaceOverview:
         for text, action in (("环境诊断", window.diagnose),):
             button = QPushButton(text)
             button.setProperty("buttonSize", "compact")
-            button.setIcon(icons.icon("stethoscope", tk.TEXT_2))
-            button.setIconSize(QSize(15, 15))
+            style_button(button, "ghost", "stethoscope")
             button.clicked.connect(action)
             toolbar.addWidget(button)
         for button in (
@@ -109,21 +117,33 @@ class WorkspaceOverview:
         ):
             button.setProperty("buttonSize", "compact")
         window.connect_all_button.setProperty("buttonSize", "compact")
-        window.connect_all_button.setIcon(icons.icon("plug", tk.ACCENT_INK, disabled=tk.TEXT_3))
-        window.device_list_button.setIcon(icons.icon("list", tk.TEXT_2))
-        window.address_list_button.setIcon(icons.icon("network", tk.TEXT_2))
-        for button in (window.connect_all_button, window.device_list_button, window.address_list_button):
-            button.setIconSize(QSize(15, 15))
+        style_button(window.connect_all_button, "", "plug")
+        style_button(window.device_list_button, "ghost", "list")
+        style_button(window.address_list_button, "ghost", "network")
+        # Order: quiet tools first, then connect, then the primary scan action.
+        toolbar.addWidget(window.connect_all_button)
+        window.scan_button.setProperty("buttonSize", "compact")
+        window.scan_button.setIcon(icons.icon("scan", tk.ACCENT_INK, disabled=tk.TEXT_3))
+        window.scan_button.setIconSize(QSize(15, 15))
+        toolbar.addWidget(window.scan_button)
         layout.addLayout(toolbar)
         window.connection_summary = QLabel()
         window.connection_summary.setWordWrap(True)
         window.connection_summary.setObjectName("overviewNote")
         layout.addWidget(window.connection_summary)
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        cards_column = QVBoxLayout()
+        cards_column.setSpacing(0)
+        body.addLayout(cards_column, 1)
+        window.overview_side = OverviewSide(window)
+        body.addWidget(window.overview_side)
+        layout.addLayout(body, 1)
         window.overview_empty = QLabel("尚未发现设备\n连接并开启设备后，点击右上角“扫描设备”。")
-        window.overview_empty.setObjectName("poolEmpty")
+        window.overview_empty.setObjectName("pageEmpty")
         window.overview_empty.setWordWrap(True)
         window.overview_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(window.overview_empty, 1)
+        cards_column.addWidget(window.overview_empty, 1)
         window.card_grid = CategoryCardGrid()
         window.cards = {
             category: CategoryCard(
@@ -134,26 +154,7 @@ class WorkspaceOverview:
         for card in window.cards.values():
             card.hide()
             card.clicked.connect(window.open_category)
-        layout.addWidget(window.card_grid, 1)
-        trend = QFrame()
-        trend.setObjectName("overviewTrend")
-        trend_layout = QHBoxLayout(trend)
-        trend_text = QVBoxLayout()
-        trend_text.setSpacing(2)
-        trend_layout.setContentsMargins(16, 12, 12, 12)
-        trend_heading = QLabel("实时趋势预览")
-        trend_heading.setObjectName("panelTitle")
-        trend_caption = QLabel("选择设备后进入仪器测控，查看波形、温度、电压、功率或频谱趋势。")
-        trend_caption.setObjectName("pageDescription")
-        trend_caption.setWordWrap(True)
-        trend_text.addWidget(trend_heading)
-        trend_text.addWidget(trend_caption)
-        trend_layout.addLayout(trend_text, 1)
-        monitor = QPushButton("进入监测")
-        monitor.setProperty("buttonSize", "compact")
-        monitor.clicked.connect(lambda: window.navigate("实时监测"))
-        trend_layout.addWidget(monitor)
-        layout.addWidget(trend)
+        cards_column.addWidget(window.card_grid, 1)
         window.device_pool = DevicePool(root)
         window.device_pool.cards = tuple(window.cards.values())
         window.device_pool.categoryRequested.connect(window.open_category)
@@ -376,6 +377,8 @@ class WorkspaceOverview:
         window.records = window.controller.records
         window.states = window.controller.states
         window._sync_submenu()
+        if hasattr(window, "status_bar"):
+            window.chrome.refresh()
         current_records = {
             key: record
             for key, record in window.records.items()
@@ -436,6 +439,16 @@ class WorkspaceOverview:
             + f" · 发现 {len(current_records)} 台 · 在线 {connected} 台 · 异常 {errors} 台 · 已识别 {identified} 台"
             + f" · 历史与已配置 {len(window.records) - len(current_records)} 台"
         )
+        tasks = window.runtime.monitoring.snapshots()
+        acquiring = sum(bool(task.get("running")) for task in tasks.values())
+        pills = window.overview_pills
+        pills["online"].set(f"在线 {connected}", "ok" if connected else "neutral")
+        pills["offline"].set(f"未连接 {max(0, len(current_records) - connected)}", "neutral")
+        pills["errors"].set(f"异常 {errors}", "err" if errors else "neutral")
+        pills["running"].set(
+            f"采集中 {acquiring}", "accent" if acquiring else "neutral", live=bool(acquiring)
+        )
+        window.overview_side.refresh(window.chrome._problems() if hasattr(window, "chrome") else [], tasks)
         window.summary.setToolTip(
             f"最近扫描：{progress.get('finishedAt', '尚未扫描')}；本次结果 {len(progress.get('items', []))}"
         )

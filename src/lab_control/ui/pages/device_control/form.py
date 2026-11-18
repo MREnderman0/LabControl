@@ -135,6 +135,12 @@ class OperationEditor(QFrame):
                 editor.changed.connect(self.save_draft)
                 if compact and name == "value":
                     layout.addWidget(editor)
+                    if parameter.kind in {"number", "integer"}:
+                        # Short range on the title row, full source in the tooltip.
+                        editor.range_compact = True
+                        editor.range_label.setWordWrap(False)
+                        heading.addWidget(editor.range_label)
+                        editor.update_range_label()
                     if isinstance(editor.input, QComboBox):
                         labels = {
                             "SIN": "正弦波",
@@ -221,6 +227,18 @@ class OperationEditor(QFrame):
     @property
     def busy(self) -> bool:
         return self.writing or self._read_request is not None
+
+    @property
+    def dirty(self) -> bool:
+        return self._dirty
+
+    @dirty.setter
+    def dirty(self, value: bool) -> None:
+        # Unapplied drafts get a soft accent ring on their field boxes.
+        self._dirty = bool(value)
+        for editor in getattr(self, "editors", {}).values():
+            if editor.box is not None:
+                editor.box.set_state("dirty", self._dirty)
 
     def begin_write(self) -> None:
         # A previously queued read describes the state before this write.

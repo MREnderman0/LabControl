@@ -120,13 +120,17 @@ def test_pending_stale_locked_and_reconnected_states(panel):
 
 def test_card_order_rate_position_and_fixed_footer(panel):
     controls, _, _, _ = panel
-    stack = controls.scroller.widget().layout()
-    cards = [stack.itemAt(i).widget() for i in range(stack.count() - 1)]
-    assert len(cards) == 6  # Horizontal, four channels, trigger; no sampling card.
-    assert controls.sample_rate.parentWidget() is cards[0]
-    assert [controls.checks[ch].parentWidget() for ch in range(1, 5)] == cards[1:5]
-    assert controls.trigger_label.parentWidget() is cards[-1]
-    assert controls.trigger_slider.parentWidget() is cards[-1] and controls.gear.parentWidget() is cards[-1]
+    # 水平 / 垂直 / 触发 tabs (no 采集 tab without a capture-depth control); 垂直 shows one channel.
+    assert list(controls.tab_pages) == ["水平", "垂直", "触发"]
+    pages = [controls.pages.widget(i) for i in range(controls.pages.count())]
+    assert pages[0].isAncestorOf(controls.sample_rate)
+    channel_pages = [controls.channel_pages.widget(i) for i in range(controls.channel_pages.count())]
+    assert [controls.checks[ch].parentWidget() for ch in range(1, 5)] == channel_pages
+    assert all(
+        pages[2].isAncestorOf(w) for w in (controls.trigger_label, controls.trigger_slider, controls.gear)
+    )
+    controls.show_channel(3)
+    assert controls.channel_pages.currentWidget() is channel_pages[2]
     assert controls.sample_rate.y() >= controls.points.y() + controls.points.height()
     footer = controls.fine_button.mapTo(controls, QPoint())
     controls.scroller.verticalScrollBar().setValue(controls.scroller.verticalScrollBar().maximum())

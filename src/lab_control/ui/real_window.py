@@ -27,12 +27,10 @@ from lab_control.application.runtime import ApplicationRuntime
 from lab_control.ui.controller import (
     WorkspaceController,
 )
+from lab_control.ui.kit.base import NavButton, Pill
 from lab_control.ui.pages.monitoring.dashboard import MonitoringDashboard
-from lab_control.ui.styles import tokens as tk
-from lab_control.ui.widgets import icons
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool
-from lab_control.ui.widgets.graphite import NavButton
 from lab_control.ui.widgets.input_wheel_guard import install_input_wheel_guard
 from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
@@ -49,9 +47,11 @@ from lab_control.ui.workspace.categories import (
 from lab_control.ui.workspace.categories import (
     category_for as category_for,
 )
+from lab_control.ui.workspace.chrome import WorkspaceChrome
 from lab_control.ui.workspace.dialogs import ConnectionDialogs
 from lab_control.ui.workspace.navigation import WorkspaceNavigation
 from lab_control.ui.workspace.overview import WorkspaceOverview
+from lab_control.ui.workspace.overview_side import OverviewSide
 from lab_control.ui.workspace.shutdown import WindowShutdown
 
 SIDEBAR_WIDTH = 232  # Layout tests and review scripts pin the expanded sidebar width.
@@ -119,6 +119,8 @@ class RealWindow(QMainWindow):
     details: DeviceDetails
     action_buttons: dict[str, QPushButton | QAction]
     pool_menu: WorkspaceMenu
+    overview_pills: dict[str, Pill]
+    overview_side: OverviewSide
 
     def __init__(self, runtime: ApplicationRuntime) -> None:
         super().__init__()
@@ -150,6 +152,7 @@ class RealWindow(QMainWindow):
         self._actions = WorkspaceActions(self)
         self._dialogs = ConnectionDialogs(self)
         self._shutdown = WindowShutdown(self)
+        self.chrome = WorkspaceChrome(self)
         self._build()
         self.fit_to_screen()
         self.controller.message.connect(self._failed)
@@ -206,13 +209,11 @@ class RealWindow(QMainWindow):
             if module == "系统设置":
                 side.addStretch()
             side.addWidget(button)
+            if module == "仪器测控":
+                # Connected instrument categories, one click each (replaces the old category tab strip).
+                side.addWidget(self.chrome.build_categories())
         side.addSpacing(8)
-        self.runtime_badge = QLabel(
-            f'<span style="color:{tk.OK}">●</span>&nbsp; 真实设备'
-            if self.runtime.hardware
-            else f'<span style="color:{tk.WARN}">●</span>&nbsp; 演示版'
-        )
-        self.runtime_badge.setObjectName("runtimeBadge")
+        self.runtime_badge = self.chrome.build_runtime_badge()
         side.addWidget(self.runtime_badge)
         row.addWidget(self.sidebar)
         content = QWidget()
@@ -223,19 +224,16 @@ class RealWindow(QMainWindow):
         header.setObjectName("commandHeader")
         header.setFixedHeight(56)
         top = QHBoxLayout(header)
-        top.setContentsMargins(24, 0, 20, 0)
+        top.setContentsMargins(24, 0, 16, 0)
         top.setSpacing(10)
-        self.section_title = QLabel("首页")
-        self.section_title.setObjectName("commandModuleTitle")
-        top.addWidget(self.section_title)
         self.breadcrumb = QLabel()
         self.breadcrumb.setObjectName("commandBreadcrumb")
         top.addWidget(self.breadcrumb)
-        top.addStretch()
-        self.scan_button.setProperty("buttonSize", "compact")
-        self.scan_button.setIcon(icons.icon("scan", tk.ACCENT_INK, disabled=tk.TEXT_3))
-        self.scan_button.setIconSize(QSize(15, 15))
-        top.addWidget(self.scan_button)
+        self.section_title = QLabel("首页")
+        self.section_title.setObjectName("commandModuleTitle")
+        top.addWidget(self.section_title)
+        top.addSpacing(10)
+        self.chrome.build_header_tools(top)
         self.clock_label = QLabel()
         self.clock_label.setObjectName("commandClock")
         top.addWidget(self.clock_label)
@@ -247,13 +245,18 @@ class RealWindow(QMainWindow):
         self.submenu.setUsesScrollButtons(True)
         self.submenu.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.submenu.currentChanged.connect(self.show_page)
-        subnav = QHBoxLayout()
+        # The tab bar stays the page model; it is shown only where tabs are the navigation (数据处理).
+        self.subnav = QWidget()
+        self.subnav.setObjectName("commandSubnavRow")
+        subnav = QHBoxLayout(self.subnav)
+        subnav.setContentsMargins(16, 0, 16, 0)
         subnav.addWidget(self.submenu, 1)
         self.surface_picker = WorkspaceComboBox()
         self.surface_picker.setAccessibleName("仪器页面")
         self.surface_picker.activated.connect(lambda _index: self.show_page())
         subnav.addWidget(self.surface_picker)
-        content_layout.addLayout(subnav)
+        self.surface_picker.hide()
+        content_layout.addWidget(self.subnav)
         self.stack = WorkspaceStack()
         stack_layout = self.stack.layout()
         assert stack_layout is not None
@@ -263,7 +266,8 @@ class RealWindow(QMainWindow):
         self.dashboard.open_card.connect(self.focus_card)
         self.stack.addWidget(self.dashboard)
         content_layout.addWidget(self.stack, 1)
-        content_layout.addWidget(self.message)
+        self.status_bar = self.chrome.build_status_bar()
+        content_layout.addWidget(self.status_bar)
         row.addWidget(content, 1)
         self.settings_page = QScrollArea()
         self.settings_page.setObjectName("settingsPage")
@@ -361,6 +365,7 @@ class RealWindow(QMainWindow):
         self.brand_subline.setVisible(not collapsed)
         self.sidebar_section.setVisible(not collapsed)
         self.runtime_badge.setVisible(not collapsed)
+        self.chrome.apply_collapsed(collapsed)
         for label, button in self.nav_buttons.items():
             assert isinstance(button, NavButton)
             button.set_collapsed(collapsed)

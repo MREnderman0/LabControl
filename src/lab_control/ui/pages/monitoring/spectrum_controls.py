@@ -29,8 +29,20 @@ from lab_control.domain.spectrum import (
     frequency_draft,
     prepare_changes,
 )
+from lab_control.ui.kit import Section, set_property, style_button
 from lab_control.ui.pages.device_control.form import OperationEditor
 from lab_control.ui.pages.monitoring.spectrum_markers import frequency_text
+
+SECTIONS = {
+    "start_frequency": "频率",
+    "stop_frequency": "频率",
+    "center_frequency": "频率",
+    "span": "频率",
+    "reference_level": "幅度",
+    "attenuation": "幅度",
+    "rbw": "带宽",
+    "vbw": "带宽",
+}
 
 
 class SpectrumControls(QFrame):
@@ -55,49 +67,78 @@ class SpectrumControls(QFrame):
         self.verified: dict[str, Any] = {}
         self.frequency_target: dict[str, float] = {}
         self.write_failure = ("", "")
+        # Card: 参数 + sync state + refresh / grouped fields / apply and auto setup.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(0)
+        head = QFrame(self)
+        head.setObjectName("cardHead")
+        head.setFixedHeight(52)
+        heading = QHBoxLayout(head)
+        heading.setContentsMargins(16, 0, 10, 0)
+        heading.setSpacing(8)
+        title = QLabel("参数", head)
+        title.setObjectName("cardTitle")
+        heading.addWidget(title)
         self.health = QLabel("同步中", self)
         self.health.setObjectName("spectrumHealth")
-        heading = QHBoxLayout()
-        heading.addWidget(self.health, 1)
+        self.health.setFixedHeight(22)
+        heading.addWidget(self.health)
+        heading.addStretch(1)
         self.refresh_button = QPushButton("刷新参数", self)
+        style_button(self.refresh_button, "ghost", "refresh", "sm")
         self.refresh_button.setToolTip("读取仪器当前参数，保留未应用草稿；前面板修改后请点击刷新。")
         self.refresh_button.clicked.connect(self.refresh_parameters)
         heading.addWidget(self.refresh_button)
-        layout.addLayout(heading)
+        layout.addWidget(head)
         self.scroller = QScrollArea(self)
         self.scroller.setWidgetResizable(True)
         self.scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget(self.scroller)
+        body.setObjectName("cardBody")
         self.body_layout = QVBoxLayout(body)
-        self.body_layout.setContentsMargins(2, 0, 6, 8)
-        self.body_layout.setSpacing(10)
-        self.grid = grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(12)
-        self.body_layout.addLayout(grid)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        self.marker_slot = QVBoxLayout()
-        self.body_layout.addLayout(self.marker_slot)
+        self.body_layout.setContentsMargins(0, 0, 0, 8)
+        self.body_layout.setSpacing(0)
+        self.sections: dict[str, tuple[Section, QGridLayout]] = {}
+        for name in ("频率", "幅度", "带宽", "其他"):
+            section = Section(name, body)
+            grid = QGridLayout()
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setHorizontalSpacing(12)
+            grid.setVerticalSpacing(12)
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 1)
+            section.layout_.addLayout(grid)
+            section.hide()
+            self.body_layout.addWidget(section)
+            self.sections[name] = (section, grid)
+        self.grid = self.sections["其他"][1]
+        self.marker_section = Section("", body, last=True)
+        self.marker_slot = self.marker_section.layout_
+        self.body_layout.addWidget(self.marker_section)
         self.body_layout.addStretch()
         self.scroller.setWidget(body)
         layout.addWidget(self.scroller, 1)
+        foot = QFrame(self)
+        foot.setObjectName("cardFoot")
+        foot_layout = QVBoxLayout(foot)
+        foot_layout.setContentsMargins(14, 10, 14, 12)
+        foot_layout.setSpacing(8)
         self.status = QLabel(self)
         self.status.setObjectName("inputFeedback")
         self.status.setWordWrap(True)
-        layout.addWidget(self.status)
+        foot_layout.addWidget(self.status)
         buttons = QHBoxLayout()
+        buttons.setSpacing(8)
         self.apply_button = QPushButton("应用修改", self)
         self.apply_button.setObjectName("primaryButton")
         self.auto_button = QPushButton("自动设置", self)
-        for button in (self.apply_button, self.auto_button):
+        style_button(self.auto_button, "", "wand")
+        for button in (self.auto_button, self.apply_button):
             button.setProperty("buttonSize", "panel")
             buttons.addWidget(button, 1)
-        layout.addLayout(buttons)
+        foot_layout.addLayout(buttons)
+        layout.addWidget(foot)
         self.apply_button.clicked.connect(self.apply)
         self.auto_button.clicked.connect(self.auto_setup)
         controller.refreshed.connect(self.refresh)
@@ -116,7 +157,7 @@ class SpectrumControls(QFrame):
                 removed.add(automatic)
         for name in removed:
             op = self.editors.pop(name)
-            self.grid.removeWidget(op)
+            self.sections[SECTIONS.get(name, "其他")][1].removeWidget(op)
             op.hide()
             if name in AUTOMATIC.values():
                 op.editors["value"].input.hide()
@@ -134,10 +175,10 @@ class SpectrumControls(QFrame):
             field.unit.setMinimumWidth(0)
             fit = getattr(field.unit, "fit_contents", None)
             if callable(fit):
-                fit(52)
+                fit(44)
             else:
                 field.unit.setFixedWidth(64)
-            field.input.setMinimumWidth(0)
+            field.input.setMinimumWidth(36)
             field.changed.connect(self.changed)
             if name in NUMERIC:
                 title = op.findChild(QLabel, "controlTitle")
@@ -163,13 +204,25 @@ class SpectrumControls(QFrame):
                 heading = cast(QHBoxLayout, item.layout())
                 heading.addWidget(check)
                 check.show()
-                self.grid.removeWidget(self.editors[automatic])
+                # The automatic switch takes the range's place; the range stays in the tooltip.
+                main = self.editors[name].editors["value"]
+                main.range_hidden = True
+                main.update_range_label()
+                self.sections[SECTIONS.get(automatic, "其他")][1].removeWidget(self.editors[automatic])
                 self.editors[automatic].hide()
         nested = {auto for name, auto in AUTOMATIC.items() if name in self.editors}
-        visible = [self.editors[name] for name in caps if name not in nested]
-        for i, op in enumerate(visible):
-            self.grid.addWidget(op, i // 2, i % 2, Qt.AlignmentFlag.AlignTop)
+        placed: dict[str, int] = {}
+        for name in caps:
+            if name in nested:
+                continue
+            group = SECTIONS.get(name, "其他")
+            index = placed.get(group, 0)
+            placed[group] = index + 1
+            op = self.editors[name]
+            self.sections[group][1].addWidget(op, index // 2, index % 2, Qt.AlignmentFlag.AlignTop)
             op.show()
+        for group, (section, _grid) in self.sections.items():
+            section.setVisible(bool(placed.get(group)))
 
     def frequency_started(self, name: str) -> None:
         self.last_frequency = name
@@ -301,10 +354,12 @@ class SpectrumControls(QFrame):
                 "experiment": "实验限制",
                 "unavailable": "未确认 / 已过期",
             }.get(spec.range_source, spec.range_source)
-            text = f"可输入范围：{bound(spec.minimum)} ～ {bound(spec.maximum)}"
-            text += ("" if spec.unit == "Hz" else " " + unit) + "\n" + source
+            text = f"{bound(spec.minimum)} ～ {bound(spec.maximum)}" + (
+                "" if spec.unit == "Hz" else " " + unit
+            )
             if field.range_label.text() != text:
                 field.range_label.setText(text)
+                field.range_label.setToolTip(f"可输入范围：{text} · {source}")
         health, reason = self.controller.runtime.monitoring.settings_status(
             self.device_id, tuple((1, k) for k in self.editors)
         )
@@ -322,6 +377,18 @@ class SpectrumControls(QFrame):
             else health
         )
         self.health.setToolTip(reason)
+        text = self.health.text()
+        set_property(
+            self.health,
+            "kind",
+            "err"
+            if "异常" in text or "失败" in text
+            else "warn"
+            if text.startswith("正在") or "同步中" in text
+            else "accent"
+            if "待应用" in text or "锁定" in text
+            else "ok",
+        )
         self.refresh_buttons()
 
     def dirty(self) -> bool:

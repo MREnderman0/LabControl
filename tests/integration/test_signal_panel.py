@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import QEvent, QRect, Qt
+from PySide6.QtCore import QEvent, QPoint, QRect, Qt
 from PySide6.QtGui import QFocusEvent, QFont
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -193,9 +193,14 @@ def test_clamp_feedback_never_overlaps_value_or_range(source, qtbot):
         qtbot.keyClick(field.input, Qt.Key.Key_Return)
         qtbot.wait(150)
         assert field.feedback.isVisible()
-        assert field.range_label.y() > field.input.geometry().bottom()
-        assert field.feedback.y() > field.range_label.geometry().bottom()
         editor = page.panels[1].editors["amplitude"]
+
+        def top(widget):
+            return widget.mapTo(editor, QPoint()).y()
+
+        # The range sits on the title row; clamp feedback goes below the value.
+        assert top(field.range_label) + field.range_label.height() <= top(field.input)
+        assert top(field.feedback) > top(field.input) + field.input.height()
         assert editor.readback.isVisible()
         assert editor.readback.y() > field.geometry().bottom()
         assert editor.status.y() > field.geometry().bottom()

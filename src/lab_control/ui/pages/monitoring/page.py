@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -39,19 +40,25 @@ class MonitoringPage(QWidget):
         self.sources: tuple[DataSource, ...] = ()
         self.signature = None
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(14)
         title = self.title = QLabel(CATEGORY_LABELS[category] + "实时监测")
         title.setObjectName("pageTitle")
+        title.hide()  # The header breadcrumb names the page.
         layout.addWidget(title)
         self.selector = DeviceSelector(controller, category)
         layout.addWidget(self.selector)
         self.empty = QLabel("暂无选中的已连接设备。请先在设备总览连接设备。")
-        self.empty.setObjectName("mutedText")
+        self.empty.setObjectName("pageEmpty")
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty.setWordWrap(True)
         layout.addWidget(self.empty)
         self.splitter = splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.main_area = main = QWidget()
+        self.main_area = main = QFrame()
+        main.setObjectName("chartCard")
         main_layout = QVBoxLayout(main)
-        main_layout.setContentsMargins(0, 0, 12, 0)
+        main_layout.setContentsMargins(14, 12, 14, 12)
+        main_layout.setSpacing(8)
         options = QHBoxLayout()
         self.source = WorkspaceComboBox()
         self.source.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)

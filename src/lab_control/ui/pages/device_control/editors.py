@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.application.controls import PARAMETER_LABELS
 from lab_control.domain.instruments import DeviceError, Parameter, ValidationError
+from lab_control.ui.kit import FieldBox, Switch
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.parameter_combo import ParameterComboBox
 from lab_control.ui.widgets.plot_export import PublicationPlotWidget
@@ -95,6 +96,9 @@ class ParameterEditor(QWidget):
         self.unit_selected = False
         self._readback_choice: float | None = None
         self._last_valid_draft: dict[str, Any] | None = None
+        # In compact operation editors the range sits on the title row as "low ～ high unit".
+        self.range_compact = False
+        self.range_hidden = False
         outer = QVBoxLayout(self)
         outer.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -103,11 +107,11 @@ class ParameterEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         outer.addLayout(layout)
         self.unit = ParameterComboBox(self)
-        self.unit.fit_contents(100)
+        self.unit.fit_contents(60)
         self.unit.installEventFilter(self)
         self.input: QCheckBox | QComboBox | QLineEdit
         if spec.kind == "boolean":
-            self.input = QCheckBox("开启", self)
+            self.input = Switch("开启", self)
             self.input.stateChanged.connect(self.changed)
         elif spec.kind == "enum" or spec.choices:
             self.input = ParameterComboBox(self)
@@ -125,8 +129,16 @@ class ParameterEditor(QWidget):
             self.input.textChanged.connect(self.number_edited)
             self.input.textChanged.connect(self.sync_input_style)
             self.input.editingFinished.connect(lambda: QTimer.singleShot(0, self.finish_editing))
-        layout.addWidget(self.input, 1)
-        if spec.kind in {"number", "integer"}:
+        # Value and unit share one frame (focus / dirty / error ring); booleans and plain choices stand alone.
+        self.box: FieldBox | None = None
+        numeric = spec.kind in {"number", "integer"}
+        if isinstance(self.input, QLineEdit) or (numeric and isinstance(self.input, QComboBox)):
+            self.box = FieldBox(self)
+            self.box.add(self.input, 1)
+            layout.addWidget(self.box, 1)
+        else:
+            layout.addWidget(self.input, 1)
+        if numeric:
             for label, factor in UNIT_CHOICES.get(spec.unit, ((spec.unit or "数值", 1),)):
                 self.unit.addItem(label, factor)
             self.unit.setCurrentIndex(max(0, self.unit.findData(1)))
@@ -134,7 +146,10 @@ class ParameterEditor(QWidget):
                 self.unit.setCurrentIndex(0)
             self._last_factor = self.unit.currentData() or 1
             self.unit.currentIndexChanged.connect(self.unit_changed)
-            layout.addWidget(self.unit)
+            if self.box is not None:
+                self.box.add(self.unit)
+            else:
+                layout.addWidget(self.unit)
         else:
             self.unit.hide()
         self.range_label = QLabel(self)
@@ -163,7 +178,7 @@ class ParameterEditor(QWidget):
 
     def update_range_label(self) -> None:
         numeric = self.spec.kind in {"number", "integer"}
-        self.range_label.setVisible(numeric)
+        self.range_label.setVisible(numeric and not self.range_hidden)
         if not numeric:
             return
         factor = self.unit.currentData() or 1
@@ -193,7 +208,8 @@ class ParameterEditor(QWidget):
 
             readable = f"（{frequency_label(self.spec.minimum)} ～ {frequency_label(self.spec.maximum)}）"
         details = f"可输入范围：{low} ～ {high} {self.unit.currentText()}{readable} · {source}"
-        self.range_label.setText(f"{low} ～ {high} {self.unit.currentText()}" if self.simplified else details)
+        short = f"{low} ～ {high} {self.unit.currentText()}"
+        self.range_label.setText(short if self.simplified or self.range_compact else details)
         self.range_label.setToolTip(details)
         self.setToolTip(details)
 

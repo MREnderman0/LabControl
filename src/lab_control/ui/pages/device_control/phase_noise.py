@@ -93,7 +93,7 @@ class PhaseNoisePage(QWidget):
         self.results: dict[str, dict] = {}
         self.run_tokens: dict[str, int] = {}
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 12)
+        layout.setContentsMargins(20, 16, 20, 16)
         header = QHBoxLayout()
         self.selector = DeviceSelector(
             controller, "phase_noise_analyzer", self, compact=True, surface="management"

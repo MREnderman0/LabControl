@@ -295,7 +295,7 @@ class CoreMorrowE00Page(PowerSupplyPage):
         self._request_serial = 0
         self._hydrating = False
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(8)
         self.header = QHBoxLayout()
         self.selector = DeviceSelector(controller, "power_supply", self, compact=True, surface="management")

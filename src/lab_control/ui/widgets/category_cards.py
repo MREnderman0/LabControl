@@ -15,9 +15,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lab_control.ui.kit import icons
+from lab_control.ui.kit.base import Dot, ElideLabel
 from lab_control.ui.styles import tokens as tk
-from lab_control.ui.widgets import icons
-from lab_control.ui.widgets.graphite import Dot, ElideLabel
 
 DEVICE_ROWS = 3
 STATUS_DOT = {

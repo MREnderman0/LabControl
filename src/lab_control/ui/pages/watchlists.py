@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.application.watchlists import Preset, new_id
+from lab_control.ui.kit import icons
 from lab_control.ui.pages.watch_runtime import WatchRuntime
 from lab_control.ui.pages.watch_table import PresetTable
 from lab_control.ui.styles import tokens as tk
-from lab_control.ui.widgets import icons
 from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 

@@ -1,10 +1,10 @@
-"""Compact readout strip above instrument plots (label over value, separated cells)."""
+"""Readout strip: label over value cells, used in chart card headers and on its own."""
 
 from __future__ import annotations
 
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout
 
-from lab_control.ui.widgets.graphite import ElideLabel
+from lab_control.ui.kit.base import ElideLabel
 
 
 class ReadoutCell(QFrame):
@@ -13,8 +13,8 @@ class ReadoutCell(QFrame):
         self.setObjectName("readoutCell")
         self.setProperty("highlight", highlight)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 6, 14, 6)
-        layout.setSpacing(0)
+        layout.setContentsMargins(16, 9, 16, 9)
+        layout.setSpacing(1)
         self.label = ElideLabel(label)
         self.label.setObjectName("readoutLabel")
         self.value = ElideLabel("—")
@@ -30,9 +30,14 @@ class ReadoutCell(QFrame):
 
 
 class ReadoutStrip(QFrame):
-    def __init__(self, cells: dict[str, str], highlight: tuple[str, ...] = ()) -> None:
+    """``embedded`` drops the outer border so the strip can sit inside a card header."""
+
+    def __init__(
+        self, cells: dict[str, str], highlight: tuple[str, ...] = (), *, embedded: bool = False
+    ) -> None:
         super().__init__()
         self.setObjectName("readoutStrip")
+        self.setProperty("embedded", embedded)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -40,6 +45,7 @@ class ReadoutStrip(QFrame):
         for cell in self.cells.values():
             layout.addWidget(cell)
         layout.addStretch(1)
+        self.tail = layout
 
     def set(self, key: str, value: str, label: str | None = None) -> None:
         self.cells[key].set(value, label)

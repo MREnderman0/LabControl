@@ -1,4 +1,4 @@
-"""Line icons (24×24 grid, 1.8 stroke) rendered from inline SVG.
+"""Line icons of the component kit (24×24 grid, 1.8 stroke) rendered from inline SVG.
 
 Icons are rasterised at several sizes so they stay sharp at 100–200 % scaling,
 without writing files at runtime. Checked buttons use the ``On`` state color.
@@ -54,6 +54,31 @@ STROKE = {
     "switch": '<rect x="2" y="7" width="20" height="10" rx="5"/><circle cx="16" cy="12" r="3"/>',
     "prism": '<path d="M12 3l9 16H3z"/><path d="M2 10h7M15 13l7 2M15 15l7 5"/>',
     "box": '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+    "bell": '<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
+    "eyeoff": '<path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 3.9'
+    'M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+    "rise": '<path d="M3 18h6V6h12"/>',
+    "fall": '<path d="M3 6h6v12h12"/>',
+    "wand": '<path d="M15 4V2M15 10V8M11 6h2M17 6h2M4 20l10-10"/><path d="M19 13v2M18 14h2"/>',
+    "down": '<path d="M6 9l6 6 6-6"/>',
+    "up": '<path d="M6 15l6-6 6 6"/>',
+    "right": '<path d="M9 6l6 6-6 6"/>',
+    "updown": '<path d="M8 9l4-4 4 4M8 15l4 4 4-4"/>',
+    "cross": '<path d="M3 12h4M17 12h4M12 3v4M12 17v4"/><circle cx="12" cy="12" r="4"/>',
+    "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    "inbox": '<path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/>',
+    "folder": '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>',
+    "refresh": '<path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/>',
+    "undo": '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    "filter": '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
+    "more": '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+    "pin": '<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v8"/>',
+    "window": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>',
+    "save": '<path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M8 3v5h7V3M7 21v-7h10v7"/>',
+    "power": '<path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+    "info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.5"/>',
+    "channels": '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    "single": '<path d="M4 12h3l2-6 3 12 2-6h6"/>',
 }
 FILL = {
     "pause": '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',

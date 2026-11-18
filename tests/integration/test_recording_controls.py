@@ -80,7 +80,8 @@ def test_record_button_card_outline_switching_and_real_binary_drain(
             companion = page.findChild(QToolButton, "curveTools")
             assert not any("记录" in action.text() for action in companion.menu().actions())
             page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
-        assert page.record_button.geometry().right() < companion.geometry().left()
+        # Record sits in the page header next to the run controls, at the companion's height.
+        assert page.record_button.parentWidget() is page
         assert page.record_button.height() == companion.height() == 30
         page.toggle_monitoring()
         qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)

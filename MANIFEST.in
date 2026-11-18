@@ -7,7 +7,7 @@ recursive-include config/examples *.toml *.json *.md
 recursive-include examples *.py *.md
 recursive-include scripts *.py *.ps1
 recursive-include tests *.py *.json
-recursive-include src/lab_control/ui/styles *.qss
+recursive-include src/lab_control/ui/styles *.qss *.svg
 include src/lab_control/py.typed
 recursive-include src/lab_control/instruments/devices *.md *.json
 include deployment/components.json deployment/labcontrol.spec deployment/entry.py

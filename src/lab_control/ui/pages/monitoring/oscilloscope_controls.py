@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
+    QStackedWidget,
     QStyle,
     QStyleOptionSlider,
     QToolButton,
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import DeviceCommand, DeviceError, Parameter
 from lab_control.domain.oscilloscope import COLORS, CONTROL_NAMES, coarse_steps, engineering
 from lab_control.domain.readback import boolean_value, normalized_value, usable_reading
+from lab_control.ui.kit import Segmented, Switch, set_property, style_button
 from lab_control.ui.pages.monitoring.scope_depth import ScopeDepth
 from lab_control.ui.pages.monitoring.scope_points import ScopePoints
 from lab_control.ui.styles import tokens as tk
@@ -413,40 +416,85 @@ class OscilloscopeControls(QFrame):
         self.control_complete = False
         self.auto_notice = ""
         self.stop_revision = 0
+        # Card: 参数 + sync state + refresh / 水平 · 垂直 · 触发 · 采集 tabs / fine + Auto footer.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(0)
+        head = QFrame(self)
+        head.setObjectName("cardHead")
+        head.setFixedHeight(52)
+        heading = QHBoxLayout(head)
+        heading.setContentsMargins(16, 0, 10, 0)
+        heading.setSpacing(8)
+        title = QLabel("参数", head)
+        title.setObjectName("cardTitle")
+        heading.addWidget(title)
         self.health = QLabel("同步中")
         self.health.setObjectName("spectrumHealth")
-        layout.addWidget(self.health)
+        self.health.setFixedHeight(22)
+        heading.addWidget(self.health)
+        heading.addStretch(1)
+        self.refresh_button = QPushButton("刷新参数", head)
+        style_button(self.refresh_button, "ghost", "refresh", "sm")
+        self.refresh_button.setToolTip("读取仪器当前参数；前面板修改后请点击刷新。")
+        self.refresh_button.clicked.connect(self.refresh_parameters)
+        heading.addWidget(self.refresh_button)
+        layout.addWidget(head)
+        tab_row = QHBoxLayout()
+        tab_row.setContentsMargins(14, 12, 14, 4)
+        self.tabs = Segmented(())
+        self.tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        tab_row.addWidget(self.tabs)
+        layout.addLayout(tab_row)
         self.scroller = QScrollArea()
         self.scroller.setWidgetResizable(True)
         self.scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
-        stack = QVBoxLayout(body)
-        stack.setContentsMargins(0, 0, 6, 0)
-        stack.setSpacing(7)
+        body.setObjectName("cardBody")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        self.pages = QStackedWidget(body)
+        body_layout.addWidget(self.pages)
+        body_layout.addStretch()
+        self.tab_pages: dict[str, QVBoxLayout] = {}
 
-        def section(title):
+        def tab(title: str) -> QVBoxLayout:
+            if title not in self.tab_pages:
+                page = QWidget()
+                column = QVBoxLayout(page)
+                column.setContentsMargins(0, 0, 0, 0)
+                column.setSpacing(0)
+                self.pages.addWidget(page)
+                self.tabs.add_item(title, self.pages.count() - 1)
+                self.tab_pages[title] = column
+            return self.tab_pages[title]
+
+        def section(title, page="水平"):
             frame = QFrame()
             frame.setObjectName("scopeSection")
             box = QVBoxLayout(frame)
-            box.setContentsMargins(10, 5, 10, 5)
-            box.setSpacing(2)
+            box.setContentsMargins(16, 10, 16, 12)
+            box.setSpacing(6)
             if title:
                 label = QLabel(title)
-                label.setObjectName("spectrumChartTitle")
+                label.setObjectName("sectionTitle")
                 box.addWidget(label)
-            stack.addWidget(frame)
+            tab(page).addWidget(frame)
             return box
 
         self.capture_settings = None
+        tab("水平")
+        tab("垂直")
+        tab("触发")
         if {(1, "record_length"), (1, "record_length_auto")} <= self.model_writes:
             self.capture_settings = ScopeDepth()
             self.capture_settings.requested.connect(lambda cmd: self.submit([cmd], channels=True))
-            section("采集设置").addWidget(self.capture_settings)
+            section("采集设置", "采集").addWidget(self.capture_settings)
+        self.tabs.changed.connect(self.pages.setCurrentIndex)
+        self.tabs.set_current(0)
 
-        horizontal = section("水平")
+        horizontal = section("")
         self.add_slider(horizontal, 1, "timebase", "时基", "s", coarse=True)
         self.add_slider(horizontal, 1, "time_position", "偏移", "s")
         self.points: ScopePoints | None = None
@@ -471,15 +519,26 @@ class OscilloscopeControls(QFrame):
         self._sample_rate_session = None
         self._sample_rate_value: float | None = None
         horizontal.addWidget(self.sample_rate)
+        # 垂直: one channel at a time, chosen with colored chips (same colors as the traces).
+        vertical = tab("垂直")
+        chips_row = QHBoxLayout()
+        chips_row.setContentsMargins(14, 8, 14, 0)
+        self.channel_tabs = Segmented(())
+        self.channel_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        chips_row.addWidget(self.channel_tabs)
+        vertical.addLayout(chips_row)
+        self.channel_pages = QStackedWidget()
+        vertical.addWidget(self.channel_pages)
         for ch in self.instrument_channels:
-            box = section("")
+            frame = QFrame()
+            frame.setObjectName("scopeSection")
+            box = QVBoxLayout(frame)
+            box.setContentsMargins(16, 10, 16, 12)
+            box.setSpacing(6)
+            self.channel_pages.addWidget(frame)
+            self.channel_tabs.add_item(f"CH{ch}", ch, icon="record", icon_color=COLORS[(ch - 1) % 4])
             if (ch, "channel_enabled") in self.model_writes:
-                check = QCheckBox(f"CH {ch}")
-                color = COLORS[(ch - 1) % 4]
-                check.setStyleSheet(
-                    f"QCheckBox {{ color: {color}; font-weight: 600; }}"
-                    f"QCheckBox::indicator:checked {{ background: {color}; border-color: {color}; }}"
-                )
+                check = Switch(f"CH {ch} 通道开启")
                 check.clicked.connect(lambda enabled, c=ch: self.set_channel(c, enabled))
                 box.addWidget(check)
                 self.checks[ch] = check
@@ -487,7 +546,9 @@ class OscilloscopeControls(QFrame):
                 box.addWidget(QLabel(f"CH {ch}"))
             self.add_slider(box, ch, "scale", "档位", "V", coarse=True)
             self.add_slider(box, ch, "offset", "偏移", "V")
-        trigger = section("")
+        self.channel_tabs.changed.connect(self.show_channel)
+        self.channel_tabs.set_current(self.instrument_channels[0] if self.instrument_channels else None)
+        trigger = section("", "触发")
         row = QHBoxLayout()
         self.trigger_label = QLabel("触发 · 等待读回")
         self.trigger_label.setObjectName("spectrumChartTitle")
@@ -510,9 +571,15 @@ class OscilloscopeControls(QFrame):
             self.trigger_slider.preview_changed.connect(self.preview_trigger_level)
             self.trigger_slider.preview_reset.connect(self.preview_cancelled.emit)
             trigger.addWidget(self.trigger_slider)
-        stack.addStretch()
+        for column in self.tab_pages.values():
+            column.addStretch(1)
         self.scroller.setWidget(body)
         layout.addWidget(self.scroller, 1)
+        foot = QFrame(self)
+        foot.setObjectName("cardFoot")
+        foot_layout = QVBoxLayout(foot)
+        foot_layout.setContentsMargins(14, 10, 14, 10)
+        foot_layout.setSpacing(6)
         actions = QHBoxLayout()
         self.fine_button: QToolButton | None = None
         if any(not field.coarse for field in self.slider_fields()):
@@ -533,17 +600,33 @@ class OscilloscopeControls(QFrame):
         self.auto_button: QPushButton | None = None
         if (1, "auto_setup") in self.model_writes:
             self.auto_button = QPushButton("Auto 自动设置")
-            self.auto_button.setObjectName("primaryButton")
+            style_button(self.auto_button, "", "wand")
             self.auto_button.setProperty("buttonSize", "panel")
             self.auto_button.clicked.connect(self.auto_setup)
             actions.addWidget(self.auto_button, 1)
-        layout.addLayout(actions)
-        self.status = QLabel("拖动预览目标值 · 松手后写入仪器" if self.slider_fields() else "")
-        self.status.setObjectName("rangeHint")
+        foot_layout.addLayout(actions)
+        self.status = QLabel(
+            "拖动预览 · 松手写入仪器 · 也可直接拖动图上的 0 V 与 T 标签" if self.slider_fields() else ""
+        )
+        self.status.setObjectName("panelHint")
+        self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status.setWordWrap(True)
-        layout.addWidget(self.status)
+        foot_layout.addWidget(self.status)
+        layout.addWidget(foot)
         controller.refreshed.connect(self.refresh)
         self.refresh()
+
+    def show_channel(self, channel) -> None:
+        """Select the 垂直 tab's channel (also used when a channel readout is clicked)."""
+        if channel in self.instrument_channels:
+            self.channel_pages.setCurrentIndex(self.instrument_channels.index(channel))
+            self.channel_tabs.set_current(channel)
+
+    def show_tab(self, title: str) -> None:
+        if title in self.tab_pages:
+            index = list(self.tab_pages).index(title)
+            self.pages.setCurrentIndex(index)
+            self.tabs.set_current(index)
 
     def slider_fields(self) -> tuple[ScopeSlider, ...]:
         return (
@@ -720,6 +803,16 @@ class OscilloscopeControls(QFrame):
             if all((ch, "channel_enabled") in self.values for ch in self.instrument_channels)
             else "等待参数同步"
         )
+        set_property(
+            self.health,
+            "kind",
+            "warn"
+            if self.running or "等待" in self.health.text()
+            else "accent"
+            if "锁定" in self.health.text()
+            else "ok",
+        )
+        self.refresh_button.setEnabled(available)
 
     def refresh_sample_rate(self, state: dict) -> None:
         """Render the published memory snapshot, never request a parameter read."""

@@ -3,12 +3,22 @@
 from typing import Any, cast
 
 import shiboken6
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from lab_control.application.settings_sync import SettingsSync
 from lab_control.domain.instruments import DeviceError
 from lab_control.domain.readback import usable_reading
+from lab_control.ui.kit import style_button
 from lab_control.ui.pages.device_control.power_supply import PowerOutput
 from lab_control.ui.pages.device_control.signal_source import ParameterGroup, newer_token
 from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS
@@ -170,27 +180,36 @@ class PowerControls(QWidget):
             c.name == "all_outputs" and c.writable
             for c in controller.declared_capabilities(device_id).operations
         )
+        # Parameter card: title and refresh, whole-device output, one panel per channel.
+        self.setObjectName("paramCard")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        header = QHBoxLayout()
+        layout.setSpacing(0)
+        head = QFrame(self)
+        head.setObjectName("cardHead")
+        head.setFixedHeight(52)
+        header = QHBoxLayout(head)
+        header.setContentsMargins(16, 0, 10, 0)
         title = QLabel("通道设置")
-        title.setObjectName("spectrumChartTitle")
+        title.setObjectName("cardTitle")
         header.addWidget(title, 1)
         self.refresh_button = QPushButton("刷新参数")
-        self.refresh_button.setProperty("buttonSize", "compact")
+        style_button(self.refresh_button, "ghost", "refresh", "sm")
         self.refresh_button.clicked.connect(lambda: self.read_parameters())
         header.addWidget(self.refresh_button)
-        layout.addLayout(header)
+        layout.addWidget(head)
         self.output = MonitoredPowerOutput(self, "all_outputs", 1) if self.master else None
         if self.output:
+            self.output.setContentsMargins(16, 10, 16, 0)
             layout.addWidget(self.output)
         self.scroller = QScrollArea()
         self.scroller.setWidgetResizable(True)
         body = QWidget()
+        body.setObjectName("cardBody")
         rows = QVBoxLayout(body)
-        rows.setContentsMargins(0, 0, 4, 0)
-        rows.setSpacing(8)
+        rows.setContentsMargins(12, 12, 12, 12)
+        rows.setSpacing(10)
         for channel in schema.channels:
             panel = PowerMonitorChannel(self, channel)
             self.panels[channel] = panel
@@ -202,6 +221,7 @@ class PowerControls(QWidget):
         self.status.setObjectName("inputFeedback")
         self.status.setWordWrap(True)
         self.status.hide()
+        self.status.setContentsMargins(16, 6, 16, 10)
         layout.addWidget(self.status)
         controller.settings_changed.connect(self.sync)
         controller.refreshed.connect(self.refresh)

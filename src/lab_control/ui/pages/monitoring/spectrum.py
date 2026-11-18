@@ -25,6 +25,8 @@ from lab_control.domain.spectrum import SpectrumMarker
 from lab_control.domain.spectrum_display import amplitude_unit
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import state_label
+from lab_control.ui.kit import Dot, EmptyState, IconButton, style_button
+from lab_control.ui.kit.readouts import ReadoutStrip
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.recording_state import (
     RecordingButton,
@@ -36,7 +38,6 @@ from lab_control.ui.pages.monitoring.spectrum_controls import SpectrumControls
 from lab_control.ui.pages.monitoring.spectrum_markers import MarkerDialog, SpectrumPlot, frequency_text
 from lab_control.ui.pages.monitoring.timing import SpectrumInterval
 from lab_control.ui.widgets.device_selector import DeviceSelector
-from lab_control.ui.widgets.readouts import ReadoutStrip
 
 
 class SpectrumMonitoringPage(QWidget):
@@ -51,66 +52,86 @@ class SpectrumMonitoringPage(QWidget):
         self.markers: list[SpectrumMarker] = []
         self.marker_key = ""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(14)
+        # Header: device card and same-category chips; acquisition controls on the right.
         header = QHBoxLayout()
+        header.setSpacing(8)
         self.selector = DeviceSelector(controller, "spectrum_analyzer", self, compact=True)
         header.addWidget(self.selector, 1)
         self.connection = QLabel(self)
         self.connection.setObjectName("sourceConnectionState")
+        self.connection.hide()  # The device card shows the connection state.
         header.addWidget(self.connection)
+        self.interval = SpectrumInterval(controller, self)
+        header.addWidget(self.interval)
         self.start_button = QPushButton("开始监测", self)
+        style_button(self.start_button, "", "play")
         self.start_button.clicked.connect(self.toggle_monitoring)
         header.addWidget(self.start_button)
+        self.record_button = RecordingButton(self)
+        self.record_button.clicked.connect(self.record)
+        header.addWidget(self.record_button)
         layout.addLayout(header)
-        self.empty = QLabel("请先从总览连接频谱仪，再选择设备。", self)
-        layout.addWidget(self.empty)
+        self.empty = EmptyState("未选择频谱仪", "请先在首页连接频谱仪，再从上方选择设备。", "spec", self)
+        layout.addWidget(self.empty, 1)
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.splitter.setChildrenCollapsible(False)
         chart = self.chart = QFrame(self.splitter)
         chart.setObjectName("spectrumChart")
         chart.setMinimumWidth(280)
         plot_layout = QVBoxLayout(chart)
-        plot_layout.setContentsMargins(10, 10, 10, 10)
-        toolbar = QHBoxLayout()
-        title = QLabel("频谱", chart)
-        title.setObjectName("spectrumChartTitle")
-        toolbar.addWidget(title)
-        toolbar.addStretch()
-        self.record_button = RecordingButton(chart)
-        self.record_button.clicked.connect(self.record)
-        toolbar.addWidget(self.record_button)
-        self.interval = SpectrumInterval(controller, chart)
-        self.interval.setFixedWidth(self.record_button.width())
-        toolbar.addWidget(self.interval)
-        plot_layout.addLayout(toolbar)
+        plot_layout.setContentsMargins(0, 0, 0, 0)
+        plot_layout.setSpacing(0)
+        head = QFrame(chart)
+        head.setObjectName("cardHead")
+        toolbar = QHBoxLayout(head)
+        toolbar.setContentsMargins(0, 0, 10, 0)
+        toolbar.setSpacing(4)
         self.readouts = ReadoutStrip(
             {"center": "中心频率", "span": "扫宽", "bw": "RBW / VBW", "ref": "参考电平", "marker": "标记"},
             highlight=("marker",),
+            embedded=True,
         )
-        plot_layout.addWidget(self.readouts)
+        toolbar.addWidget(self.readouts, 1)
+        self.save_button = IconButton("download", "保存当前显示帧（原始数据 + 分析 CSV）")
+        self.save_button.clicked.connect(lambda: self.save())
+        toolbar.addWidget(self.save_button)
+        self.pin_button = IconButton("pin", "固定到仪器测控总览")
+        self.pin_button.clicked.connect(self.pin)
+        toolbar.addWidget(self.pin_button)
+        plot_layout.addWidget(head)
         self.plot = SpectrumPlot(chart)
         self.plot.add_frequency.connect(self.add_marker_at)
         self.plot.save_frame.connect(self.save)
         self.plot.edit_marker.connect(self.edit_marker)
         self.plot.readings_changed.connect(self.update_marker_list)
         self.plot.readings_changed.connect(self.update_readouts)
-        plot_layout.addWidget(self.plot, 1)
+        body = QVBoxLayout()
+        body.setContentsMargins(10, 10, 12, 6)
+        body.addWidget(self.plot, 1)
+        plot_layout.addLayout(body, 1)
+        foot = QFrame(chart)
+        foot.setObjectName("cardFoot")
+        footer = QHBoxLayout(foot)
+        footer.setContentsMargins(14, 8, 16, 8)
+        footer.setSpacing(6)
+        self.status_dot = Dot("idle", 7)
+        footer.addWidget(self.status_dot)
         self.status = QLabel("监测未开始", chart)
-        self.status.setObjectName("mutedText")
+        self.status.setObjectName("chartStatus")
         self.status.setWordWrap(True)
-        footer = QHBoxLayout()
         footer.addWidget(self.status, 1)
         self.actual = QLabel("实际 — s/帧")
-        self.actual.setObjectName("rangeHint")
+        self.actual.setObjectName("chartMeta")
         footer.addWidget(self.actual)
-        plot_layout.addLayout(footer)
+        plot_layout.addWidget(foot)
         self.splitter.addWidget(chart)
         self.right = QWidget(self.splitter)
         self.right.setMinimumWidth(360)
         self.right.setMaximumWidth(430)
         self.right_layout = QVBoxLayout(self.right)
-        self.right_layout.setContentsMargins(8, 0, 0, 0)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
@@ -151,17 +172,18 @@ class SpectrumMonitoringPage(QWidget):
             self.controls.busy_changed.connect(lambda busy: self.selector.setEnabled(not busy))
             row = QHBoxLayout()
             label = QLabel("软件标记", self.controls)
-            label.setObjectName("spectrumChartTitle")
+            label.setObjectName("sectionTitle")
             row.addWidget(label)
             row.addStretch()
-            add = QPushButton("＋ 添加标记", self.controls)
+            add = QPushButton("添加标记", self.controls)
+            style_button(add, "ghost", "plus", "sm")
             add.clicked.connect(self.add_marker)
             row.addWidget(add)
             self.controls.marker_slot.addLayout(row)
             self.marker_list = QListWidget(self.controls)
             self.marker_list.setObjectName("spectrumMarkerList")
-            self.marker_list.setMinimumHeight(92)
-            self.marker_list.setMaximumHeight(130)
+            self.marker_list.setMinimumHeight(64)
+            self.marker_list.setMaximumHeight(170)
             self.marker_list.itemDoubleClicked.connect(
                 lambda item: self.edit_marker(item.data(Qt.ItemDataRole.UserRole))
             )
@@ -380,6 +402,7 @@ class SpectrumMonitoringPage(QWidget):
             "已连接" if connected else state_label(state.get("connectionState", "disconnected"))
         )
         self.start_button.setText("暂停监测" if task.get("running") else "开始监测")
+        style_button(self.start_button, "", "pause" if task.get("running") else "play")
         self.start_button.setEnabled(
             bool(
                 (connected or task.get("running"))
@@ -435,6 +458,17 @@ class SpectrumMonitoringPage(QWidget):
             text += " · 仪器刻度暂不可用"
         self.status.setToolTip(detail)
         self.status.setText(text)
+        self.status_dot.set_status(
+            "err"
+            if task.get("error") or not connected
+            else "err"
+            if task.get("recording")
+            else "ok"
+            if task.get("running")
+            else "idle",
+            live=bool(task.get("running")),
+        )
+        self.save_button.setEnabled(self.plot.displayed_frame is not None and self.plot.save_enabled)
         self.update_readouts()
 
     def refresh_frame(self, device_id: str) -> None:

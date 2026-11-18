@@ -20,6 +20,14 @@ from lab_control.domain.instruments import AcquisitionRequest
 from lab_control.ui.controller import state_label
 from lab_control.ui.pages.monitoring.channel_selection import readable_power_channels
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
+from lab_control.ui.pages.monitoring.frame import (
+    chart_card,
+    empty_label,
+    header_row,
+    page_layout,
+    run_button,
+    show_state,
+)
 from lab_control.ui.pages.monitoring.power_controls import PowerControls
 from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS, PowerPlot
 from lab_control.ui.pages.monitoring.recording_state import (
@@ -45,8 +53,7 @@ class PowerMonitoringPage(QWidget):
         self.session_id = ""
         self.plot: PowerPlot
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 12)
-        layout.setSpacing(8)
+        page_layout(layout)
         header = QHBoxLayout()
         self.selector = DeviceSelector(controller, "power_supply", self, compact=True, surface="monitoring")
         header.addWidget(self.selector, 1)
@@ -58,7 +65,8 @@ class PowerMonitoringPage(QWidget):
         header.addWidget(self.start_button)
         layout.addLayout(header)
         self.empty = QLabel("请先从总览连接电源，再选择设备。")
-        layout.addWidget(self.empty)
+        empty_label(self.empty)
+        layout.addWidget(self.empty, 1)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
         self.chart = QFrame()
@@ -110,10 +118,13 @@ class PowerMonitoringPage(QWidget):
         self.right.setMinimumWidth(350)
         self.right.setMaximumWidth(410)
         self.right_layout = QVBoxLayout(self.right)
-        self.right_layout.setContentsMargins(6, 0, 0, 0)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setSizes([800, 390])
+        run_button(self.start_button)
+        header_row(header, connection=self.connection, actions=(self.record_button,))
+        self.status_dot = chart_card(self.chart, status=self.status, footer_extra=(self.actual,))
         layout.addWidget(self.splitter, 1)
         self.selector.selected.connect(self.select_device)
         controller.refreshed.connect(self.refresh)
@@ -310,6 +321,8 @@ class PowerMonitoringPage(QWidget):
             "已连接" if connected else state_label(state.get("connectionState", "disconnected"))
         )
         self.start_button.setText("暂停监测" if task.get("running") or self.transition else "开始监测")
+        run_button(self.start_button, bool(task.get("running") or self.transition))
+        show_state(self.status_dot, task, connected)
         self.start_button.setEnabled(
             (connected or bool(task.get("running")))
             and not busy

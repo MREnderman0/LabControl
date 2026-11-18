@@ -8,9 +8,27 @@ from typing import Callable
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFileDialog, QMenu, QMessageBox
 
+from lab_control.ui.styles import tokens as tk
+
 from .publication_figure import export_figure
+
+
+def apply_axis_theme(widget: pg.PlotWidget) -> None:
+    """Graphite axes: 11 px tick labels, muted text and rule colors (visual only)."""
+    font = QFont(widget.font())
+    font.setPixelSize(11)
+    item = widget.getPlotItem()
+    for name in ("left", "bottom", "right", "top"):
+        axis = item.getAxis(name)
+        axis.setStyle(tickFont=font, tickTextOffset=6)
+        axis.setPen(pg.mkPen(tk.BORDER_STRONG))
+        axis.setTextPen(pg.mkPen(tk.TEXT_3))
+        axis.label.setDefaultTextColor(pg.mkColor(tk.TEXT_3))
+        # Kept by later setLabel() calls that pass no style of their own.
+        axis.labelStyle = {"color": tk.TEXT_3, "font-size": "11px"}
 
 
 @dataclass
@@ -54,6 +72,7 @@ class PublicationPlotWidget(pg.PlotWidget):
         super().__init__(*args, **kwargs)
         self.scene().contextMenu = []
         self.snapshot_provider = None
+        apply_axis_theme(self)
 
     def export_snapshot(self):
         if self.snapshot_provider is not None:

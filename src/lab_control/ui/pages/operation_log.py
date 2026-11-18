@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lab_control.ui.kit import icons
 from lab_control.ui.styles import tokens as tk
-from lab_control.ui.widgets import icons
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 MAX_ENTRIES = 5000

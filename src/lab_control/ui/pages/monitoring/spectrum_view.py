@@ -6,7 +6,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import QPoint, Qt, Signal
 
 from lab_control.ui.pages.monitoring.trace_view import TraceView
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget
+from lab_control.ui.widgets.plot_export import PublicationPlotWidget, apply_axis_theme
 
 
 class SpectrumAmplitudeAxis(pg.AxisItem):
@@ -57,6 +57,7 @@ class SpectrumCanvas(PublicationPlotWidget):
         margin = math.ceil(self.fontMetrics().height() / 2) + 1
         self.plotItem.setAxisItems({"left": SpectrumAmplitudeAxis(margin)})
         self.plotItem.layout.setContentsMargins(1, margin, 1, 1)
+        apply_axis_theme(self)  # Visual only: the replaced axis gets the same tick font and colors.
 
     def mousePressEvent(self, event):  # noqa: N802
         if event.button() == Qt.MouseButton.RightButton:

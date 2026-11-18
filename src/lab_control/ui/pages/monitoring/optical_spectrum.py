@@ -19,6 +19,14 @@ from lab_control.application.config import config_from_record
 from lab_control.application.controls import DataSource, data_sources
 from lab_control.ui.controller import state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
+from lab_control.ui.pages.monitoring.frame import (
+    chart_card,
+    empty_label,
+    header_row,
+    page_layout,
+    run_button,
+    show_state,
+)
 from lab_control.ui.pages.monitoring.optical_spectrum_controls import OpticalSpectrumControls
 from lab_control.ui.pages.monitoring.page import MonitoringPage
 from lab_control.ui.pages.monitoring.plot import LivePlot
@@ -49,8 +57,7 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
         # editor set is the four-item controls panel above.
         self.form = type("_OpticalFormCompatibility", (), {"editors": {}})()
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 12)
-        layout.setSpacing(10)
+        page_layout(layout)
         header = QHBoxLayout()
         self.selector = DeviceSelector(controller, "optical_spectrometer", self, compact=True)
         header.addWidget(self.selector, 1)
@@ -62,8 +69,8 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
         header.addWidget(self.start_button)
         layout.addLayout(header)
         self.empty = QLabel("请先从总览连接光谱仪，再选择设备。", self)
-        self.empty.setObjectName("mutedText")
-        layout.addWidget(self.empty)
+        empty_label(self.empty)
+        layout.addWidget(self.empty, 1)
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.splitter.setChildrenCollapsible(False)
         chart = self.chart = QFrame(self.splitter)
@@ -109,12 +116,15 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
         self.right.setMinimumWidth(360)
         self.right.setMaximumWidth(430)
         self.right_layout = QVBoxLayout(self.right)
-        self.right_layout.setContentsMargins(8, 0, 0, 0)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
         self.splitter.setSizes([800, 400])
         layout.addWidget(self.splitter, 1)
+        run_button(self.start_button)
+        header_row(header, connection=self.connection, actions=(self.record_button,))
+        self.status_dot = chart_card(chart, status=self.status, footer_extra=(self.actual,))
         self.selector.selected.connect(self.select_device)
         controller.refreshed.connect(self.refresh)
         controller.frame_ready.connect(self.refresh_frame)
@@ -232,6 +242,8 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
             "已连接" if connected else state_label(state.get("connectionState", "disconnected"))
         )
         self.start_button.setText("暂停监测" if task.get("running") else "开始监测")
+        run_button(self.start_button, bool(task.get("running")))
+        show_state(self.status_dot, task, connected)
         self.start_button.setEnabled(
             bool((connected or task.get("running")) and not (self.controls and self.controls.running))
         )

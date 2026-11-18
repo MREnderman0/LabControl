@@ -21,9 +21,9 @@ from PySide6.QtWidgets import (
 
 from lab_control.application.watchlists import WatchRow
 from lab_control.domain.workspace import channel_label
+from lab_control.ui.kit import icons
 from lab_control.ui.pages.watch_picker import WatchPicker
 from lab_control.ui.styles import tokens as tk
-from lab_control.ui.widgets import icons
 
 STATUS_DOTS = {"正常": tk.OK, "高于上限": tk.ERR, "低于下限": tk.ERR}
 

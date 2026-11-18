@@ -314,8 +314,8 @@ class PowerSupplyPage(QWidget):
         self.panels: dict[int, PowerChannel] = {}
         self.output: PowerOutput | None = None
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)  # Two channel columns must fit a 1024 px work area.
+        layout.setSpacing(14)
         self.header = QHBoxLayout()
         self.selector = DeviceSelector(controller, "power_supply", self, compact=True, surface=surface)
         self.header.addWidget(self.selector, 1)

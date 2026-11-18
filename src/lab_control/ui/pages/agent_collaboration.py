@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -292,6 +293,9 @@ class AgentCollaborationPanel(QWidget):
         layout.addLayout(buttons)
         self.grants = WorkspaceComboBox()
         self.grants.setPlaceholderText("选择实验授权")
+        # Long grant labels must not set the settings page width; the popup shows them in full.
+        self.grants.setMinimumWidth(0)
+        self.grants.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         row = QHBoxLayout()
         row.addWidget(self.grants, 1)
         revoke = QPushButton("撤销所选实验授权")

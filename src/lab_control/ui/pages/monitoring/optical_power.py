@@ -35,6 +35,14 @@ from lab_control.domain.power import watts_to_dbm
 from lab_control.domain.workspace import channel_label
 from lab_control.ui.controller import WorkspaceController, state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
+from lab_control.ui.pages.monitoring.frame import (
+    chart_card,
+    empty_label,
+    header_row,
+    page_layout,
+    run_button,
+    show_state,
+)
 from lab_control.ui.pages.monitoring.optical_power_readout import PowerMeterReadoutRow, readout_header
 from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS
 from lab_control.ui.pages.monitoring.recording_state import (
@@ -415,8 +423,7 @@ class OpticalPowerMonitoringPage(QWidget):
         self.latest_frame: MonitorFrame | None = None
         self.monitoring_context_id = ""
         layout = self.main_layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 12)
-        layout.setSpacing(8)
+        page_layout(layout)
         header = QHBoxLayout()
         self.selector = DeviceSelector(controller, self.category, self, compact=True)
         header.addWidget(self.selector, 1)
@@ -431,8 +438,8 @@ class OpticalPowerMonitoringPage(QWidget):
         header.addWidget(self.start_button)
         layout.addLayout(header)
         self.empty = QLabel(f"请先从总览连接{self.category_name}，再选择设备。")
-        self.empty.setObjectName("mutedText")
-        layout.addWidget(self.empty)
+        empty_label(self.empty)
+        layout.addWidget(self.empty, 1)
         self.channel_bar = QWidget(self)
         self.channel_row = QHBoxLayout(self.channel_bar)
         self.channel_row.setContentsMargins(0, 0, 0, 0)
@@ -459,6 +466,8 @@ class OpticalPowerMonitoringPage(QWidget):
         fit.clicked.connect(self._fit)
         title_row.addWidget(fit)
         chart_layout.addLayout(title_row)
+        run_button(self.start_button)
+        header_row(header, connection=self.connection, actions=(self.record_button,))
         self.plot = self.plot_type()
         if isinstance(self.plot, RollingPowerPlot):
             self.plot.set_display_unit(self.display_unit)
@@ -468,6 +477,7 @@ class OpticalPowerMonitoringPage(QWidget):
         self.status.setObjectName("mutedText")
         self.status.setWordWrap(True)
         chart_layout.addWidget(self.status)
+        self.status_dot = chart_card(chart, status=self.status)
         self.splitter.addWidget(chart)
         right = QFrame()
         right.setObjectName("powerMeterReadoutList" if self.rolling_power else "powerMeterReadoutPanel")
@@ -832,6 +842,8 @@ class OpticalPowerMonitoringPage(QWidget):
         self.start_button.setText(
             "收尾中…" if draining else "停止监测" if task.get("running") else "开始监测"
         )
+        run_button(self.start_button, bool(task.get("running")))
+        show_state(self.status_dot, task, connected)
         self.start_button.setEnabled(
             bool(
                 (connected or task.get("running"))

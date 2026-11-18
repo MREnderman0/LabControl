@@ -10,8 +10,9 @@ from PySide6.QtWidgets import QApplication
 
 
 def load_stylesheet() -> str:
-    stylesheet_path = Path(__file__).parent / "ui" / "styles" / "card_workspace.qss"
-    return stylesheet_path.read_text(encoding="utf-8")
+    """Runtime theme; ``@assets@`` points at the bundled SVG check marks and spin arrows."""
+    styles = Path(__file__).parent / "ui" / "styles"
+    return (styles / "card_workspace.qss").read_text(encoding="utf-8").replace("@assets@", styles.as_posix())
 
 
 def load_ui_font() -> str:

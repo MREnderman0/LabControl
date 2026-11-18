@@ -101,7 +101,7 @@ class ElectronicLoadPage(QWidget):
         self.mode = controller.mode
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(8)
         header = QHBoxLayout()
         self.selector = DeviceSelector(

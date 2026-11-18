@@ -153,7 +153,8 @@ def test_save_old_display_after_parameter_change_and_single_row(spectrum, qtbot,
     _, page, runtime, key, _ = spectrum
     from PySide6.QtWidgets import QDoubleSpinBox
 
-    assert page.chart.findChildren(QDoubleSpinBox) == [page.interval]
+    # One interval control, in the page header with the run and record buttons.
+    assert page.findChildren(QDoubleSpinBox) == [page.interval] and page.interval.parentWidget() is page
     assert not menu_actions(page)["保存当前帧数据"].isEnabled()
     page.toggle_monitoring()
     qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)

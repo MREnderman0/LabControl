@@ -194,12 +194,14 @@ class WorkspaceNavigation:
         window = self.window
         window.device_pool.hide()
         module, category = window.current_module, window.submenu.tabData(window.submenu.currentIndex()) or ""
-        window.submenu.setVisible(module != "监视列表")
-        window.breadcrumb.setVisible(module != "监视列表")
-        tab = window.submenu.tabText(window.submenu.currentIndex())
-        window.breadcrumb.setText(f"/  {tab}" if tab and tab != module else "")
+        window.subnav.setVisible(module == "数据处理")
+        window.chrome.set_crumbs(
+            module if module == "仪器测控" and category else "",
+            CATEGORY_LABELS.get(category, module) if module == "仪器测控" and category else module,
+        )
         picker = window.surface_picker
         picker.hide()
+        picker.setProperty("shown", False)
         if module == "仪器测控" and category:
             options = [s for s in ("设备管理", "实时监测") if category in self._submenu_categories(s)]
             requested = window.controller.records.get(device_id)
@@ -219,7 +221,8 @@ class WorkspaceNavigation:
             picker.setProperty("category", category)
             picker.setCurrentIndex(picker.findData(surface))
             picker.blockSignals(False)
-            picker.setVisible(len(options) > 1)
+            # The combo stays the model; the header shows it as a 控制 / 监测 segmented switch.
+            picker.setProperty("shown", len(options) > 1)
             module = surface
         if module == "首页":
             page = window.overview_page
@@ -331,3 +334,5 @@ class WorkspaceNavigation:
             # Resolve a requested device before showEvent can start readback for the page.
             page.selector.select(device_id)
         window.stack.setCurrentWidget(page)
+        window.chrome.sync_surface()
+        window.chrome.sync_selection()
