@@ -373,6 +373,7 @@ class OscilloscopePlot(LivePlot):
                 y,
                 connect="finite",
                 symbol="o" if len(m.values) == 1 else None,
+                useCache=False,
                 symbolSize=5,
             )
             curve.show()

@@ -133,10 +133,18 @@ class PhaseNoisePage(QWidget):
             "phase_noise": self.pn_plot.plot(pen=pg.mkPen(tk.CHANNEL_COLORS[0], width=2), name="相噪"),
             "noise_floor": self.pn_plot.plot(pen=pg.mkPen(tk.TEXT_3, width=1), name="估计底噪"),
             "adev": self.stability_plot.plot(
-                pen=pg.mkPen(tk.CHANNEL_COLORS[0], width=2), symbol="o", symbolSize=5, name="ADEV · 重叠"
+                pen=pg.mkPen(tk.CHANNEL_COLORS[0], width=2),
+                symbol="o",
+                symbolSize=5,
+                useCache=False,
+                name="ADEV · 重叠",
             ),
             "mdev": self.stability_plot.plot(
-                pen=pg.mkPen(tk.CHANNEL_COLORS[1], width=2), symbol="s", symbolSize=5, name="MDEV"
+                pen=pg.mkPen(tk.CHANNEL_COLORS[1], width=2),
+                symbol="s",
+                symbolSize=5,
+                useCache=False,
+                name="MDEV",
             ),
         }
         self.side = QFrame()

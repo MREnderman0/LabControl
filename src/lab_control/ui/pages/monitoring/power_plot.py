@@ -138,6 +138,7 @@ class PowerPlot(QWidget):
                     y,
                     connect="finite",
                     symbol="o" if len(x) == 1 else None,
+                    useCache=False,
                     symbolSize=5,
                 )
             else:

@@ -112,6 +112,8 @@ def test_scan_curve_selection_keeps_full_recording_and_snapshot(qtbot, tmp_path,
         task = runtime.monitoring.tasks[device]
         assert task.requests[0].channels == CHANNELS and task.requests[0].confirmed
         assert len(page.plot.curves) == 19
+        assert all(not curve.scatter.opts["useCache"] for curve in page.plot.curves.values())
+        assert not page.plot.grab().isNull()
         assert page.cards[401].unit.text() == "°C"
         assert page.cards[401].peak.text() == "0"
         assert page.plot.plot.viewRange()[1][0] < -3

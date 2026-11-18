@@ -184,7 +184,7 @@ class LivePlot(QWidget):
                 curve.setClipToView(True)
                 self.curves[key] = curve
             self.curves[key].setData(
-                x, y, connect="finite", symbol="o" if len(x) == 1 else None, symbolSize=5
+                x, y, connect="finite", symbol="o" if len(x) == 1 else None, symbolSize=5, useCache=False
             )
             self.curves[key].show()
             used.add(key)

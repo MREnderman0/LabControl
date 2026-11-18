@@ -180,9 +180,12 @@ class OpticalPowerPlot(QWidget):
             while history and self.latest_time - history[0][0] > 600:
                 history.popleft()
             if channel not in self.curves:
+                # Draw the first-sample marker directly. On Windows the cached
+                # pixmap-fragment path can crash while painting a new scan.
                 self.curves[channel] = self.plot.plot(
                     pen=pg.mkPen(CHANNEL_COLORS[(channel - 1) % len(CHANNEL_COLORS)], width=1.8),
                     name=channel_label(self.names, channel),
+                    useCache=False,
                 )
             if history:
                 x, y = np.asarray(history, dtype=float).T
@@ -271,6 +274,7 @@ class RollingPowerPlot(OpticalPowerPlot):
                 self.curves[channel] = self.plot.plot(
                     pen=pg.mkPen(CHANNEL_COLORS[(channel - 1) % len(CHANNEL_COLORS)], width=1.8),
                     name=channel_label(self.names, channel),
+                    useCache=False,
                 )
             x, y = [], []
             previous_segment = None

@@ -392,6 +392,7 @@ class ProcessingViewer(QWidget):
                     ),
                     connect="finite",
                     symbol="o" if len(x) == 1 else None,
+                    useCache=False,
                 )
                 # Scalar envelopes contain irregular times and NaN gap markers;
                 # pyqtgraph's clip/downsample assumes sorted, uniform X values.
