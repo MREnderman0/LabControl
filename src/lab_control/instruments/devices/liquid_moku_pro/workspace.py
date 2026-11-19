@@ -1,33 +1,51 @@
 """Three views over a single connected inventory id. Opening a page performs no I/O."""
 
+from math import isfinite
+
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
+from lab_control.application.controls import data_sources
 from lab_control.application.monitoring_state import MonitorFrame
+from lab_control.domain.connections import ConnectionConfig
 from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget
+from lab_control.domain.oscilloscope import engineering
+from lab_control.domain.spectrum import SpectrumMarker
+from lab_control.ui.pages.monitoring.spectrum import SpectrumMarkerActions
 
 from .adapter import LABELS
+from .capture_controls import CaptureControls
+from .capture_settings import field
+from .display_controls import MokuScopePlot, MokuSpectrumPlot, waveform_measurements
 from .protocol import CHANNELS
 
 
-class RolePage(QWidget):
+class RolePage(SpectrumMarkerActions, QWidget):
+    marker_list: QListWidget
+
     def __init__(self, controller, device_id, role):
         super().__init__()
         self.controller, self.device_id, self.role = controller, device_id, role
         self.service = controller.runtime.monitoring
         self.kind = {"oscilloscope": "waveform", "spectrum_analyzer": "spectrum"}.get(role, "")
         self._start_ticket = None
+        self.trigger_receipt = None
         self.last: MonitorFrame | None = None
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 10, 14, 12)
+        layout.setSpacing(8)
         title = QLabel(f"Moku:Pro · {LABELS[role]}")
         title.setObjectName("pageTitle")
         layout.addWidget(title)
@@ -39,56 +57,13 @@ class RolePage(QWidget):
             self.channels.addItem(f"ch{ch}", ch)
         row.addWidget(self.channels)
         row.addStretch()
-        row = QHBoxLayout()
-        layout.addLayout(row)
         if self.kind:
             self.monitor_button = self._button(row, "开始监测", lambda: self.start(False))
-            self.record_button = self._button(row, "逐帧记录", lambda: self.start(True))
-            self._button(row, "停止本面板", self.stop)
-            self._button(row, "导出当前帧", self.export)
-            front = QHBoxLayout()
-            layout.addLayout(front)
-            front.addWidget(QLabel("共享模拟前端"))
-            self.impedance, self.coupling, self.attenuation = QComboBox(), QComboBox(), QComboBox()
-            for box, choices in (
-                (self.impedance, ("50Ohm", "1MOhm")),
-                (self.coupling, ("DC", "AC")),
-                (self.attenuation, ("0dB", "20dB", "40dB")),
-            ):
-                box.addItems(choices)
-                front.addWidget(box)
-            self._button(
-                front,
-                "应用前端",
-                lambda: self.command(
-                    "shared_frontend",
-                    {
-                        "impedance": self.impedance.currentText(),
-                        "coupling": self.coupling.currentText(),
-                        "attenuation": self.attenuation.currentText(),
-                    },
-                    f"修改 ch{self.channel} 的阻抗、耦合和衰减；两个测量面板共用这一前端。",
-                ),
-            )
-            self.readback = QLabel("未读回")
-            front.addWidget(self.readback)
-            front.addStretch()
-            self.plot = PublicationPlotWidget()
-            self.plot.addLegend()
-            layout.addWidget(self.plot, 1)
-            self.plot.setLabel(
-                "bottom",
-                "时间" if self.kind == "waveform" else "频率",
-                units="s" if self.kind == "waveform" else "Hz",
-            )
-            self.plot.setLabel(
-                "left",
-                "电压" if self.kind == "waveform" else "功率",
-                units="V" if self.kind == "waveform" else "dBm",
-            )
-            self.channels.currentIndexChanged.connect(self.clear_curve)
-            controller.frame_ready.connect(self.refresh_plot)
+            self.stop_button = self._button(row, "停止本面板", self.stop)
+            self.build_measurement(layout)
         else:
+            row = QHBoxLayout()
+            layout.addLayout(row)
             self.freq = QDoubleSpinBox()
             self.freq.setRange(1, 1e6)
             self.freq.setValue(10000)
@@ -116,13 +91,102 @@ class RolePage(QWidget):
         row.addStretch()
         self.hint = QLabel()
         self.hint.setWordWrap(True)
-        layout.addWidget(self.hint)
+        if self.kind:
+            self.hint.hide()
+        else:
+            layout.addWidget(self.hint)
         self.status = QLabel()
         self.status.setWordWrap(True)
-        layout.addWidget(self.status)
+        if self.kind:
+            self.chart_layout.addWidget(self.status)
+        else:
+            layout.addWidget(self.status)
         if not self.kind:
             layout.addStretch()
         controller.refreshed.connect(self.refresh_status)
+
+    def build_measurement(self, layout):
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        self.chart = QFrame()
+        self.chart.setObjectName("spectrumChart")
+        self.chart.setMinimumWidth(280)
+        self.chart_layout = QVBoxLayout(self.chart)
+        self.chart_layout.setContentsMargins(10, 8, 10, 8)
+        toolbar = QHBoxLayout()
+        title = QLabel("时域波形" if self.kind == "waveform" else "频谱")
+        title.setObjectName("spectrumChartTitle")
+        toolbar.addWidget(title)
+        toolbar.addStretch()
+        self.record_button = self._button(toolbar, "逐帧记录", lambda: self.start(True))
+        self.export_button = self._button(toolbar, "导出当前帧", self.export)
+        self.chart_layout.addLayout(toolbar)
+        self.summary = QLabel()
+        self.summary.setObjectName("rangeHint")
+        self.summary.setWordWrap(True)
+        self.chart_layout.addWidget(self.summary)
+        if self.kind == "spectrum":
+            self.marker_summary = QLabel()
+            self.marker_summary.setObjectName("spectrumChartTitle")
+            self.marker_summary.hide()
+            self.chart_layout.addWidget(self.marker_summary)
+        config = ConnectionConfig(**self.controller.records[self.device_id]["config"])
+        self.source = next(s for s in data_sources(config) if s.kind == self.kind)
+        self.plot = MokuScopePlot() if self.kind == "waveform" else MokuSpectrumPlot()
+        self.chart_layout.addWidget(self.plot, 1)
+        self.splitter.addWidget(self.chart)
+        self.capture = CaptureControls(self)
+        self.settings = self.capture.settings
+        self.readback = self.capture.readback
+        if isinstance(self.plot, MokuSpectrumPlot):
+            self.marker_plot = self.plot
+            self.markers = []
+            self.marker_list.itemDoubleClicked.connect(
+                lambda item: self.edit_marker(item.data(Qt.ItemDataRole.UserRole))
+            )
+            self.marker_plot.add_frequency.connect(self.add_marker_at)
+            self.marker_plot.edit_marker.connect(self.edit_marker)
+            self.marker_plot.save_frame.connect(self.export)
+            self.marker_plot.readings_changed.connect(self.update_marker_list)
+        self.splitter.addWidget(self.capture)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setSizes([800, 395])
+        layout.addWidget(self.splitter, 1)
+        self.channels.currentIndexChanged.connect(self.clear_curve)
+        self.clear_curve()
+        self.controller.frame_ready.connect(self.refresh_plot)
+
+    def show_trigger(self, actual, channel):
+        self.trigger_receipt = (self.state.get("sessionId"), actual, channel)
+        if self.last is not None and isinstance(self.plot, MokuScopePlot):
+            self.plot.display_trigger(channel, actual["level"])
+
+    def update_marker_list(self):
+        super().update_marker_list()
+        rows = min(3, self.marker_list.count())
+        height = sum(self.marker_list.sizeHintForRow(i) + 2 * self.marker_list.spacing() for i in range(rows))
+        self.marker_list.setFixedHeight(max(54, height + 12))
+        readings = []
+        for marker in self.markers:
+            reading = self.marker_plot.readings.get(marker.number)
+            if reading and reading.position is not None and reading.amplitude is not None:
+                readings.append(
+                    f"M{marker.number}　{engineering(reading.position, 'Hz')}　{reading.amplitude:.2f} {self.marker_plot.amplitude_unit}"
+                )
+        self.marker_summary.setText("　·　".join(readings[:2]))
+        self.marker_summary.setVisible(bool(readings))
+
+    def add_center_marker(self):
+        trace = self.marker_plot.trace
+        self.add_marker_at(float((trace.axis[0] + trace.axis[-1]) / 2) if trace else 0.0)
+
+    def add_marker_at(self, frequency):
+        trace = self.marker_plot.trace
+        width = float(trace.axis[-1] - trace.axis[0]) if trace else 20.0
+        marker = SpectrumMarker(
+            max((m.number for m in self.markers), default=0) + 1, frequency, half_width=max(1.0, width * 0.05)
+        )
+        self.marker_dialog(marker, creating=True)
 
     @property
     def channel(self):
@@ -162,15 +226,28 @@ class RolePage(QWidget):
             == QMessageBox.StandardButton.Yes
         )
 
-    def command(self, op, params, message):
+    def command(self, op, params, message, *, channel=None, on_success=None):
+        ch = self.channel if channel is None else channel
         if not self._confirm(message):
             return
-        self.controller.apply(
-            self.device_id,
-            DeviceCommand(op, params, self.channel, confirmed=True),
-            lambda r: self.status.setText("操作已确认" if r.outcome == "success" else r.error),
-            lambda e: self.status.setText(str(e)),
-        )
+
+        def finished(result):
+            if result.outcome != "success":
+                self.status.setText(result.error)
+                return
+            self.status.setText(f"CH {ch} · 设备已确认命令")
+            if on_success:
+                on_success(result)
+
+        try:
+            self.controller.apply(
+                self.device_id,
+                DeviceCommand(op, params, ch, confirmed=True),
+                finished,
+                lambda e: self.status.setText(str(e)),
+            )
+        except Exception as exc:
+            self.status.setText(str(exc))
 
     def start(self, recording):
         if self._start_ticket is not None:
@@ -252,6 +329,9 @@ class RolePage(QWidget):
     def refresh_status(self):
         if not self.isVisible():
             return
+        state = self.state
+        connected = state.get("connectionState") in {"connected", "busy"}
+        writable = connected and not (state.get("controlsLocked") or state.get("controlPending"))
         prefix = "已连接四槽。" if self._attached() else "首次使用时将核对并连接已有四槽。"
         self.hint.setText(
             prefix
@@ -265,11 +345,26 @@ class RolePage(QWidget):
             return
         snap = self.service.snapshots().get(self.device_id, {})
         pending = self._start_ticket is not None
-        self.monitor_button.setEnabled(not pending)
-        self.record_button.setEnabled(not pending)
-        self.channels.setEnabled(
-            not (pending or (snap.get("running") and self.kind in snap.get("kinds", ())))
+        running = bool(snap.get("running") and self.kind in snap.get("kinds", ()))
+        recording = self.kind in snap.get("recording_kinds", ())
+        writable = (
+            writable
+            and not snap.get("recording_kinds")
+            and self.device_id not in self.controller.group_devices
         )
+        self.monitor_button.setEnabled(connected and not pending and not running)
+        self.record_button.setEnabled(connected and not pending and not recording)
+        self.record_button.setText("记录中" if recording else "逐帧记录")
+        self.stop_button.setEnabled(pending or running)
+        self.channels.setEnabled(not (pending or running))
+        self.capture.bind(state.get("sessionId"), self.channel)
+        self.capture.writable = writable and not pending
+        self.capture.buttons()
+        if self.capture.active is not None:
+            self.channels.setEnabled(False)
+        self.export_button.setEnabled(self.last is not None and not snap.get("display_saving"))
+        if self.kind == "spectrum":
+            self.marker_plot.save_enabled = self.export_button.isEnabled()
         if self.last is not None and self.service.latest(self.device_id, self.kind) is None:
             self.clear_curve()
         note = snap.get("error") or snap.get("recording_notice") or snap.get("notice")
@@ -277,9 +372,36 @@ class RolePage(QWidget):
             self.status.setText(note)
 
     def clear_curve(self):
-        self.plot.clear()
+        self.plot.reset()
+        self.summary.clear()
         self.readback.setText("未读回")
+        self.settings.setText("等待首帧")
         self.last = None
+        self.export_button.setEnabled(False)
+        self.capture.bind(self.state.get("sessionId"), self.channel)
+        if self.kind == "spectrum":
+            self.marker_key = f"spectrum-markers/{self.controller.mode}/{self.device_id}/ch{self.channel}"
+            self.markers = []
+            for row in self.controller.runtime.repository.load_workspace(self.marker_key, []):
+                try:
+                    self.markers.append(SpectrumMarker(**row))
+                except (ValueError, TypeError):
+                    continue
+            self.marker_plot.set_markers(self.markers)
+
+    def show_settings(self, settings):
+        def value(group, key, unit):
+            raw = field(settings.get(group, {}), key)
+            return engineering(raw, unit) if isinstance(raw, (int, float)) and isfinite(raw) else "—"
+
+        if self.kind == "waveform":
+            low, high = (value("timebase", k, "s") for k in ("t1", "t2"))
+            mode = field(settings.get("acquisition_mode"), "mode") or "—"
+            interpolation = field(settings.get("interpolation"), "interpolation") or "—"
+            return f"时窗　{low} ～ {high}\n采样率　{value('samplerate', 'sample_rate', 'Sa/s')}\n采集　{mode} / {interpolation}"
+        low, high = (value("span", k, "Hz") for k in ("frequency1", "frequency2"))
+        window = settings.get("window", {}).get("window", "—")
+        return f"频段　{low} ～ {high}\nRBW　{value('rbw', 'rbw_value', 'Hz')}\n窗函数　{window}"
 
     def refresh_plot(self, device_id):
         if device_id != self.device_id or not self.isVisible():
@@ -291,14 +413,40 @@ class RolePage(QWidget):
             return
         if frame is self.last:
             return
+        self.plot.show_frame(frame, self.source, (self.channel,))
+        displayed = self.plot.displayed_frame
+        if (
+            displayed is None
+            or displayed.batch.timestamp != frame.batch.timestamp
+            or displayed.sequence != frame.sequence
+        ):
+            return
         f = frame.batch.configuration["frontend"]
-        self.readback.setText(
-            "读回：" + " / ".join(str(f.get(k, "—")) for k in ("impedance", "coupling", "attenuation"))
-        )
-        self.plot.clear()
         m = frame.batch.measurements[0]
-        self.plot.plot(m.axis, m.values, name=f"ch{m.channel}")
+        info = self.show_settings(frame.batch.configuration["settings"]).replace("\n", "　·　")
+        if self.kind == "waveform":
+            vpp, rms, frequency = waveform_measurements(m.values, m.axis)
+            levels = f"CH{m.channel}　Vpp {engineering(vpp, 'V')}　RMS {engineering(rms, 'V')}"
+            if frequency is not None:
+                levels += "　" + engineering(frequency, "Hz")
+            info += "\n" + levels
+        if (
+            isinstance(self.plot, MokuScopePlot)
+            and self.trigger_receipt
+            and self.trigger_receipt[0] == self.state.get("sessionId")
+        ):
+            _, actual, channel = self.trigger_receipt
+            source = f"CH{channel}" if channel is not None else "外部"
+            info += f"　·　触发 {source} {engineering(actual['level'], 'V')}"
+            self.plot.display_trigger(channel, actual["level"])
+        self.summary.setText(f"{info}　·　{m.values.size} 点")
+        self.capture.display.frame_displayed()
+        self.capture.show_frontend(f)
+        self.settings.setText(self.show_settings(frame.batch.configuration["settings"]))
+        self.capture.sync(frame.batch.configuration["settings"])
         self.last = frame
+        self.service.displayed(self.device_id, frame)
+        self.export_button.setEnabled(True)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -306,9 +454,9 @@ class RolePage(QWidget):
             self.refresh_plot(self.device_id)
         self.refresh_status()
 
-    def export(self):
-        frame = self.service.latest(self.device_id, self.kind)
-        if frame is None or frame.request.channels != (self.channel,) or frame is not self.last:
+    def export(self, frame=None):
+        frame = self.last if frame is None else frame
+        if frame is None or frame.request.channels != (self.channel,) or frame.request.kind != self.kind:
             self.status.setText("没有可导出的当前通道帧")
             return
         self.controller.watch(

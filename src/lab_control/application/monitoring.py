@@ -793,6 +793,9 @@ class MonitoringService:
                     "sequence": task.sequence,
                     "monitoring_context_id": task.monitoring_context_id,
                     "kinds": tuple(r.kind for r in task.requests),
+                    "recording_kinds": tuple(sorted(task.record_kinds or ()))
+                    if task.running and (task.recording or task.recording_preparation is not None)
+                    else (),
                     "last_path": task.last_path,
                     "mode": task.mode,
                     "interval": task.interval,

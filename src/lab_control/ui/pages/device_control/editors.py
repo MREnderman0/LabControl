@@ -83,11 +83,20 @@ class FeedbackLabel(QLabel):
 class ParameterEditor(QWidget):
     changed = Signal()
 
-    def __init__(self, spec: Parameter, parent=None, *, label: str = "", simplified: bool = False) -> None:
+    def __init__(
+        self,
+        spec: Parameter,
+        parent=None,
+        *,
+        label: str = "",
+        simplified: bool = False,
+        show_range: bool = True,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("parameterEditor")
         self.spec = spec
         self.simplified = simplified
+        self.show_range = show_range
         self.feedback: QLabel
         self._editing_number = False
         self._last_factor = 1.0
@@ -162,7 +171,7 @@ class ParameterEditor(QWidget):
 
     def update_range_label(self) -> None:
         numeric = self.spec.kind in {"number", "integer"}
-        self.range_label.setVisible(numeric)
+        self.range_label.setVisible(numeric and self.show_range)
         if not numeric:
             return
         factor = self.unit.currentData() or 1

@@ -14,9 +14,9 @@ from lab_control.storage.recording import read_frames
 from .test_protocol import Wire
 
 
-def connected(root):
+def connected(root, wire=None):
     rt = ApplicationRuntime(root=root, hardware=False)
-    wire = Wire()
+    wire = Wire() if wire is None else wire
     rt.sessions.factory = lambda config: Adapter(config, wire)
     key = rt.add(ConnectionConfig("mock://four-slots", ADAPTER, "mock", expected_serial="000088"))
     rt.connect(key).result(4)

@@ -54,6 +54,9 @@ class Rest:
         conn = self.connection or http.client.HTTPConnection(self.host, 80, timeout=self.timeout)
         self.connection = conn
         headers = {"Content-Type": "application/json"}
+        if "%" in self.host:
+            # The interface index selects the local route, but isn't part of the HTTP authority.
+            headers["Host"] = f"[{self.host.partition('%')[0]}]"
         if self.key:
             headers["Moku-Client-Key"] = self.key
         try:

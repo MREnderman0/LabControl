@@ -79,8 +79,7 @@ class OscilloscopePlot(LivePlot):
         bottom = self.plot.getViewBox().viewRange()[1][0]
         self.show_bottom([(m.channel, bottom, m.unit) for m in self.displayed_frame.batch.measurements])
 
-    @staticmethod
-    def display_spec(measurement, batch):
+    def display_spec(self, measurement, batch):
         if "scope_display" in measurement.metadata:
             return ScopeDisplay.parse(measurement.metadata["scope_display"])
         if batch.identity.model.upper() != "6404E":

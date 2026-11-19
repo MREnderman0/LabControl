@@ -13,10 +13,13 @@ from lab_control.domain.instruments import (
     Measurement,
     MeasurementBatch,
     Parameter,
+    ParameterReading,
+    Quality,
     Unsupported,
     ValidationError,
 )
 
+from .capture_settings import ACK_ONLY, CAPTURE, apply_capture, capture_capabilities, wire_parameters
 from .protocol import ADAPTER, CHANNELS, Rest
 
 ROLES = {
@@ -26,6 +29,12 @@ ROLES = {
 }
 KINDS = {"waveform": "oscilloscope", "spectrum": "spectrum_analyzer"}
 LABELS = {"signal_generator": "信号源", "oscilloscope": "示波器", "spectrum_analyzer": "频谱仪"}
+FRONTEND = {
+    "impedance": ("50Ohm", "1MOhm"),
+    "coupling": ("DC", "AC"),
+    "attenuation": ("0dB", "20dB", "40dB"),
+    "bandwidth": ("300MHz", "600MHz"),
+}
 
 
 def schema(config):
@@ -39,15 +48,17 @@ def schema(config):
             Capability(
                 "shared_frontend",
                 {
-                    "impedance": Parameter("enum", choices=("50OHM", "1MOHM")),
-                    "coupling": Parameter("enum", choices=("AC", "DC")),
-                    "attenuation": Parameter("enum", choices=("0DB", "20DB", "40DB")),
+                    key: Parameter("enum", choices=tuple(v.upper() for v in options), required=False)
+                    for key, options in FRONTEND.items()
                 },
                 writable=True,
+                readable=True,
                 requires_confirmation=True,
                 channel_scoped=True,
+                partial_update="native",
             ),
             Capability("attach_workspace", writable=True, requires_confirmation=True),
+            *capture_capabilities(),
             Capability(
                 "standard_waveform",
                 {
@@ -111,7 +122,32 @@ class Adapter:
         return schema(self.config)
 
     def read_settings(self, operations, channel=1):
-        return ()  # no SCPI-like independent frequency/amplitude/output readbacks
+        readable = {op for op, (method, _) in CAPTURE.items() if method not in ACK_ONLY}
+        requested = [
+            op for op in operations if op in readable or op in {"shared_frontend", "scope_samplerate"}
+        ]
+        if not requested:
+            return ()
+        if channel not in CHANNELS:
+            raise ValidationError("无效的物理输入通道")
+        if not self.api.key:
+            return tuple(
+                ParameterReading(op, channel, quality=Quality.STALE, error="等待连接已有仪器槽")
+                for op in requested
+            )
+        self._attach()
+        readings = []
+        for op in requested:
+            if op == "shared_frontend":
+                data = self._frontend(channel)
+            else:
+                role = "oscilloscope" if op.startswith("scope_") else "spectrum_analyzer"
+                method = "samplerate" if op == "scope_samplerate" else CAPTURE[op][0]
+                data = self._slot(role, "GET", "get_" + method)
+                if not isinstance(data, dict) or not data:
+                    raise DeviceError("采集参数读回无效")
+            readings.append(ParameterReading(op, channel, data, "instrument"))
+        return tuple(readings)
 
     @property
     def capability_details(self):
@@ -162,12 +198,20 @@ class Adapter:
     def _routes(self):
         return routes(self.api.call("GET", "mim/get_connections"))
 
+    def _frontend(self, ch):
+        read = self.api.call("POST", "mim/get_frontend", {"channel": ch})
+        if not isinstance(read, dict) or not read:
+            raise DeviceError("模拟前端读回无效")
+        if "attenuation" not in read and read.get("gain") in ("0dB", "-20dB", "-40dB"):
+            read = {**read, "attenuation": read["gain"].lstrip("-")}
+        return read
+
     def _inputs(self, role, mapping):
         slot = self.slots[role]
         sources = self._slot(role, "GET", "get_sources") if role == "oscilloscope" else None
         if role == "oscilloscope" and not isinstance(sources, list):
             raise DeviceError("示波器通道来源回包无效，停止接线和采样", "parse_error")
-        inputs = {}
+        inputs: dict[int, int] = {}
         for index, letter in enumerate("ABCD", 1):
             src = mapping.get(f"Slot{slot}In{letter}", "")
             if not re.fullmatch(r"Input[1-4]", src):
@@ -193,9 +237,9 @@ class Adapter:
 
     def _snapshot(self, role, ch):
         logical = self._input(role, ch, self._routes())
-        frontend = self.api.call("POST", "mim/get_frontend", {"channel": ch})
+        frontend = self._frontend(ch)
         getters = (
-            ("get_timebase", "get_samplerate")
+            ("get_timebase", "get_samplerate", "get_acquisition_mode", "get_interpolation")
             if role == "oscilloscope"
             else ("get_span", "get_rbw", "get_window")
         )
@@ -264,7 +308,16 @@ class Adapter:
         ch, op = command.channel, command.operation
         if type(ch) is not int or ch not in CHANNELS or not command.confirmed:
             raise ValidationError("选择有效通道并明确确认操作")
-        params = self.capabilities().get(op).validate(command.parameters)
+        cap = self.capabilities().get(op)
+        if not cap.writable:
+            raise Unsupported("此参数只支持读回")
+        params = cap.validate(command.parameters)
+        if op == "shared_frontend" and not params:
+            raise ValidationError("请选择要修改的模拟前端参数")
+        if op in CAPTURE:
+            body = wire_parameters(op, params)
+            self._attach(confirmed=True)
+            return apply_capture(self, op, params, body, ch)
         self._attach(confirmed=True)
         if op == "attach_workspace":
             return ApplyResult("success", op, params, {"slots": self.slots}, acknowledged=True)
@@ -274,18 +327,15 @@ class Adapter:
             allowed = {f"Slot{self.slots[r]}In{letter}" for r in KINDS.values() for letter in "ABCD"}
             if not consumers or not set(consumers) <= allowed:
                 raise Unsupported("物理通道未连接到测量槽或同时驱动其他目的端，禁止修改前端")
-            baseline = self.api.call("POST", "mim/get_frontend", {"channel": ch})
-            bandwidth = baseline.get("bandwidth")
-            if bandwidth not in ("300MHz", "600MHz"):
-                raise Unsupported("无法保留现有前端带宽")
-            target = {
-                "bandwidth": bandwidth,
-                "impedance": {"50OHM": "50Ohm", "1MOHM": "1MOhm"}[params["impedance"]],
-                "attenuation": params["attenuation"][:-2] + "dB",
-                "coupling": params["coupling"],
-            }
+            baseline = self._frontend(ch)
+            target = {}
+            for key, options in FRONTEND.items():
+                value = {v.upper(): v for v in options}.get(params.get(key), baseline.get(key))
+                if value not in options:
+                    raise Unsupported(f"无法保留当前模拟前端设置 {key}")
+                target[key] = value
             self.api.call("POST", "mim/set_frontend", {"channel": ch, "strict": True, **target})
-            read = self.api.call("POST", "mim/get_frontend", {"channel": ch})
+            read = self._frontend(ch)
             if any(read.get(k) != v for k, v in target.items()):
                 raise DeviceError("前端读回与设置不符，最终状态待核实")
             return ApplyResult("success", op, params, read, 1)

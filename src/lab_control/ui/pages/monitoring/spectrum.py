@@ -23,7 +23,7 @@ from lab_control.application.config import config_from_record
 from lab_control.application.controls import DataSource, data_sources
 from lab_control.domain.spectrum import SpectrumMarker
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
-from lab_control.ui.controller import state_label
+from lab_control.ui.controller import WorkspaceController, state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.recording_state import (
     RecordingButton,
@@ -37,7 +37,59 @@ from lab_control.ui.pages.monitoring.timing import SpectrumInterval
 from lab_control.ui.widgets.device_selector import DeviceSelector
 
 
-class SpectrumMonitoringPage(QWidget):
+class SpectrumMarkerActions:
+    controller: WorkspaceController
+    markers: list[SpectrumMarker]
+    marker_key: str
+    marker_list: QListWidget | None
+    marker_plot: SpectrumPlot
+
+    def edit_marker(self, number: int) -> None:
+        marker = next((m for m in self.markers if m.number == number), None)
+        if marker:
+            self.marker_dialog(marker)
+
+    def marker_dialog(self, marker: SpectrumMarker, *, creating=False) -> None:
+        dialog = MarkerDialog(marker, self, creating=creating)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.markers = [m for m in self.markers if m.number != marker.number]
+            if not dialog.deleted:
+                self.markers.append(dialog.marker)
+            self.markers.sort(key=lambda m: m.number)
+            self.controller.runtime.repository.save_workspace(
+                self.marker_key, [asdict(m) for m in self.markers]
+            )
+            self.marker_plot.set_markers(self.markers)
+        dialog.deleteLater()
+
+    def update_marker_list(self) -> None:
+        if self.marker_list is None:
+            return
+        for i, marker in enumerate(self.markers):
+            reading = self.marker_plot.readings.get(marker.number)
+            text = f"M{marker.number}  {'寻峰' if marker.tracking else '固定'}  "
+            text += frequency_text(
+                reading.position if reading and reading.position is not None else marker.frequency
+            )
+            text += (
+                f"\n{reading.amplitude:.8g} {self.marker_plot.amplitude_unit}"
+                if reading and reading.amplitude is not None
+                else "\n" + (reading.status if reading else "无数据")
+            )
+            item = self.marker_list.item(i)
+            if item is None:
+                item = QListWidgetItem(self.marker_list)
+            if item.text() != text:
+                item.setText(text)
+            item.setData(Qt.ItemDataRole.UserRole, marker.number)
+            item.setToolTip(
+                f"中心：{frequency_text(marker.frequency)} · 搜索 ±{frequency_text(marker.half_width)}"
+            )
+        while self.marker_list.count() > len(self.markers):
+            self.marker_list.takeItem(self.marker_list.count() - 1)
+
+
+class SpectrumMonitoringPage(SpectrumMarkerActions, QWidget):
     def __init__(self, controller, add_card, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("spectrumWorkspace")
@@ -82,7 +134,7 @@ class SpectrumMonitoringPage(QWidget):
         self.interval.setFixedWidth(self.record_button.width())
         toolbar.addWidget(self.interval)
         plot_layout.addLayout(toolbar)
-        self.plot = SpectrumPlot(chart)
+        self.plot = self.marker_plot = SpectrumPlot(chart)
         self.plot.add_frequency.connect(self.add_marker_at)
         self.plot.save_frame.connect(self.save)
         self.plot.edit_marker.connect(self.edit_marker)
@@ -254,50 +306,6 @@ class SpectrumMonitoringPage(QWidget):
             half_width=max(1.0, current.get("span", 20) * 0.05),
         )
         self.marker_dialog(marker, creating=True)
-
-    def edit_marker(self, number: int) -> None:
-        marker = next((m for m in self.markers if m.number == number), None)
-        if marker:
-            self.marker_dialog(marker)
-
-    def marker_dialog(self, marker: SpectrumMarker, *, creating=False) -> None:
-        dialog = MarkerDialog(marker, self, creating=creating)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.markers = [m for m in self.markers if m.number != marker.number]
-            if not dialog.deleted:
-                self.markers.append(dialog.marker)
-            self.markers.sort(key=lambda m: m.number)
-            self.controller.runtime.repository.save_workspace(
-                self.marker_key, [asdict(m) for m in self.markers]
-            )
-            self.plot.set_markers(self.markers)
-        dialog.deleteLater()
-
-    def update_marker_list(self) -> None:
-        if self.marker_list is None:
-            return
-        for i, marker in enumerate(self.markers):
-            reading = self.plot.readings.get(marker.number)
-            text = f"M{marker.number}  {'寻峰' if marker.tracking else '固定'}  "
-            text += frequency_text(
-                reading.position if reading and reading.position is not None else marker.frequency
-            )
-            text += (
-                f"\n{reading.amplitude:.8g} {self.plot.amplitude_unit}"
-                if reading and reading.amplitude is not None
-                else "\n" + (reading.status if reading else "无数据")
-            )
-            item = self.marker_list.item(i)
-            if item is None:
-                item = QListWidgetItem(self.marker_list)
-            if item.text() != text:
-                item.setText(text)
-            item.setData(Qt.ItemDataRole.UserRole, marker.number)
-            item.setToolTip(
-                f"中心：{frequency_text(marker.frequency)} · 搜索 ±{frequency_text(marker.half_width)}"
-            )
-        while self.marker_list.count() > len(self.markers):
-            self.marker_list.takeItem(self.marker_list.count() - 1)
 
     def refresh(self) -> None:
         if self.device_id != self.selector.device_id and not (self.controls and self.controls.running):
