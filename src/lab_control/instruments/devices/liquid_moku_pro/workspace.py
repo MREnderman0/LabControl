@@ -35,7 +35,7 @@ from .adapter import LABELS
 from .capture_controls import CaptureControls
 from .capture_settings import field
 from .display_controls import MokuScopePlot, MokuSpectrumPlot, waveform_measurements
-from .protocol import CHANNELS
+from .protocol import CHANNELS, FOUR_SLOT_SESSION
 
 
 class RolePage(SpectrumMarkerActions, QWidget):
@@ -219,7 +219,13 @@ class RolePage(SpectrumMarkerActions, QWidget):
 
     def _confirm(self, message):
         if not self._attached():
-            message = "首次使用将连接已有四槽，不部署、不强占。请确认原配置已备份且可恢复。\n" + message
+            options = self.controller.records[self.device_id]["config"].get("options", ())
+            action = (
+                "本次连接将选择四槽模式，再核对已部署的仪器。切换模式可能更改当前 FPGA 状态。"
+                if FOUR_SLOT_SESSION in options
+                else "本次连接将核对已有四槽。"
+            )
+            message = action + "请确认原配置已备份且可恢复。\n" + message
         return (
             QMessageBox.question(
                 self,

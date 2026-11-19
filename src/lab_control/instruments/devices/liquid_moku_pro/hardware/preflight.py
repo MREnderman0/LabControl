@@ -1,4 +1,4 @@
-"""Explicit-target, read-only acceptance gate. Never requests ownership."""
+"""Read-only discovery and optional session verification for a commissioned Moku."""
 
 import argparse
 import platform
@@ -8,18 +8,18 @@ from hashlib import sha256
 from pathlib import Path
 
 from lab_control.application.runtime import ApplicationRuntime
-from lab_control.domain.instruments import DeviceError
+from lab_control.domain.instruments import DeviceCommand, DeviceError
 from lab_control.instruments.common.hardware_paths import verify_runtime_paths
 from lab_control.storage.hardware_documents import refresh_after_batch
 from lab_control.storage.hardware_records import atomic_json
 from lab_control.storage.runtime import hardware_lock_home, runtime_home
 
 from ..discovery import Discovery
-from ..protocol import ADAPTER, MODEL, Rest, serial_id
+from ..protocol import ADAPTER, FOUR_SLOT_SESSION, MODEL, Rest, serial_id
 from .records import publish_report
 
 
-def preflight(resource, serial, *, workspace=False):
+def preflight(resource, serial, *, workspace=False, verify_four_slot=False):
     serial = serial_id(serial)
     home, locks = runtime_home(), hardware_lock_home()
     verify_runtime_paths(home, locks)
@@ -33,6 +33,9 @@ def preflight(resource, serial, *, workspace=False):
     folder.mkdir(parents=True, exist_ok=False)
     scope = "信号源 ch1 → 物理连线 → 示波器 ch1 和频谱仪 ch1；仅执行只读安全预检"
     state = "未申请控制权、未修改设置。四个输出状态、50 Ω 负载及增益未核实；不能确认可恢复，不发信号。"
+    if verify_four_slot:
+        scope = "核对指定资产身份，建立并释放四槽会话，检查槽位分配。"
+        state = "四槽会话核验不启动采集或输出。"
     stages = {
         k: {"state": "not_tested", "reason": state}
         for k in (
@@ -126,23 +129,35 @@ def preflight(resource, serial, *, workspace=False):
                 "state": "blocked",
                 "reason": "未证明当前模式和四路输出可回滚，禁止为备份先切换模式。",
             }
-            try:
-                names = api.call("GET", "mim/get_instruments")
-                report["deployed_slots"] = names
-                from ..adapter import slot_map
-
-                slot_map(names)
-                stages["existing_workspace"] = {"state": "passed", "reason": "未取所有权，已核对四槽名单"}
-            except DeviceError as exc:
-                stages["existing_workspace"] = {"state": "blocked", "reason": str(exc)}
+            stage = "existing_workspace"
+            stages[stage] = {
+                "state": "not_tested",
+                "reason": "只读发现不建立厂商会话。已部署的资产可用 --verify-four-slot 核对槽位。",
+            }
+            if verify_four_slot:
+                row = runtime.inventory.by_resource(resource)
+                if not row or FOUR_SLOT_SESSION not in row["config"].get("options", ()):
+                    raise DeviceError("此资产尚未登记四槽模式")
+                result = runtime.sessions.submit(
+                    device_id, "apply", DeviceCommand("attach_workspace", confirmed=True)
+                ).result(80)
+                if result.outcome != "success":
+                    raise DeviceError(result.error)
+                report["assigned_measurement_slots"] = result.readback["slots"]
+                stages[stage] = {
+                    "state": "passed",
+                    "reason": "已通过正式适配器读取四槽名单，核对三个角色的槽号。",
+                }
             if workspace:
                 stage = "readonly_workspace"
                 from .readonly_workspace import inspect_workspace
 
-                report["workspace_panels"] = inspect_workspace(runtime, device_id, folder)
+                report["workspace_panels"] = inspect_workspace(
+                    runtime, device_id, folder, attached=verify_four_slot
+                )
                 stages[stage] = {
                     "state": "passed",
-                    "reason": "正式分类卡片分别打开三个 ch1 面板，共一只读在线会话；未执行输出或采样",
+                    "reason": "正式分类卡片分别打开三个 ch1 面板，共用一个在线会话。",
                 }
             stage = "session_close"
         stages[stage] = {"state": "passed", "reason": "运行时会话与进程锁已释放"}
@@ -164,7 +179,10 @@ if __name__ == "__main__":
     args.add_argument("--resource", required=True)
     args.add_argument("--serial", required=True)
     args.add_argument(
+        "--verify-four-slot", action="store_true", help="取得非强制所有权，选择已登记的四槽模式并读取槽位"
+    )
+    args.add_argument(
         "--workspace", action="store_true", help="通过正式工作区的三个类别打开指定资产，只读检查"
     )
     ns = args.parse_args()
-    print(preflight(ns.resource, ns.serial, workspace=ns.workspace))
+    print(preflight(ns.resource, ns.serial, workspace=ns.workspace, verify_four_slot=ns.verify_four_slot))

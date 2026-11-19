@@ -10,7 +10,23 @@ from lab_control.application.catalog import instrument_categories
 from lab_control.domain.connections import ConnectionConfig, network_host
 from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand, DeviceError, DeviceIdentity
 from lab_control.instruments.devices.liquid_moku_pro.adapter import Adapter
-from lab_control.instruments.devices.liquid_moku_pro.protocol import ADAPTER, CHANNELS, Rest
+from lab_control.instruments.devices.liquid_moku_pro.protocol import (
+    ADAPTER,
+    CHANNELS,
+    FOUR_SLOT_SESSION,
+    Rest,
+)
+
+
+def test_rest_retains_instrument_error_message():
+    with patch("http.client.HTTPConnection") as connect:
+        response = connect.return_value.getresponse.return_value
+        response.status = 200
+        response.read.return_value = (
+            b'{"success":false,"code":"INVALID_REQUEST","messages":["Multi-Instrument Mode is not enabled"]}'
+        )
+        with pytest.raises(DeviceError, match="Multi-Instrument Mode is not enabled"):
+            Rest("moku://lab.invalid", 2).call("GET", "mim/get_instruments")
 
 
 def test_scoped_ipv6_routes_on_the_interface_but_sends_an_unscoped_http_host():
@@ -374,3 +390,35 @@ def test_refuse_to_overwrite_fourth_slot_route_or_assume_scope_source():
     with pytest.raises(DeviceError, match="来源回包无效"):
         dev.acquire(AcquisitionRequest("waveform"))
     assert not any(p in ("mim/set_connections", "slot1/oscilloscope/get_data") for _, p, _ in wire.calls)
+
+
+def test_commissioned_asset_opens_each_client_in_four_slot_mode():
+    wire = Wire()
+    config = ConnectionConfig(
+        "moku://lab.invalid", ADAPTER, "moku", expected_serial="88", options=(FOUR_SLOT_SESSION,)
+    )
+    original = wire.call
+
+    def response(method, path, params=None):
+        if path == "moku/platform/4":
+            assert wire.key and method == "GET"
+            wire.calls.append((method, path, params))
+            return None
+        if path.endswith("/get_sources"):
+            return [{"channel": 2, "enabled": True, "source": "GenericInputA"}]
+        if path.endswith("/summary"):
+            return "Output A (off) - Sine\nOutput B (on) - Square"
+        return original(method, path, params)
+
+    wire.call = response
+    for _ in range(2):
+        dev = Adapter(config, wire)
+        dev.apply(DeviceCommand("attach_workspace", confirmed=True))
+        assert dev._input("oscilloscope", 1, wire.routes) == 2
+        dev.close()
+    assert [p for _, p, _ in wire.calls].count("moku/platform/4") == 2
+    dev = Adapter(config, wire)
+    del wire.routes["Output4"]
+    dev.apply(DeviceCommand("connect_generator_channel", {}, 4, True))
+    assert wire.routes["Output4"] == "Slot2OutA"
+    dev.close()

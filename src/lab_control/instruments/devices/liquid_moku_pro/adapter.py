@@ -20,7 +20,7 @@ from lab_control.domain.instruments import (
 )
 
 from .capture_settings import ACK_ONLY, CAPTURE, apply_capture, capture_capabilities, wire_parameters
-from .protocol import ADAPTER, CHANNELS, Rest
+from .protocol import ADAPTER, CHANNELS, FOUR_SLOT_SESSION, Rest
 
 ROLES = {
     "signal_generator": "waveformgenerator",
@@ -185,6 +185,10 @@ class Adapter:
                 ),
             )
         try:
+            if newly_claimed and FOUR_SLOT_SESSION in self.config.options:
+                # MokuOS 4.4 starts each client outside MiM, even with persisted state.
+                # Only explicitly commissioned assets may select this platform.
+                self.api.call("GET", "moku/platform/4")
             self.slots = slot_map(self.api.call("GET", "mim/get_instruments"))
         except Exception:
             self.slots = {}
@@ -223,7 +227,7 @@ class Adapter:
                 for row in sources:
                     if (
                         row["enabled"] is True
-                        and row["source"] == f"Input{index}"
+                        and row["source"] in (f"Input{index}", f"GenericInput{letter}")
                         and row["channel"] in CHANNELS
                     ):
                         inputs.setdefault(ch, row["channel"])
@@ -351,7 +355,7 @@ class Adapter:
                 if any(src.startswith(f"Slot{slot}Out") for src in mapping.values()):
                     raise Unsupported("此测量槽驱动其他目的端，禁止改接")
                 if role == "oscilloscope" and not any(
-                    row["enabled"] is True and row["source"] == "Input1"
+                    row["enabled"] is True and row["source"] in ("Input1", "GenericInputA")
                     for row in self._slot(role, "GET", "get_sources")
                 ):
                     raise Unsupported("请在原配置中启用第一路槽输入作为示波器数据源")
@@ -371,12 +375,16 @@ class Adapter:
         src = mapping.get(dest)
         if src is None and op != "waveform_stop":
             summary = self._slot(role, "GET", "summary")
-            rows = re.findall(r"^Output ([1-4]) \(([^)]+)\)", summary, re.MULTILINE | re.IGNORECASE)
-            for n, state in rows:
-                port = f"Slot{slot}Out{'ABCD'[int(n) - 1]}"
+            rows = re.findall(r"^Output ([1-4A-D]) \(([^)]+)\)", summary, re.MULTILINE | re.IGNORECASE)
+            outputs = [
+                (letter.upper() if letter.isalpha() else "ABCD"[int(letter) - 1], state)
+                for letter, state in rows
+            ]
+            for n, state in outputs:
+                port = f"Slot{slot}Out{n}"
                 if (
                     state.lower() == "off"
-                    and sum(k == n for k, _ in rows) == 1
+                    and sum(k == n for k, _ in outputs) == 1
                     and port not in mapping.values()
                 ):
                     src = port

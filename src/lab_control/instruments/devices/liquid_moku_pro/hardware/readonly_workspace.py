@@ -1,7 +1,7 @@
 """Exercise the production category cards and panels without arming an instrument."""
 
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from lab_control.app import load_stylesheet, load_ui_font
 from lab_control.domain.instruments import DeviceError
@@ -11,8 +11,10 @@ from ..adapter import LABELS
 from ..workspace import RolePage
 
 
-def inspect_workspace(runtime, device_id, folder):
+def inspect_workspace(runtime, device_id, folder, *, attached=False):
     app = QApplication.instance() or QApplication([])
+    if not isinstance(app, QApplication):
+        raise DeviceError("检查仪器面板需要 QApplication")
     app.setStyle("Fusion")
     app.setStyleSheet(load_stylesheet())
     app.setFont(QFont(load_ui_font(), 10))
@@ -26,7 +28,12 @@ def inspect_workspace(runtime, device_id, folder):
             window.cards[role].clicked.emit(role)
             window.open_details(device_id)
             button = window.action_buttons["manage" if role == "signal_generator" else "monitor"]
-            if not button.isEnabled() or not button.isVisible() or window.rows[device_id].isHidden():
+            if (
+                not isinstance(button, QPushButton)
+                or not button.isEnabled()
+                or not button.isVisible()
+                or window.rows[device_id].isHidden()
+            ):
                 raise DeviceError(f"{label}分类的设备入口不可用")
             button.click()
             app.processEvents()
@@ -41,7 +48,7 @@ def inspect_workspace(runtime, device_id, folder):
             if (
                 state["connectionState"] != "connected"
                 or state["lastError"]
-                or state["capabilityDetails"].get("workspace_attached")
+                or bool(state["capabilityDetails"].get("workspace_attached")) != attached
             ):
                 raise DeviceError(f"{label}只读打开后会话状态不符")
             image = f"ui-{role}.png"
