@@ -8,7 +8,6 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -30,6 +29,7 @@ from lab_control.domain.spectrum import (
     prepare_changes,
 )
 from lab_control.ui.pages.device_control.form import OperationEditor
+from lab_control.ui.pages.monitoring.measurement_layout import spectrum_grid
 from lab_control.ui.pages.monitoring.spectrum_markers import frequency_text
 
 
@@ -74,13 +74,7 @@ class SpectrumControls(QFrame):
         self.body_layout = QVBoxLayout(body)
         self.body_layout.setContentsMargins(2, 0, 6, 8)
         self.body_layout.setSpacing(10)
-        self.grid = grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(12)
-        self.body_layout.addLayout(grid)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
+        self.grid = spectrum_grid(self.body_layout)
         self.marker_slot = QVBoxLayout()
         self.body_layout.addLayout(self.marker_slot)
         self.body_layout.addStretch()

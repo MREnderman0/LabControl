@@ -8,7 +8,6 @@ from datetime import datetime
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -25,15 +24,14 @@ from lab_control.domain.spectrum import SpectrumMarker
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController, state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
+from lab_control.ui.pages.monitoring.measurement_layout import MeasurementChart
 from lab_control.ui.pages.monitoring.recording_state import (
-    RecordingButton,
     recording_phase,
     recording_save_notice,
     update_recording_frame,
 )
 from lab_control.ui.pages.monitoring.spectrum_controls import SpectrumControls
 from lab_control.ui.pages.monitoring.spectrum_markers import MarkerDialog, SpectrumPlot, frequency_text
-from lab_control.ui.pages.monitoring.timing import SpectrumInterval
 from lab_control.ui.widgets.device_selector import DeviceSelector
 
 
@@ -43,6 +41,29 @@ class SpectrumMarkerActions:
     marker_key: str
     marker_list: QListWidget | None
     marker_plot: SpectrumPlot
+
+    def make_marker_controls(self, slot, parent, add_marker):
+        row = QHBoxLayout()
+        label = QLabel("软件标记", parent)
+        label.setObjectName("spectrumChartTitle")
+        row.addWidget(label)
+        row.addStretch()
+        add = QPushButton("＋ 添加标记", parent)
+        add.clicked.connect(add_marker)
+        row.addWidget(add)
+        slot.addLayout(row)
+        self.marker_list = QListWidget(parent)
+        self.marker_list.setObjectName("spectrumMarkerList")
+        self.marker_list.setMinimumHeight(92)
+        self.marker_list.setMaximumHeight(130)
+        self.marker_list.itemDoubleClicked.connect(
+            lambda item: self.edit_marker(item.data(Qt.ItemDataRole.UserRole))
+        )
+        slot.addWidget(self.marker_list)
+        hint = QLabel("双击标记可编辑 · 仅作用于软件曲线", parent)
+        hint.setObjectName("rangeHint")
+        slot.addWidget(hint)
+        return add
 
     def edit_marker(self, number: int) -> None:
         marker = next((m for m in self.markers if m.number == number), None)
@@ -117,38 +138,18 @@ class SpectrumMonitoringPage(SpectrumMarkerActions, QWidget):
         layout.addWidget(self.empty)
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.splitter.setChildrenCollapsible(False)
-        chart = self.chart = QFrame(self.splitter)
-        chart.setObjectName("spectrumChart")
-        chart.setMinimumWidth(280)
-        plot_layout = QVBoxLayout(chart)
-        plot_layout.setContentsMargins(10, 10, 10, 10)
-        toolbar = QHBoxLayout()
-        title = QLabel("频谱", chart)
-        title.setObjectName("spectrumChartTitle")
-        toolbar.addWidget(title)
-        toolbar.addStretch()
-        self.record_button = RecordingButton(chart)
+        chart = self.chart = MeasurementChart("频谱", self.splitter, spectrum=True)
+        plot_layout = chart.body
+        self.record_button = chart.record
         self.record_button.clicked.connect(self.record)
-        toolbar.addWidget(self.record_button)
-        self.interval = SpectrumInterval(controller, chart)
-        self.interval.setFixedWidth(self.record_button.width())
-        toolbar.addWidget(self.interval)
-        plot_layout.addLayout(toolbar)
+        self.interval = chart.add_interval(controller)
         self.plot = self.marker_plot = SpectrumPlot(chart)
         self.plot.add_frequency.connect(self.add_marker_at)
         self.plot.save_frame.connect(self.save)
         self.plot.edit_marker.connect(self.edit_marker)
         self.plot.readings_changed.connect(self.update_marker_list)
         plot_layout.addWidget(self.plot, 1)
-        self.status = QLabel("监测未开始", chart)
-        self.status.setObjectName("mutedText")
-        self.status.setWordWrap(True)
-        footer = QHBoxLayout()
-        footer.addWidget(self.status, 1)
-        self.actual = QLabel("实际 — s/帧")
-        self.actual.setObjectName("rangeHint")
-        footer.addWidget(self.actual)
-        plot_layout.addLayout(footer)
+        self.status, self.actual = chart.add_status()
         self.splitter.addWidget(chart)
         self.right = QWidget(self.splitter)
         self.right.setMinimumWidth(360)
@@ -193,26 +194,7 @@ class SpectrumMonitoringPage(SpectrumMarkerActions, QWidget):
             self.controls = SpectrumControls(self.controller, device_id, self.right)
             self.right_layout.addWidget(self.controls)
             self.controls.busy_changed.connect(lambda busy: self.selector.setEnabled(not busy))
-            row = QHBoxLayout()
-            label = QLabel("软件标记", self.controls)
-            label.setObjectName("spectrumChartTitle")
-            row.addWidget(label)
-            row.addStretch()
-            add = QPushButton("＋ 添加标记", self.controls)
-            add.clicked.connect(self.add_marker)
-            row.addWidget(add)
-            self.controls.marker_slot.addLayout(row)
-            self.marker_list = QListWidget(self.controls)
-            self.marker_list.setObjectName("spectrumMarkerList")
-            self.marker_list.setMinimumHeight(92)
-            self.marker_list.setMaximumHeight(130)
-            self.marker_list.itemDoubleClicked.connect(
-                lambda item: self.edit_marker(item.data(Qt.ItemDataRole.UserRole))
-            )
-            self.controls.marker_slot.addWidget(self.marker_list)
-            hint = QLabel("双击标记可编辑 · 仅作用于软件曲线", self.controls)
-            hint.setObjectName("rangeHint")
-            self.controls.marker_slot.addWidget(hint)
+            self.make_marker_controls(self.controls.marker_slot, self.controls, self.add_marker)
             self.marker_key = f"spectrum-markers/{self.mode}/{device_id}"
             stored = self.controller.runtime.repository.load_workspace(self.marker_key, [])
             if isinstance(stored, list):

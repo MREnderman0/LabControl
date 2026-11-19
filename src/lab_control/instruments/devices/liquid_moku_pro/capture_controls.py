@@ -1,20 +1,18 @@
-"""Grouped parameter cards for the Moku measurement workspaces."""
+"""Moku controls embedded in the classic oscilloscope and spectrum workspaces."""
 
 from math import isfinite
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QStackedWidget,
-    QTabBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -22,7 +20,8 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import DeviceCommand, Parameter, ValidationError
 from lab_control.domain.oscilloscope import engineering
 from lab_control.ui.pages.device_control.editors import UNIT_CHOICES, ParameterEditor
-from lab_control.ui.pages.monitoring.oscilloscope_controls import ScopeSlider
+from lab_control.ui.pages.monitoring.measurement_layout import scope_section, spectrum_grid
+from lab_control.ui.pages.monitoring.oscilloscope_controls import ScopeSlider, gear_icon
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 from .adapter import FRONTEND
@@ -49,7 +48,6 @@ class CaptureControls(QFrame):
         self.body.setContentsMargins(6, 0, 0, 0)
         self.body.setSpacing(6)
         header = QHBoxLayout()
-        header.addWidget(QLabel("参数"))
         self.body.addLayout(header)
         self.page = page
         self.scope = page.kind == "waveform"
@@ -70,7 +68,10 @@ class CaptureControls(QFrame):
         header.addStretch()
         self.refresh_button = QPushButton("刷新参数")
         self.refresh_button.clicked.connect(self.refresh)
+        if not self.scope:
+            header.addWidget(page.channels)
         header.addWidget(self.refresh_button)
+        self.refresh_button.setVisible(not self.scope)
         self.receipt = QLabel()
         self.receipt.setObjectName("inputFeedback")
         self.receipt.setWordWrap(True)
@@ -79,8 +80,8 @@ class CaptureControls(QFrame):
         self.scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
         self.column = QVBoxLayout(body)
-        self.column.setContentsMargins(0, 0, 0, 0)
-        self.column.setSpacing(5)
+        self.column.setContentsMargins(0 if self.scope else 2, 0, 6, 0 if self.scope else 8)
+        self.column.setSpacing(7 if self.scope else 10)
         self.scroller.setWidget(body)
         if self.scope:
             self.build_scope()
@@ -89,34 +90,51 @@ class CaptureControls(QFrame):
         self.column.addStretch()
         self.body.addWidget(self.scroller, 1)
         foot = QHBoxLayout()
+        self.body.addWidget(self.receipt)
         self.body.addLayout(foot)
-        foot.addWidget(self.receipt, 1)
+        if self.scope:
+            self.fine_button = QToolButton()
+            self.fine_button.setObjectName("scopeFineButton")
+            self.fine_button.setProperty("buttonSize", "panel")
+            self.fine_button.setText("微调")
+            self.fine_button.setCheckable(True)
+            self.fine_button.toggled.connect(self.set_fine)
+            foot.addWidget(self.fine_button)
+
         self.apply_button = QPushButton("应用修改")
         self.apply_button.setObjectName("primaryButton")
         self.apply_button.clicked.connect(self.apply)
-        foot.addWidget(self.apply_button)
-        self.setMinimumWidth(330)
-        self.setMaximumWidth(430)
+        self.apply_button.setProperty("buttonSize", "panel")
+        foot.addWidget(self.apply_button, 1)
+        self.setMinimumWidth(300 if self.scope else 360)
+        self.setMaximumWidth(360 if self.scope else 430)
 
-    def section(self, label, parent):
-        section = QFrame()
-        section.setObjectName("scopeSection")
-        box = QVBoxLayout(section)
-        if label:
-            title = QLabel(label)
-            title.setObjectName("spectrumChartTitle")
-            box.addWidget(title)
-        box.setContentsMargins(15, 8, 15, 9)
-        box.setSpacing(4)
-        parent.addWidget(section)
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(3)
-        for col in (0, 1):
-            grid.setColumnStretch(col, 1)
-        box.addLayout(grid)
-        return grid
+    def details(self, layout, title):
+        row = QHBoxLayout()
+        row.addStretch()
+        button = QToolButton()
+        button.setIcon(gear_icon())
+        button.setIconSize(QSize(18, 18))
+        button.setFixedSize(26, 24)
+        button.setAccessibleName(title)
+        button.setToolTip(title)
+        button.setCheckable(True)
+        row.addWidget(button)
+        layout.addLayout(row)
+        panel = QWidget()
+        grid = QGridLayout(panel)
+        grid.setContentsMargins(0, 2, 0, 2)
+        grid.setHorizontalSpacing(8)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        layout.addWidget(panel)
+        panel.hide()
+        button.toggled.connect(panel.setVisible)
+        return row, button, grid
+
+    def set_fine(self, enabled):
+        for slider in (*self.sliders.values(), *self.display.sliders, self.trigger_slider):
+            slider.set_fine(enabled)
 
     def cell(self, grid, index, title, widget, extra=None):
         row, col = divmod(index, 2)
@@ -130,13 +148,19 @@ class CaptureControls(QFrame):
         widget.setAccessibleName(title)
         widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         widget.setMinimumWidth(0)
-        grid.addLayout(heading, row * 2, col)
-        grid.addWidget(widget, row * 2 + 1, col)
+        column = QVBoxLayout()
+        column.setSpacing(3)
+        column.addLayout(heading)
+        column.addWidget(widget)
+        column.addStretch()
+        grid.addLayout(column, row, col)
 
     def editor(self, grid, index, group, key, title, default, spec=None):
         editor = ParameterEditor(
-            spec or CAPTURE[group][1][key], simplified=True, label=title, show_range=False
+            spec or CAPTURE[group][1][key], simplified=True, label=title, show_range=not self.scope
         )
+        if not self.scope and editor.spec.unit:
+            editor.unit.fit_contents(52)
         if editor.spec.kind == "enum" and isinstance(editor.input, QComboBox):
             for i, token in enumerate(editor.spec.choices):
                 editor.input.setItemText(
@@ -161,32 +185,14 @@ class CaptureControls(QFrame):
         box.currentIndexChanged.connect(self.buttons)
 
     def build_scope(self):
-        names = ("水平", "垂直", "触发", "采集")
-        self.tabs = QTabBar()
-        self.tabs.setExpanding(True)
-        for name in names:
-            self.tabs.addTab(name)
-        self.tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        bar = QHBoxLayout()
-        bar.setContentsMargins(14, 10, 14, 4)
-        bar.addWidget(self.tabs)
-        self.body.addLayout(bar)
-        self.pages = QStackedWidget()
-        self.column.addWidget(self.pages)
-        self.tabs.currentChanged.connect(self.pages.setCurrentIndex)
-        self.tabs.setCurrentIndex(0)
-        grids = []
-        for name in names:
-            tab = QWidget()
-            layout = QVBoxLayout(tab)
-            layout.setContentsMargins(0, 0, 0, 0)
-            grids.append(self.section("", layout))
-            layout.addStretch()
-            self.pages.addWidget(tab)
         self.range_group = "scope_timebase"
         self.endpoints = ("t1", "t2")
         self.alternate = ("seconds_per_div", "center")
-        h, v, t, a = grids
+        horizontal = scope_section(self.column, "")
+        row, self.horizontal_settings, h = self.details(horizontal, "水平设置")
+        heading = QLabel("水平")
+        heading.setObjectName("spectrumChartTitle")
+        row.insertWidget(0, heading)
         self.editor(
             h, 0, self.range_group, "seconds_per_div", "时基（每格）", 0.0002, Parameter(unit="s", minimum=0)
         )
@@ -198,14 +204,26 @@ class CaptureControls(QFrame):
             slider = ScopeSlider(title, "s", coarse=idx == 0)
             slider.committed.connect(lambda value, k=key: self.slider_edit(k, value))
             self.sliders[key] = slider
-            h.addWidget(slider, 4 + idx, 0, 1, 2)
+            horizontal.addWidget(slider)
         self.sync_sliders(0.0002, 0)
-        self.cell(v, 0, "显示档位", self.display.top, self.display.auto)
+        self.sample_rate = QLabel("采样率：—")
+        self.sample_rate.setObjectName("scopeSampleRate")
+        horizontal.addWidget(self.sample_rate)
+        vertical = scope_section(self.column, "")
+        row, self.vertical_settings, v = self.details(vertical, "垂直与模拟前端设置")
+        row.insertWidget(0, self.page.channels)
+        row.insertWidget(1, self.display.auto)
+        self.cell(v, 0, "显示档位", self.display.top)
         self.cell(v, 1, "垂直中心", self.display.offset)
         for i, (key, title) in enumerate(zip(FRONTEND, ("输入阻抗", "输入耦合", "输入衰减", "模拟带宽")), 2):
             self.front(v, i, key, title)
-        for i, slider in enumerate(self.display.sliders, 6):
-            v.addWidget(slider, i, 0, 1, 2)
+        for slider in self.display.sliders:
+            vertical.addWidget(slider)
+        trigger = scope_section(self.column, "")
+        row, self.trigger_settings, t = self.details(trigger, "触发设置")
+        self.trigger_label = QLabel("触发 · 等待读回")
+        self.trigger_label.setObjectName("spectrumChartTitle")
+        row.insertWidget(0, self.trigger_label)
         for i, (key, title, default) in enumerate(
             (
                 ("source", "触发源", "CURRENT"),
@@ -215,23 +233,40 @@ class CaptureControls(QFrame):
             )
         ):
             self.editor(t, i, "scope_trigger", key, title, default)
+        self.trigger_slider = ScopeSlider("电平", "V")
+        self.trigger_slider.committed.connect(self.edit_trigger_level)
+        trigger.addWidget(self.trigger_slider)
+        self.sync_trigger_level(0)
+        acquisition = scope_section(self.column, "")
+        row, self.acquisition_settings, a = self.details(acquisition, "采集设置")
+        heading = QLabel("采集设置")
+        heading.setObjectName("spectrumChartTitle")
+        row.insertWidget(0, heading)
         self.editor(a, 0, "scope_acquisition", "mode", "采集模式", "NORMAL")
         self.editor(a, 1, "scope_interpolation", "interpolation", "插值方式", "SINX")
         self.editor(a, 2, self.range_group, "max_length", "帧点数上限", 1024)
         self.settings = QLabel("等待首帧")
-        self.settings.setObjectName("scopeSampleRate")
-        self.settings.setMinimumHeight(self.settings.fontMetrics().lineSpacing() * 3 + 6)
-        h.addWidget(self.settings, 6, 0, 1, 2)
+        self.settings.setObjectName("rangeHint")
+        a.addWidget(self.settings, 2, 0, 1, 2)
         self.readback = QLabel()
         self.readback.setWordWrap(True)
         self.readback.setObjectName("rangeHint")
-        v.addWidget(self.readback, 8, 0, 1, 2)
+        v.addWidget(self.readback, 3, 0, 1, 2)
+
+    def edit_trigger_level(self, value):
+        display_value(self.editors["scope_trigger"]["level"], value)
+        self.edit("scope_trigger", "level")
+
+    def sync_trigger_level(self, value):
+        self.trigger_slider.configure(
+            value, CAPTURE["scope_trigger"][1]["level"], self.display.top.value() / 1000
+        )
 
     def build_spectrum(self):
         self.range_group = "spectrum_span"
         self.endpoints = ("frequency1", "frequency2")
         self.alternate = ("center", "span")
-        f = self.section("频率", self.column)
+        f = spectrum_grid(self.column)
         for i, (key, label, default) in enumerate(
             (
                 ("frequency1", "起始频率", 0),
@@ -241,33 +276,14 @@ class CaptureControls(QFrame):
             )
         ):
             self.editor(f, i, self.range_group, key, label, default, FREQUENCY)
-        a = self.section("幅度", self.column)
-        self.cell(a, 0, "显示参考电平", self.display.top, self.display.auto)
-        self.front(a, 1, "attenuation", "输入衰减")
-        b = self.section("带宽", self.column)
-        self.editor(b, 0, "spectrum_rbw", "mode", "RBW 模式", "AUTO")
-        self.editor(b, 1, "spectrum_rbw", "rbw_value", "分辨率带宽", 100)
-        self.editor(b, 2, "spectrum_window", "window", "窗函数", "HANN")
-        self.editor(b, 3, "spectrum_averaging", "target_duration", "帧平均时长", 0.1)
+        self.cell(f, 4, "参考电平", self.display.top, self.display.auto)
+        self.front(f, 5, "attenuation", "输入衰减")
+        self.editor(f, 6, "spectrum_rbw", "mode", "RBW 模式", "AUTO")
+        self.editor(f, 7, "spectrum_rbw", "rbw_value", "分辨率带宽", 100)
+        self.editor(f, 8, "spectrum_window", "window", "窗函数", "HANN")
+        self.editor(f, 9, "spectrum_averaging", "target_duration", "帧平均时长", 0.1)
         self.update_rbw()
-        marker = QFrame()
-        marker.setObjectName("scopeSection")
-        marker_layout = QVBoxLayout(marker)
-        marker_layout.setContentsMargins(15, 6, 15, 8)
-        self.column.addWidget(marker)
-        row = QHBoxLayout()
-        marker_title = QLabel("Marker · 软件标记")
-        marker_title.setObjectName("spectrumChartTitle")
-        row.addWidget(marker_title)
-        row.addStretch()
-        self.add_marker = QPushButton("添加标记")
-        self.add_marker.clicked.connect(self.page.add_center_marker)
-        row.addWidget(self.add_marker)
-        marker_layout.addLayout(row)
-        self.page.marker_list = QListWidget()
-        self.page.marker_list.setObjectName("spectrumMarkerList")
-        self.page.marker_list.setFixedHeight(60)
-        marker_layout.addWidget(self.page.marker_list)
+        self.add_marker = self.page.make_marker_controls(self.column, self, self.page.add_center_marker)
         more = QPushButton("更多前端设置")
         more.setCheckable(True)
         self.column.addWidget(more)
@@ -277,7 +293,7 @@ class CaptureControls(QFrame):
         more.toggled.connect(front.setVisible)
         layout = QVBoxLayout(front)
         layout.setContentsMargins(0, 0, 0, 0)
-        extended = self.section("共享模拟前端", layout)
+        extended = spectrum_grid(layout)
         for i, (key, title) in enumerate(
             (("impedance", "输入阻抗"), ("coupling", "输入耦合"), ("bandwidth", "模拟带宽"))
         ):
@@ -328,6 +344,11 @@ class CaptureControls(QFrame):
                 self.link_range()
             except (ValidationError, ValueError):
                 pass  # Allow an unfinished numeric draft.
+        if group == "scope_trigger" and key == "level":
+            try:
+                self.sync_trigger_level(self.editors[group][key].value())
+            except (ValueError, ValidationError):
+                pass
         if group == "spectrum_rbw":
             self.update_rbw()
         self.buttons()
@@ -383,6 +404,9 @@ class CaptureControls(QFrame):
             box.setCurrentIndex(0)
         if self.scope:
             self.sync_sliders(0.0002, 0)
+            self.sync_trigger_level(0)
+            self.trigger_label.setText("触发 · 等待读回")
+            self.sample_rate.setText("采样率：—")
         else:
             self.update_rbw()
         self.feedback.setText("等待读回")
@@ -451,6 +475,11 @@ class CaptureControls(QFrame):
         self.buttons()
 
     def sync(self, settings):
+        if self.scope and "samplerate" in settings:
+            rate = field(settings["samplerate"], "sample_rate")
+            self.sample_rate.setText(
+                "采样率：" + (engineering(rate, "Sa/s") if isinstance(rate, (int, float)) else "—")
+            )
         for op, editors in self.editors.items():
             data = settings.get(CAPTURE[op][0])
             if not data or op in self.dirty:

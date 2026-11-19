@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import DeviceCommand, DeviceError, Parameter
 from lab_control.domain.oscilloscope import COLORS, CONTROL_NAMES, coarse_steps, engineering
 from lab_control.domain.readback import boolean_value, normalized_value, usable_reading
+from lab_control.ui.pages.monitoring.measurement_layout import scope_section
 from lab_control.ui.pages.monitoring.scope_depth import ScopeDepth
 from lab_control.ui.pages.monitoring.scope_points import ScopePoints
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
@@ -421,26 +422,13 @@ class OscilloscopeControls(QFrame):
         stack.setContentsMargins(0, 0, 6, 0)
         stack.setSpacing(7)
 
-        def section(title):
-            frame = QFrame()
-            frame.setObjectName("scopeSection")
-            box = QVBoxLayout(frame)
-            box.setContentsMargins(10, 5, 10, 5)
-            box.setSpacing(2)
-            if title:
-                label = QLabel(title)
-                label.setObjectName("spectrumChartTitle")
-                box.addWidget(label)
-            stack.addWidget(frame)
-            return box
-
         self.capture_settings = None
         if {(1, "record_length"), (1, "record_length_auto")} <= self.model_writes:
             self.capture_settings = ScopeDepth()
             self.capture_settings.requested.connect(lambda cmd: self.submit([cmd], channels=True))
-            section("采集设置").addWidget(self.capture_settings)
+            scope_section(stack, "采集设置").addWidget(self.capture_settings)
 
-        horizontal = section("水平")
+        horizontal = scope_section(stack, "水平")
         self.add_slider(horizontal, 1, "timebase", "时基", "s", coarse=True)
         self.add_slider(horizontal, 1, "time_position", "偏移", "s")
         self.points: ScopePoints | None = None
@@ -466,7 +454,7 @@ class OscilloscopeControls(QFrame):
         self._sample_rate_value: float | None = None
         horizontal.addWidget(self.sample_rate)
         for ch in self.instrument_channels:
-            box = section("")
+            box = scope_section(stack, "")
             if (ch, "channel_enabled") in self.model_writes:
                 check = QCheckBox(f"CH {ch}")
                 check.setStyleSheet(f"color: {COLORS[(ch - 1) % 4]}; font-weight: 600;")
@@ -477,7 +465,7 @@ class OscilloscopeControls(QFrame):
                 box.addWidget(QLabel(f"CH {ch}"))
             self.add_slider(box, ch, "scale", "档位", "V", coarse=True)
             self.add_slider(box, ch, "offset", "偏移", "V")
-        trigger = section("")
+        trigger = scope_section(stack, "")
         row = QHBoxLayout()
         self.trigger_label = QLabel("触发 · 等待读回")
         self.trigger_label.setObjectName("spectrumChartTitle")

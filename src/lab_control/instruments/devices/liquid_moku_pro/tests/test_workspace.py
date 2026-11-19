@@ -17,7 +17,10 @@ from .test_protocol import Wire
 def connected(root, wire=None):
     rt = ApplicationRuntime(root=root, hardware=False)
     wire = Wire() if wire is None else wire
-    rt.sessions.factory = lambda config: Adapter(config, wire)
+    factory = rt.sessions.factory
+    rt.sessions.factory = lambda config: (
+        Adapter(config, wire) if config.adapter == ADAPTER else factory(config)
+    )
     key = rt.add(ConnectionConfig("mock://four-slots", ADAPTER, "mock", expected_serial="000088"))
     rt.connect(key).result(4)
     return rt, key, wire
@@ -90,7 +93,7 @@ def test_three_role_pages_never_start_output(qtbot, tmp_path):
 
 
 def test_buttons_prepare_selected_ports_and_join_recording_without_writes(qtbot, tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QMessageBox, QPushButton
+    from PySide6.QtWidgets import QAbstractButton, QMessageBox
 
     from lab_control.ui.real_window import RealWindow
 
@@ -104,7 +107,7 @@ def test_buttons_prepare_selected_ports_and_join_recording_without_writes(qtbot,
         return window.stack.currentWidget()
 
     def click(page, title):
-        next(b for b in page.findChildren(QPushButton) if b.text() == title).click()
+        next(b for b in page.findChildren(QAbstractButton) if b.text() == title).click()
 
     def until(fn):
         qtbot.waitUntil(lambda: bool(fn()), timeout=6000)
@@ -117,7 +120,7 @@ def test_buttons_prepare_selected_ports_and_join_recording_without_writes(qtbot,
         click(spectrum, "开始监测")
         assert not wire.calls
         monkeypatch.setattr(QMessageBox, "question", lambda *_: QMessageBox.StandardButton.Yes)
-        click(spectrum, "逐帧记录")
+        click(spectrum, "开始记录")
         until(lambda: spectrum.last and spectrum.last.request.channels == (3,))
         assert wire.routes["Slot3InA"] == "Input3"
         scope = panel("oscilloscope")
@@ -131,9 +134,9 @@ def test_buttons_prepare_selected_ports_and_join_recording_without_writes(qtbot,
         assert [v for _, p, v in wire.calls if p == "mim/set_connections"] == writes
         assert not any(p.endswith("/generate_waveform") for _, p, _ in wire.calls)
         previous = rt.monitoring.latest(key, "spectrum").sequence
-        click(scope, "停止本面板")
+        click(scope, "暂停监测")
         until(lambda: rt.monitoring.latest(key, "spectrum").sequence > previous)
-        click(panel("spectrum_analyzer"), "停止本面板")
+        click(panel("spectrum_analyzer"), "暂停监测")
         until(lambda: not rt.sessions.sessions[key].controls_locked)
         generator = panel("signal_generator")
         generator.channels.setCurrentIndex(3)

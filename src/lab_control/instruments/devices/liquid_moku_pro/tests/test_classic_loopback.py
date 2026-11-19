@@ -6,11 +6,14 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
+from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton, QTabBar
 
 from lab_control.app import load_stylesheet, load_ui_font
+from lab_control.domain.connections import ConnectionConfig
+from lab_control.ui.pages.monitoring.measurement_layout import MeasurementChart
 from lab_control.ui.pages.monitoring.spectrum_markers import MarkerDialog
 from lab_control.ui.real_window import RealWindow
+from lab_control.ui.widgets.device_selector import DeviceSelector
 
 from .test_protocol import Wire
 from .test_workspace import connected
@@ -96,22 +99,17 @@ def test_classic_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
         return page
 
     def capture(page, filename):
+        qtbot.wait(60)
         window.repaint()
         assert window.stack.currentWidget() is page
         assert window.grab().save(str(tmp_path / (filename + ".png")))
 
     def stop(page):
-        page.stop_button.click()
+        page.monitor_button.click()
         wait(lambda: not runtime.sessions.sessions[device].controls_locked)
 
     def configure(page, group, **values):
         controls = page.capture
-        if controls.scope:
-            controls.tabs.setCurrentIndex(
-                {"scope_timebase": 0, "scope_trigger": 2, "scope_acquisition": 3, "scope_interpolation": 3}[
-                    group
-                ]
-            )
         for key, val in values.items():
             editor = controls.editors[group][key]
             if editor.spec.kind == "enum":
@@ -142,7 +140,6 @@ def test_classic_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 capture(source, "signal-generator")
             scope = open_role("oscilloscope")
             if frequency == 10000:
-                scope.capture.tabs.setCurrentIndex(1)
                 bandwidth = scope.capture.front_fields["bandwidth"]
                 bandwidth.setCurrentIndex(bandwidth.findData("600MHz"))
                 with monkeypatch.context() as cancel:
@@ -172,18 +169,21 @@ def test_classic_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 assert scope.capture.editors["scope_timebase"]["seconds_per_div"].value() == pytest.approx(
                     40e-6
                 )
-                scope.capture.tabs.setCurrentIndex(1)
+                scope.capture.vertical_settings.setChecked(True)
                 scope.capture.display.auto.setChecked(False)
                 scope.capture.display.top.setValue(20)
                 scope.capture.display.offset.setValue(5)
                 assert scope.plot.display_specs[1].reference_value == pytest.approx(0.005)
                 assert scope.plot.display_specs[1].units_per_div == pytest.approx(0.02)
                 capture(scope, "scope-vertical")
-                scope.capture.tabs.setCurrentIndex(2)
+                scope.capture.vertical_settings.setChecked(False)
+                scope.capture.trigger_settings.setChecked(True)
                 capture(scope, "scope-trigger")
-                scope.capture.tabs.setCurrentIndex(3)
+                scope.capture.trigger_settings.setChecked(False)
+                scope.capture.acquisition_settings.setChecked(True)
                 capture(scope, "scope-acquisition")
-                scope.capture.tabs.setCurrentIndex(0)
+                scope.capture.acquisition_settings.setChecked(False)
+                wait(lambda: "—" not in scope.actual.text())
                 capture(scope, "scope-settings")
                 # A new frame must leave an unfinished edit intact.
                 editor = scope.capture.editors["scope_timebase"]["t1"]
@@ -196,8 +196,8 @@ def test_classic_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 scope.capture.refresh_button.click()
                 wait(lambda: scope.capture.receipt.text() == "参数已刷新")
                 assert editor.input.text() == "-125"
-                scope.stop_button.click()
-                wait(lambda: not scope.stop_button.isEnabled())
+                scope.monitor_button.click()
+                wait(lambda: scope.monitor_button.text() == "开始监测")
                 spectrum = open_role("spectrum_analyzer")
                 assert "600 MHz" in configure(spectrum, "spectrum_span", frequency1=300e6, frequency2=600e6)
                 assert wire.settings["span"]["frequency2"] == 600e6
@@ -243,16 +243,17 @@ def test_classic_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                     str(n): {"hz": r.position, "dbm": r.amplitude} for n, r in spectrum.plot.readings.items()
                 }
                 assert spectrum.plot.plot.viewRange()[1] == pytest.approx([-110, -10])
+                wait(lambda: "—" not in spectrum.actual.text())
                 capture(spectrum, "spectrum-settings")
                 window.resize(1100, 700)
                 qtbot.wait(60)
                 assert spectrum.capture.scroller.horizontalScrollBar().maximum() == 0
                 window.resize(1430, 900)
-                spectrum.stop_button.click()
-                wait(lambda: not spectrum.stop_button.isEnabled())
+                spectrum.monitor_button.click()
+                wait(lambda: spectrum.monitor_button.text() == "开始监测")
                 scope = open_role("oscilloscope")
             scope.record_button.click()
-            wait(lambda: scope.last and scope.record_button.text() == "记录中")
+            wait(lambda: scope.last and scope.record_button.text() == "停止记录")
             assert not scope.capture.apply_button.isEnabled()
             trace = scope.last.batch.measurements[0]
             vpp = float(np.ptp(trace.values))
@@ -264,7 +265,7 @@ def test_classic_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 capture(scope, "oscilloscope")
             spectrum = open_role("spectrum_analyzer")
             spectrum.record_button.click()
-            wait(lambda: spectrum.last and spectrum.record_button.text() == "记录中")
+            wait(lambda: spectrum.last and spectrum.record_button.text() == "停止记录")
             trace = spectrum.last.batch.measurements[0]
             index = int(np.argmax(trace.values))
             peak, level = float(trace.axis[index]), float(trace.values[index])
@@ -275,11 +276,19 @@ def test_classic_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 dict(set_hz=frequency, measured_vpp=vpp, period_us=period * 1e6, peak_hz=peak, peak_dbm=level)
             )
             scope = open_role("oscilloscope")
-            scope.stop_button.click()
-            wait(lambda: not scope.stop_button.isEnabled())
+            scope.record_button.click()
+            wait(lambda: scope.record_button.text() == "开始记录")
+            shared = runtime.monitoring.snapshots()[device]
+            assert set(shared["recording_kinds"]) == {"spectrum"}
+            assert set(shared["kinds"]) == {"spectrum", "waveform"}
+            scope.monitor_button.click()
+            wait(lambda: scope.monitor_button.text() == "开始监测")
             spectrum = open_role("spectrum_analyzer")
             previous = spectrum.last.sequence
             wait(lambda: spectrum.last.sequence > previous)
+            spectrum.record_button.click()
+            wait(lambda: not runtime.sessions.sessions[device].controls_locked)
+            assert runtime.monitoring.snapshots()[device]["running"]
             stop(spectrum)
 
         source = open_role("signal_generator")
@@ -291,6 +300,30 @@ def test_classic_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
         off_vpp = float(np.ptp(scope.last.batch.measurements[0].values))
         stop(scope)
         assert set(wire.outputs) == {4} and wire.routes["Output1"] == "Slot2OutD"
+        for model, category, filename in (
+            ("rigol.dsa815", "spectrum_analyzer", "reference-spectrum"),
+            ("lecroy.9404m", "oscilloscope", "reference-scope"),
+        ):
+            ref_id = runtime.add(ConnectionConfig("mock://" + model, model, "mock"))
+            runtime.connect(ref_id).result(5)
+            window.controller.poll()
+            window.navigate("仪器测控", category, device)
+            moku = window.stack.currentWidget()
+            assert isinstance(moku.selector, DeviceSelector)
+            assert moku.selector.combo.currentData() == device
+            assert not moku.capture.findChildren(QTabBar)
+            assert isinstance(moku.chart, MeasurementChart)
+            assert moku.capture.refresh_button.isEnabled()
+            moku.selector.combo.setCurrentIndex(moku.selector.combo.findData(ref_id))
+            ref = window.stack.currentWidget()
+            assert ref.device_id == ref_id and isinstance(ref.chart, MeasurementChart)
+            ref.toggle_monitoring()
+            wait(lambda: ref.plot.displayed_frame is not None and ref.start_button.text() == "暂停监测")
+            ref.refresh()
+            capture(ref, filename)
+            ref.toggle_monitoring()
+            ref.selector.combo.setCurrentIndex(ref.selector.combo.findData(device))
+            assert window.stack.currentWidget() is moku
         (tmp_path / "loopback.json").write_text(
             json.dumps(
                 {

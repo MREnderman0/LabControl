@@ -4,7 +4,6 @@ from dataclasses import replace
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -23,11 +22,11 @@ from lab_control.domain.waveform_coverage import mark_coverage
 from lab_control.instruments.scope_single import SingleCapture
 from lab_control.ui.controller import state_label
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
+from lab_control.ui.pages.monitoring.measurement_layout import MeasurementChart
 from lab_control.ui.pages.monitoring.oscilloscope_controls import OscilloscopeControls
 from lab_control.ui.pages.monitoring.oscilloscope_plot import OscilloscopePlot
 from lab_control.ui.pages.monitoring.pico_scope_controls import PicoScopeControls
 from lab_control.ui.pages.monitoring.recording_state import (
-    RecordingButton,
     recording_phase,
     recording_save_notice,
     update_recording_frame,
@@ -74,25 +73,11 @@ class OscilloscopeMonitoringPage(QWidget):
         layout.addWidget(self.empty)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
-        chart = self.chart = QFrame()
-        chart.setObjectName("spectrumChart")
-        chart.setMinimumWidth(280)
-        chart_layout = QVBoxLayout(chart)
-        chart_layout.setContentsMargins(10, 8, 10, 8)
-        tools_row = QHBoxLayout()
-        title = QLabel("时域波形")
-        title.setObjectName("spectrumChartTitle")
-        tools_row.addWidget(title)
-        tools_row.addStretch()
-        self.record_button = RecordingButton(chart)
+        chart = self.chart = MeasurementChart("时域波形")
+        chart_layout = chart.body
+        self.record_button = chart.record
         self.record_button.clicked.connect(self.record)
-        tools_row.addWidget(self.record_button)
-        tools = QToolButton()
-        tools.setObjectName("curveTools")
-        tools.setProperty("buttonSize", "compact")
-        tools.setText("曲线工具")
-        tools.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(tools)
+        menu = chart.scope_tools()
         self.save_action = menu.addAction("保存当前帧", self.save)
         self.memory_action = menu.addAction("读取完整存储波形", self.read_memory)
         self.memory_action.setVisible(False)
@@ -101,9 +86,6 @@ class OscilloscopeMonitoringPage(QWidget):
         self.fit_action = menu.addAction("恢复仪器视图", lambda: self.plot.clear_preview())
         self.timing_action = menu.addAction("采集节奏")
         self.timing_action.setCheckable(True)
-        tools.setMenu(menu)
-        tools_row.addWidget(tools)
-        chart_layout.addLayout(tools_row)
         self.timing = MonitoringTiming(controller)
         self.timing.hide()
         self.timing_action.toggled.connect(self.timing.setVisible)
@@ -111,15 +93,7 @@ class OscilloscopeMonitoringPage(QWidget):
         self.plot = OscilloscopePlot()
         self.plot.plot.snapshot_provider = self.export_snapshot
         chart_layout.addWidget(self.plot, 1)
-        footer = QHBoxLayout()
-        self.status = QLabel("监测未开始")
-        self.status.setObjectName("mutedText")
-        self.status.setWordWrap(True)
-        footer.addWidget(self.status, 1)
-        self.actual = QLabel("实际 — s/帧")
-        self.actual.setObjectName("rangeHint")
-        footer.addWidget(self.actual)
-        chart_layout.addLayout(footer)
+        self.status, self.actual = chart.add_status()
         self.splitter.addWidget(chart)
         self.right = QWidget()
         self.right.setMinimumWidth(300)

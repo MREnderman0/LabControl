@@ -3,10 +3,10 @@
 from math import isfinite
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -23,7 +23,13 @@ from lab_control.domain.connections import ConnectionConfig
 from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand
 from lab_control.domain.oscilloscope import engineering
 from lab_control.domain.spectrum import SpectrumMarker
+from lab_control.ui.controller import state_label
+from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
+from lab_control.ui.pages.monitoring.measurement_layout import MeasurementChart
+from lab_control.ui.pages.monitoring.recording_state import update_recording_frame
 from lab_control.ui.pages.monitoring.spectrum import SpectrumMarkerActions
+from lab_control.ui.pages.monitoring.timing import MonitoringTiming, SpectrumInterval
+from lab_control.ui.widgets.device_selector import DeviceSelector
 
 from .adapter import LABELS
 from .capture_controls import CaptureControls
@@ -33,6 +39,9 @@ from .protocol import CHANNELS
 
 
 class RolePage(SpectrumMarkerActions, QWidget):
+    capture: CaptureControls
+    timing: MonitoringTiming | SpectrumInterval
+    save_action: QAction | None
     marker_list: QListWidget
 
     def __init__(self, controller, device_id, role):
@@ -46,22 +55,26 @@ class RolePage(SpectrumMarkerActions, QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 10, 14, 12)
         layout.setSpacing(8)
-        title = QLabel(f"Moku:Pro · {LABELS[role]}")
-        title.setObjectName("pageTitle")
-        layout.addWidget(title)
         row = QHBoxLayout()
         layout.addLayout(row)
-        row.addWidget(QLabel("通道"))
         self.channels = QComboBox()
         for ch in CHANNELS:
             self.channels.addItem(f"ch{ch}", ch)
-        row.addWidget(self.channels)
-        row.addStretch()
         if self.kind:
-            self.monitor_button = self._button(row, "开始监测", lambda: self.start(False))
-            self.stop_button = self._button(row, "停止本面板", self.stop)
+            self.selector = DeviceSelector(controller, role, self, compact=True, bound_device=device_id)
+            row.addWidget(self.selector, 1)
+            self.connection = QLabel()
+            self.connection.setObjectName("sourceConnectionState")
+            row.addWidget(self.connection)
+            self.monitor_button = self._button(row, "开始监测", self.toggle_monitoring)
             self.build_measurement(layout)
         else:
+            title = QLabel(f"Moku:Pro · {LABELS[role]}")
+            title.setObjectName("pageTitle")
+            layout.insertWidget(0, title)
+            row.addWidget(QLabel("通道"))
+            row.addWidget(self.channels)
+            row.addStretch()
             row = QHBoxLayout()
             layout.addLayout(row)
             self.freq = QDoubleSpinBox()
@@ -88,52 +101,54 @@ class RolePage(SpectrumMarkerActions, QWidget):
                 "关闭所选通道",
                 lambda: self.command("waveform_stop", {}, f"关闭信号源 ch{self.channel}？"),
             )
-        row.addStretch()
+            row.addStretch()
         self.hint = QLabel()
         self.hint.setWordWrap(True)
         if self.kind:
             self.hint.hide()
         else:
             layout.addWidget(self.hint)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        if self.kind:
-            self.chart_layout.addWidget(self.status)
-        else:
+            self.status = QLabel()
+            self.status.setWordWrap(True)
             layout.addWidget(self.status)
-        if not self.kind:
             layout.addStretch()
         controller.refreshed.connect(self.refresh_status)
 
     def build_measurement(self, layout):
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
-        self.chart = QFrame()
-        self.chart.setObjectName("spectrumChart")
-        self.chart.setMinimumWidth(280)
-        self.chart_layout = QVBoxLayout(self.chart)
-        self.chart_layout.setContentsMargins(10, 8, 10, 8)
-        toolbar = QHBoxLayout()
-        title = QLabel("时域波形" if self.kind == "waveform" else "频谱")
-        title.setObjectName("spectrumChartTitle")
-        toolbar.addWidget(title)
-        toolbar.addStretch()
-        self.record_button = self._button(toolbar, "逐帧记录", lambda: self.start(True))
-        self.export_button = self._button(toolbar, "导出当前帧", self.export)
-        self.chart_layout.addLayout(toolbar)
-        self.summary = QLabel()
-        self.summary.setObjectName("rangeHint")
-        self.summary.setWordWrap(True)
-        self.chart_layout.addWidget(self.summary)
-        if self.kind == "spectrum":
-            self.marker_summary = QLabel()
-            self.marker_summary.setObjectName("spectrumChartTitle")
-            self.marker_summary.hide()
-            self.chart_layout.addWidget(self.marker_summary)
+        spectrum = self.kind == "spectrum"
+        self.chart = MeasurementChart("频谱" if spectrum else "时域波形", self, spectrum=spectrum)
+        self.record_button = self.chart.record
+        self.record_button.clicked.connect(self.toggle_recording)
+        if spectrum:
+            self.save_action = None
+            self.timing = self.chart.add_interval(self.controller)
+            self.timing.setMinimum(0.5)
+            self.timing.setToolTip("同一台 Moku 的两个测量面板共享采集间隔（0.5 至 60 秒）。")
+        else:
+            menu = self.chart.scope_tools()
+            self.save_action = menu.addAction("保存当前帧", lambda: self.export())
+            menu.addSeparator()
+            menu.addAction("刷新参数", lambda: self.capture.refresh())
+            menu.addAction("恢复仪器视图", self.restore_scope_view)
+            timing = menu.addAction("采集节奏")
+            timing.setCheckable(True)
+            self.timing = MonitoringTiming(self.controller)
+            self.timing.set_fixed_interval(True)
+            self.timing.hide()
+            timing.toggled.connect(self.timing.setVisible)
+            self.chart.body.addWidget(self.timing)
+        self.timing.bind(self.device_id, self.controller.mode)
         config = ConnectionConfig(**self.controller.records[self.device_id]["config"])
         self.source = next(s for s in data_sources(config) if s.kind == self.kind)
         self.plot = MokuScopePlot() if self.kind == "waveform" else MokuSpectrumPlot()
-        self.chart_layout.addWidget(self.plot, 1)
+        self.chart.body.addWidget(self.plot, 1)
+        self.summary = QLabel()
+        self.summary.setObjectName("rangeHint")
+        self.summary.setWordWrap(True)
+        self.chart.body.addWidget(self.summary)
+        self.status, self.actual = self.chart.add_status()
         self.splitter.addWidget(self.chart)
         self.capture = CaptureControls(self)
         self.settings = self.capture.settings
@@ -141,40 +156,30 @@ class RolePage(SpectrumMarkerActions, QWidget):
         if isinstance(self.plot, MokuSpectrumPlot):
             self.marker_plot = self.plot
             self.markers = []
-            self.marker_list.itemDoubleClicked.connect(
-                lambda item: self.edit_marker(item.data(Qt.ItemDataRole.UserRole))
-            )
             self.marker_plot.add_frequency.connect(self.add_marker_at)
             self.marker_plot.edit_marker.connect(self.edit_marker)
             self.marker_plot.save_frame.connect(self.export)
             self.marker_plot.readings_changed.connect(self.update_marker_list)
         self.splitter.addWidget(self.capture)
         self.splitter.setStretchFactor(0, 1)
-        self.splitter.setSizes([800, 395])
+        self.splitter.setSizes([800, 400] if spectrum else [850, 330])
         layout.addWidget(self.splitter, 1)
         self.channels.currentIndexChanged.connect(self.clear_curve)
         self.clear_curve()
         self.controller.frame_ready.connect(self.refresh_plot)
 
+    def restore_scope_view(self):
+        if isinstance(self.plot, MokuScopePlot):
+            self.capture.display.auto.setChecked(True)
+            self.plot.clear_preview()
+
     def show_trigger(self, actual, channel):
+        source = f"CH {channel}" if channel is not None else "外部"
+        self.capture.trigger_label.setText(f"触发 · {source} · {actual.get('edge', '')}")
+        self.capture.sync_trigger_level(actual["level"])
         self.trigger_receipt = (self.state.get("sessionId"), actual, channel)
         if self.last is not None and isinstance(self.plot, MokuScopePlot):
             self.plot.display_trigger(channel, actual["level"])
-
-    def update_marker_list(self):
-        super().update_marker_list()
-        rows = min(3, self.marker_list.count())
-        height = sum(self.marker_list.sizeHintForRow(i) + 2 * self.marker_list.spacing() for i in range(rows))
-        self.marker_list.setFixedHeight(max(54, height + 12))
-        readings = []
-        for marker in self.markers:
-            reading = self.marker_plot.readings.get(marker.number)
-            if reading and reading.position is not None and reading.amplitude is not None:
-                readings.append(
-                    f"M{marker.number}　{engineering(reading.position, 'Hz')}　{reading.amplitude:.2f} {self.marker_plot.amplitude_unit}"
-                )
-        self.marker_summary.setText("　·　".join(readings[:2]))
-        self.marker_summary.setVisible(bool(readings))
 
     def add_center_marker(self):
         trace = self.marker_plot.trace
@@ -249,6 +254,23 @@ class RolePage(SpectrumMarkerActions, QWidget):
         except Exception as exc:
             self.status.setText(str(exc))
 
+    def toggle_monitoring(self):
+        if self.controller.reconnect_if_needed(self.device_id):
+            return
+        task = self.service.snapshots().get(self.device_id, {})
+        if self._start_ticket is not None or (task.get("running") and self.kind in task["kinds"]):
+            self.stop()
+        else:
+            self.start(False)
+
+    def toggle_recording(self):
+        task = self.service.snapshots().get(self.device_id, {})
+        if self.kind in task.get("recording_kinds", ()):
+            self.service.stop_role_recording(self.device_id, self.kind)
+            self.refresh_status()
+        else:
+            self.start(True)
+
     def start(self, recording):
         if self._start_ticket is not None:
             return
@@ -284,6 +306,7 @@ class RolePage(SpectrumMarkerActions, QWidget):
                 future = self.service.start_role(
                     self.device_id,
                     AcquisitionRequest(self.kind, (ch,)),
+                    interval=self.timing.options()["interval"],
                     recording=recording,
                     mode=self.controller.mode,
                 )
@@ -323,7 +346,7 @@ class RolePage(SpectrumMarkerActions, QWidget):
         future = self.service.stop_role(self.device_id, self.kind)
         if future:
             self.controller.watch(future)
-        self.status.setText("已请求停止本面板")
+        self.status.setText("监测已暂停")
         self.refresh_status()
 
     def refresh_status(self):
@@ -352,24 +375,53 @@ class RolePage(SpectrumMarkerActions, QWidget):
             and not snap.get("recording_kinds")
             and self.device_id not in self.controller.group_devices
         )
-        self.monitor_button.setEnabled(connected and not pending and not running)
-        self.record_button.setEnabled(connected and not pending and not recording)
-        self.record_button.setText("记录中" if recording else "逐帧记录")
-        self.stop_button.setEnabled(pending or running)
+        self.connection.setText(
+            "已连接" if connected else state_label(state.get("connectionState", "disconnected"))
+        )
+        self.monitor_button.setText("暂停监测" if pending or running else "开始监测")
+        self.monitor_button.setEnabled(pending or running or connected)
+        refresh_reconnect_button(
+            self.monitor_button,
+            self.controller,
+            self.device_id,
+            snap,
+            busy=self.capture.active is not None,
+            can_cancel=pending or running,
+        )
+        scoped = dict(
+            snap,
+            running=running,
+            recording=bool(recording and snap.get("recording")),
+            recording_preparing=bool(recording and snap.get("recording_preparing")),
+        )
+        if snap.get("recording_kinds") and not recording:
+            scoped.pop("recording_state", None)
+        update_recording_frame(self.chart, scoped)
+        self.record_button.refresh(scoped, connected=connected, busy=pending, locked=False)
+        if connected and not pending and self.record_button.property("recordingPhase") == "idle":
+            self.record_button.setEnabled(True)
+            self.record_button.setToolTip("开始逐帧记录")
+        actual = snap.get("frame_interval") if running else None
+        self.actual.setText(f"实际 {actual:.2f} s/帧" if actual is not None else "实际 — s/帧")
+        self.selector.setEnabled(not pending and self.capture.active is None)
         self.channels.setEnabled(not (pending or running))
         self.capture.bind(state.get("sessionId"), self.channel)
         self.capture.writable = writable and not pending
         self.capture.buttons()
         if self.capture.active is not None:
             self.channels.setEnabled(False)
-        self.export_button.setEnabled(self.last is not None and not snap.get("display_saving"))
-        if self.kind == "spectrum":
-            self.marker_plot.save_enabled = self.export_button.isEnabled()
+        self.set_export_enabled(self.last is not None and not snap.get("display_saving"))
         if self.last is not None and self.service.latest(self.device_id, self.kind) is None:
             self.clear_curve()
         note = snap.get("error") or snap.get("recording_notice") or snap.get("notice")
         if note:
             self.status.setText(note)
+
+    def set_export_enabled(self, enabled):
+        if self.save_action is not None:
+            self.save_action.setEnabled(enabled)
+        elif isinstance(self.plot, MokuSpectrumPlot):
+            self.plot.save_enabled = enabled
 
     def clear_curve(self):
         self.plot.reset()
@@ -377,7 +429,7 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.readback.setText("未读回")
         self.settings.setText("等待首帧")
         self.last = None
-        self.export_button.setEnabled(False)
+        self.set_export_enabled(False)
         self.capture.bind(self.state.get("sessionId"), self.channel)
         if self.kind == "spectrum":
             self.marker_key = f"spectrum-markers/{self.controller.mode}/{self.device_id}/ch{self.channel}"
@@ -446,7 +498,7 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.capture.sync(frame.batch.configuration["settings"])
         self.last = frame
         self.service.displayed(self.device_id, frame)
-        self.export_button.setEnabled(True)
+        self.set_export_enabled(True)
 
     def showEvent(self, event):
         super().showEvent(event)

@@ -23,11 +23,12 @@ class DeviceSelector(QWidget):
         *,
         compact=False,
         surface: str | None = None,
+        bound_device: str = "",
     ) -> None:
         super().__init__(parent)
         self.controller, self.category, self.surface = controller, category, surface
-        self.device_id = ""
-        self._names_key = None
+        self.device_id = self.bound_device = bound_device
+        self._names_key: tuple[str, str | None, int] | None = None
         self.signature: tuple[tuple[str, str], ...] | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -74,12 +75,17 @@ class DeviceSelector(QWidget):
             entries.append(((slot_name + " · " if slot else "") + label + suffix, entry["id"]))
         signature = tuple(entries)
         if signature != self.signature:
-            self.combo.replace_items(
-                entries,
-                select_first=self.signature is None
-                and bool(records)
-                and len(instrument_categories(records[0])) == 1,
-            )
+            if self.bound_device:
+                with QSignalBlocker(self.combo):
+                    self.combo.replace_items(entries, select_first=False)
+                    self.combo.setCurrentIndex(self.combo.findData(self.bound_device))
+            else:
+                self.combo.replace_items(
+                    entries,
+                    select_first=self.signature is None
+                    and bool(records)
+                    and len(instrument_categories(records[0])) == 1,
+                )
             self.signature = signature
         self.combo.setPlaceholderText("选择已连接设备" if entries else "暂无已连接设备")
         record = self.controller.records.get(self.device_id)
@@ -114,8 +120,10 @@ class DeviceSelector(QWidget):
         device_id = self.combo.currentData() or ""
         if device_id == self.device_id:
             return
-        if device_id and len(instrument_categories(self.controller.records[device_id])) > 1:
-            # A legacy single-instrument page must never operate the multi-role adapter.
+        if device_id and (
+            self.bound_device or len(instrument_categories(self.controller.records[device_id])) > 1
+        ):
+            # Use the selected model's own workspace for either direction of a role change.
             with QSignalBlocker(self.combo):
                 self.combo.setCurrentIndex(self.combo.findData(self.device_id))
             self.controller.navigate.emit("仪器测控", self.category, device_id)
