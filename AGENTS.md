@@ -7,6 +7,7 @@
 ## 前端固定基线
 
 - 用户已明确确认历史提交 `0ae6721` 中的深色琥珀**分类卡片版**，以 `direction-approved.md` 和其中 `design/approved/card-overview.png` 截图为准。
+- 新型号和仪器面板改版遵循[经典版仪器界面接入规范](docs/architecture/frontend-design-system.md)。先对照同类公共页，再按通道能力扩展控件；型号独有的工作流在型号 README 说明差异。
 - 唯一开发启动脚本为 `run.bat`；模块入口、`lab-control` 与安装版 EXE 调用同一正式启动分发函数。Mock 仅用于内部测试和开发预览，共用 `ui/real_window.py`、`ui/widgets/category_cards.py` 和唯一主题 `ui/styles/card_workspace.qss`。首页使用分类卡片，点击卡片打开设备池；保留真实服务与范围校验。
 - 后续功能沿用此结构和配色；除非用户明确调整方向，不改成整页设备表或另选视觉方案。旧表格方向 HTML 不是当前确认基线。
 

@@ -12,6 +12,8 @@
 
 ## 2. 实现独立型号包
 
+涉及桌面界面时，先在[经典版仪器界面接入规范](../architecture/frontend-design-system.md)中选定参照页，在型号 README 记录参数、读回、共享通道或路由的差异。用模拟设备从公共入口检查所选角色、参数草稿和记录状态。
+
 按[模块规范](../architecture/device-modules.md)建立包、注册项、README、tests 和 hardware。使用[模板](templates/README.md)填写支持范围、单位、组合约束、查询失败行为和恢复边界。公共层只保留通用兼容机制，不加入本型号的命令、范围或历史格式分支。
 
 同时按[部署规范](../development/desktop-deployment.md)登记运行依赖、驱动/SDK、服务和网络要求，在型号元数据 `deployment_components` 引用组件 ID。记录官方来源、版本、安装材料哈希/签名、分发依据、检测/安装与恢复方法；未知项标待补。完成组件登记检查及实际打包回归，不能把依赖下载工作留给最终用户。

@@ -14,6 +14,8 @@
 
 ## 代码与入口
 
+仪器类型页的组件选择、参数布局及验收方法见[经典版仪器界面接入规范](docs/architecture/frontend-design-system.md)。
+
 共用运行窗口为 `src/lab_control/ui/real_window.py`，分类卡片为 `ui/widgets/category_cards.py`，唯一运行主题为 `ui/styles/card_workspace.qss`。控制、监测、数值输入和弹窗沿用相同配色。
 
 唯一开发启动脚本为 `run.bat`；`lab-control`、`python -m lab_control` 和安装版 EXE 共用 `launcher.main` 分发，GUI 使用真实 ApplicationRuntime。Mock 仅用于内部测试与开发预览，没有独立演示启动器。启动进行正常发现和授权范围内的身份探测；浏览卡片和打开设备池不额外查询参数或自动连接。保留前端限幅、后端严格校验及会话能力快照。

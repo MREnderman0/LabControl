@@ -21,6 +21,7 @@
 - [型号导航](devices/README.md)、[原始设备清单对应](device-research-index.md)
 - [能力矩阵](generated/capability-matrix.md)及 [JSON](generated/capability-matrix.json)
 - [设备模块维护规范](architecture/device-modules.md)
+- [经典版仪器界面接入规范](architecture/frontend-design-system.md)（公共类别页、可调参数、标记与模拟验收）
 
 ## 查看测试记录
 
