@@ -18,6 +18,7 @@
 ## 接入新设备
 
 - [新设备接入流程](testing/onboarding.md)、[模板](testing/templates/README.md)
+- [前端设计规范与组件库](architecture/frontend-design-system.md)：界面路线（公共页 / 扩展公共页 / 型号专属页）、组件目录、仪器页骨架、禁止事项与界面验收
 - [型号导航](devices/README.md)、[原始设备清单对应](device-research-index.md)
 - [能力矩阵](generated/capability-matrix.md)及 [JSON](generated/capability-matrix.json)
 - [设备模块维护规范](architecture/device-modules.md)
@@ -35,7 +36,7 @@
 - [桌面部署与环境修复](development/desktop-deployment.md)：组件台账、联网/离线构建和设置内准备
 - [依赖下载资源](generated/download-resources.md)：按清单生成的国内镜像/官方直连地址与验证状态
 - [文档维护约定及兼容入口](development/documentation.md)
-- [系统架构](architecture/system-architecture.md)、[技术栈](architecture/technology-stack.md)、[前端架构](architecture/frontend-framework.md)
+- [系统架构](architecture/system-architecture.md)、[技术栈](architecture/technology-stack.md)、[前端架构](architecture/frontend-framework.md)、[前端设计规范](architecture/frontend-design-system.md)
 - [兼容接口](protocols/device-compatibility.md)、[传输协议](protocols/visa-scpi.md)、[数据模型](data/data-model.md)
 - [需求与实现边界](requirements/overview.md)
 - [协作要求](../AGENTS.md)、[确认的设计基线](../direction-approved.md)

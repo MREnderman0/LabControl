@@ -41,6 +41,18 @@ RBW 可选自动、手动或最小，面板显示设备取整后的实际带宽�
 
 [协议](../../../src/lab_control/instruments/devices/liquid_moku_pro/protocol.py)、[适配器](../../../src/lab_control/instruments/devices/liquid_moku_pro/adapter.py)、[DNS-SD](../../../src/lab_control/instruments/devices/liquid_moku_pro/discovery.py)、[工作页](../../../src/lab_control/instruments/devices/liquid_moku_pro/workspace.py)、[实机计划](../../../src/lab_control/instruments/devices/liquid_moku_pro/hardware/README.md)。锁、调度、记录、回放与文件布局复用公共层。
 
+## 界面接入
+
+按[前端设计规范](../../architecture/frontend-design-system.md#1-先选界面路线)属于路线 C（型号专属页）。公共类别页按“一台设备对应一个类别”组织，无法表达同一资产的三个角色共用物理输入、按角色分配端口和参数锁，所以注册 `role_page_factory` 与 `role_categories`，在信号源、示波器、频谱仪三个类别下各打开一个 `RolePage`。
+
+页面只做布局和信号连接：页头为 `DeviceSelector` 加运行与记录按钮，测量面板沿用公共图表卡和参数卡骨架（`Card`、`ReadoutStrip`、`Section`、`Segmented`、`ParameterEditor`、`frame.page_layout`/`show_state`）。绘图类继承示波器和频谱仪的公共绘图类。包内没有样式表、颜色或字体常量。
+
+三个角色可以同时运行。每页的[角色条](../../../src/lab_control/instruments/devices/liquid_moku_pro/role_bar.py)列出信号源、示波器和频谱仪的状态，点击角色即可切换到同一设备的对应面板。示波器和频谱仪测量同一输入时，角色条会标出物理通道。修改该通道的阻抗、耦合、衰减或带宽会同时影响两种测量。
+
+信号源卡片和角色条共用当前设备会话的输出命令回执。每个通道分别显示“输出中”“已关闭”或“状态待核实”。设备可能已执行写入但回执异常时，该通道立即转为待核实。新会话从“无输出回执”开始。切换面板只读取会话快照。前面板或厂商上位机另行修改的输出状态需要单独核实。
+
+示波器和频谱仪共用一个记录文件。逐帧记录时，相应面板的图表卡显示红色描边。停止最后一个记录角色后，描边和“收尾中”提示保留到二进制写盘完成，同时监测的其他角色仍显示采集状态。相关回归见[工作区测试](../../../src/lab_control/instruments/devices/liquid_moku_pro/tests/test_workspace.py)和[模拟 CH1 回接测试](../../../src/lab_control/instruments/devices/liquid_moku_pro/tests/test_graphite_loopback.py)。
+
 ## 测试入口与实机状态
 
 石墨工作区从信号源、示波器和频谱仪三个分类打开同一台 Moku:Pro。运行

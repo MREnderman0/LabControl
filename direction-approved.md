@@ -23,7 +23,7 @@
 - 共用运行窗口仍为 `ui/real_window.py`；唯一开发启动脚本为 `run.bat`，`lab-control`、`python -m lab_control` 和安装版 EXE 共用 `launcher.main` 分发。Mock 仅用于内部测试和开发预览。
 - 没有新增第三方依赖；图标使用 PySide6 自带的 QtSvg。正式入口的界面字体为 Windows 自带 Segoe UI Variable（Windows 10 回退 Segoe UI），中文由微软雅黑显示；测试与评审脚本仍固定使用微软雅黑以保持度量。
 
-后续新增设备和功能沿用这套令牌、组件和分类卡片布局。未经用户明确调整方向，不把首页改为整页设备表，也不另选视觉方案。
+后续新增设备和功能沿用这套令牌、组件和分类卡片布局，具体做法和界面验收见[前端设计规范与组件库](docs/architecture/frontend-design-system.md)。未经用户明确调整方向，不把首页改为整页设备表，也不另选视觉方案。
 
 ## 历史记录
 

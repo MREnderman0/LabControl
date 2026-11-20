@@ -35,6 +35,8 @@ PySide6 只负责界面和 Qt 信号槽。设备扫描、连接、命令、采�
 
 ## 5. 视觉规范
 
+本节概括视觉原则。新增页面、型号界面和改版的具体做法见[前端设计规范与组件库](frontend-design-system.md)。
+
 - 中性石墨背景、白色主文字和灰色辅助文字；颜色、圆角和字体只取自 `ui/styles/tokens.py`，QSS 与绘制控件、图表共用。
 - 琥珀只用于主操作、选中、主曲线和标记；标题与读数使用中性白。分类卡片为细边框圆角卡片，带类别图标、状态比例条和前三台设备，不使用霓虹渐变。
 - 通道颜色统一使用 `tokens.CHANNEL_COLORS`，曲线、图例、通道标签和控制面板一致。
@@ -43,7 +45,7 @@ PySide6 只负责界面和 Qt 信号槽。设备扫描、连接、命令、采�
 - pyqtgraph 用于波形、频谱和高密度趋势图；不在第一版同时引入其他图表库。
 - 不直接采用 GPL 主题组件；需要 Fluent 感觉时，用自有 QSS 和 Qt Widgets 组合实现。
 - 正式入口字体为 Segoe UI Variable（Windows 10 回退 Segoe UI），中文由微软雅黑显示，均为系统自带。
-- 连接状态使用绿色、黄色、红色和灰色语义色。运行时只加载 `ui/styles/card_workspace.qss`（其中的勾选与微调箭头图片随包放在同目录），新增页面复用 `ui/kit/` 组件库：`base`（状态点与标签、图标按钮、导航项）、`controls`（按钮变体、开关、分段、字段框、搜索框）、`layout`（卡片、分组、空状态、提示）、`readouts`（读数条）、`instrument`（设备卡、同类快切）。`python -m lab_control.ui.kit.gallery` 显示全部组件；监测页的页头与图表卡由 `ui/pages/monitoring/frame.py` 统一排布。卡片内只把纯容器（`.QWidget`）设为透明，避免覆盖按钮等控件自身的背景。
+- 连接状态使用绿色、黄色、红色和灰色语义色。运行时只加载 `ui/styles/card_workspace.qss`（其中的勾选与微调箭头图片随包放在同目录）。新增页面复用 `ui/kit/` 组件库和仪器页骨架，`python -m lab_control.ui.kit.gallery` 显示全部组件。组件目录、尺寸、状态、禁止事项和界面验收见[前端设计规范](frontend-design-system.md)，本节不重复维护。
 - UI 设计参考 Tabler 的卡片和分段控件、Grafana 的状态表达、shadcn/ui 的控件状态，但不引入其运行时依赖。
 
 ## 6. 当前实施边界
