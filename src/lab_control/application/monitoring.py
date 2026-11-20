@@ -310,6 +310,8 @@ class MonitoringService:
                 raise
             if recording:
                 task.record_kinds.add(request.kind)
+                if task.recording:
+                    task.recorder_kinds.add(request.kind)
             self.wake.set()
             return future
 
@@ -323,7 +325,9 @@ class MonitoringService:
                 return self.stop(device_id)
             task.requests = remaining
             task.record_kinds.discard(kind)
-            if not task.record_kinds:
+            if task.record_kinds:
+                task.recorder_kinds.discard(kind)
+            else:
                 task.recording = False
                 task.recording_cancelled = True
             self.wake.set()
@@ -489,6 +493,7 @@ class MonitoringService:
                     task.mode = next_mode
                     task.acquisition_context_id = uuid4().hex
                     task.recorder = recorder
+                    task.recorder_kinds = set(task.record_kinds or ())
                     self._track_recording(device_id, recorder)
                     task.recording_notice = ""
                     task.record_session = context.started_utc
@@ -796,6 +801,7 @@ class MonitoringService:
                     "recording_kinds": tuple(sorted(task.record_kinds or ()))
                     if task.running and (task.recording or task.recording_preparation is not None)
                     else (),
+                    "recorder_kinds": tuple(sorted(task.recorder_kinds)),
                     "last_path": task.last_path,
                     "mode": task.mode,
                     "interval": task.interval,

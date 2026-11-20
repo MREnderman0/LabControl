@@ -266,6 +266,8 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
             spectrum = open_role("spectrum_analyzer")
             spectrum.record_button.click()
             wait(lambda: spectrum.last and spectrum.record_button.text() == "记录中")
+            spectrum.refresh_status()
+            assert "共用 ch1 输入前端" in spectrum.role_bar.note.text()
             trace = spectrum.last.batch.measurements[0]
             index = int(np.argmax(trace.values))
             peak, level = float(trace.axis[index]), float(trace.values[index])
@@ -286,6 +288,8 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
         source = open_role("signal_generator")
         card.off.click()
         wait(lambda: wire.outputs[4]["type"] == "Off")
+        wait(lambda: card.output.label.text() == "已关闭")
+        assert source.role_bar.chips.group.button(0).text() == "信号源 · CH1 已关闭"
         scope = open_role("oscilloscope")
         scope.monitor_button.click()
         wait(lambda: scope.last and np.ptp(scope.last.batch.measurements[0].values) < 50e-6)
@@ -308,6 +312,58 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
             ),
             encoding="utf-8",
         )
+    finally:
+        window.timer.stop()
+        window.controller.close()
+        window.agent_panel.shutdown()
+        window.environment_panel.shutdown()
+        window.storage_panel.shutdown()
+        window.closing = True
+        window.close()
+        window.bridge.worker.shutdown(wait=True)
+        runtime.close()
+
+
+@pytest.mark.parametrize("bad_reply", ["mismatch", "timeout"])
+def test_ambiguous_output_write_replaces_only_its_channel_receipt(qtbot, tmp_path, monkeypatch, bad_reply):
+    wire = LoopbackWire()
+    runtime, device, _ = connected(tmp_path, wire)
+    window = RealWindow(runtime)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(QMessageBox, "question", lambda *_: QMessageBox.StandardButton.Yes)
+
+    try:
+        window.show()
+        window.navigate("仪器测控", "signal_generator", device)
+        page = window.stack.currentWidget()
+        card = page.cards[1]
+        card.off.click()
+        qtbot.waitUntil(lambda: card.output.label.text() == "已关闭")
+        page.cards[2].off.click()
+        qtbot.waitUntil(lambda: page.role_bar.chips.group.button(0).text() == "信号源 · CH1、CH2 已关闭")
+        original = wire.call
+
+        def bad_ack(method, path, params=None):
+            result = original(method, path, params)
+            if path.endswith("/generate_waveform"):
+                if bad_reply == "timeout":
+                    raise TimeoutError("模拟设备已执行，回执超时")
+                return {}
+            return result
+
+        monkeypatch.setattr(wire, "call", bad_ack)
+        card.on.click()
+        qtbot.waitUntil(lambda: card.output.label.text() == "状态待核实")
+        assert wire.outputs[4]["type"] == "Sine"
+        assert page.cards[2].output.label.text() == "已关闭"
+        window.navigate("仪器测控", "oscilloscope", device)
+        chip = window.stack.currentWidget().role_bar.chips.group.button(0)
+        assert chip.text() == "信号源 · CH1 状态待核实 · CH2 已关闭"
+        assert sum(p.endswith("/generate_waveform") for _, p, _ in wire.calls) == 3
+        runtime.sessions.disconnect(device)
+        runtime.connect(device).result(4)
+        window.controller.poll()
+        assert chip.text() == "信号源 · 无输出回执"
     finally:
         window.timer.stop()
         window.controller.close()

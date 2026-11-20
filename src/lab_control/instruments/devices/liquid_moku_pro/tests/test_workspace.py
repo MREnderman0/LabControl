@@ -65,6 +65,25 @@ def test_one_session_dual_record_stop_replay_export(tmp_path):
     assert wire.key is None
 
 
+def test_last_recording_role_drains_while_peer_keeps_monitoring(tmp_path):
+    rt, key, _ = connected(tmp_path)
+    with rt:
+        rt.monitoring.apply(key, DeviceCommand("attach_workspace", confirmed=True)).result(3)
+        rt.monitoring.start_role(key, AcquisitionRequest("spectrum"))
+        rt.monitoring.start_role(key, AcquisitionRequest("waveform"), recording=True).result(4)
+        wait(lambda: rt.monitoring.latest(key, "waveform"))
+        with rt.monitoring.lock:
+            rt.monitoring.stop_role(key, "waveform")
+            snap = rt.monitoring.snapshots()[key]
+            assert snap["running"] and snap["kinds"] == ("spectrum",)
+            assert not snap["recording_state"]["binary_done"] and not snap["recording_kinds"]
+            assert snap["recorder_kinds"] == ("waveform",)
+        wait(lambda: rt.monitoring.snapshots()[key]["recording_state"]["binary_done"])
+        rt.monitoring.start_role(key, AcquisitionRequest("spectrum"), recording=True).result(4)
+        assert rt.monitoring.snapshots()[key]["recorder_kinds"] == ("spectrum",)
+        rt.monitoring.stop_role(key, "spectrum").result(15)
+
+
 def test_three_role_pages_never_start_output(qtbot, tmp_path):
     from lab_control.instruments.devices.liquid_moku_pro.workspace import RolePage
     from lab_control.ui.pages.monitoring.oscilloscope_plot import OscilloscopePlot
@@ -160,12 +179,34 @@ def test_buttons_prepare_selected_ports_and_join_recording_without_writes(qtbot,
         until(lambda: scope.last and scope.last.request.channels == (1,))
         assert "1 MSa/s" in scope.settings.text()
         assert scope.plot.displayed_frame.batch.measurements[0].axis_unit == "s"
+        # Every role page shows all three roles; only the recording panel gets the red frame.
+        scope.refresh_status()
+        chips = scope.role_bar.chips.group.buttons()
+        assert [c.text() for c in chips] == [
+            "信号源 · 无输出回执",
+            "示波器 · ch1 采集中",
+            "频谱仪 · ch3 记录中",
+        ]
+        assert [c.isChecked() for c in chips] == [False, True, False]
+        assert scope.role_bar.note.text() == ""
+        assert scope.chart.property("recordingPhase") == "idle"
+        assert panel("spectrum_analyzer").chart.property("recordingPhase") == "recording"
+        scope = panel("oscilloscope")
         assert [v for _, p, v in wire.calls if p == "mim/set_connections"] == writes
         assert not any(p.endswith("/generate_waveform") for _, p, _ in wire.calls)
         previous = rt.monitoring.latest(key, "spectrum").sequence
         click(scope, "停止本面板")
         until(lambda: rt.monitoring.latest(key, "spectrum").sequence > previous)
-        click(panel("spectrum_analyzer"), "停止本面板")
+        spectrum = panel("spectrum_analyzer")
+        with rt.monitoring.lock:
+            click(spectrum, "停止本面板")
+            assert not rt.monitoring.snapshots()[key]["recording_state"]["binary_done"]
+            assert spectrum.chart.property("recordingPhase") == "draining"
+            assert spectrum.record_button.text() == "收尾中" and not spectrum.record_button.isEnabled()
+            assert spectrum.role_bar.chips.group.button(2).text() == "频谱仪 · 收尾中"
+            assert panel("oscilloscope").chart.property("recordingPhase") == "idle"
+        spectrum = panel("spectrum_analyzer")
+        until(lambda: spectrum.chart.property("recordingPhase") == "idle")
         until(lambda: not rt.sessions.sessions[key].controls_locked)
         generator = panel("signal_generator")
         generator.channels.setCurrentIndex(3)
@@ -174,6 +215,18 @@ def test_buttons_prepare_selected_ports_and_join_recording_without_writes(qtbot,
         until(lambda: any(p.endswith("/generate_waveform") for _, p, _ in wire.calls))
         waves = [v for _, p, v in wire.calls if p.endswith("/generate_waveform")]
         assert len(waves) == 1 and waves[0]["channel"] == 1 and waves[0]["type"] == "Sine"
+        # The acknowledged output shows on its card and in the role bar of every role page.
+        until(generator.cards[4].output.isVisible)
+        assert generator.cards[4].output.label.text() == "输出中"
+        assert not generator.cards[1].output.isVisible()
+        assert generator.role_bar.chips.group.buttons()[0].text() == "信号源 · CH4 输出"
+        calls = len(wire.calls)
+        generator.role_bar.chips.group.buttons()[1].click()
+        scope = window.stack.currentWidget()
+        assert scope.role == "oscilloscope" and scope.role_bar.chips.group.buttons()[1].isChecked()
+        assert scope.role_bar.chips.group.buttons()[0].text() == "信号源 · CH4 输出"
+        assert generator.role_bar.chips.group.buttons()[0].isChecked()
+        assert len(wire.calls) == calls
         assert wire.routes["Output4"] == "Slot2OutA" and wire.routes["Slot4InA"] == "Input4"
         assert sum(p == "moku/claim_ownership" for _, p, _ in wire.calls) == 1
     finally:

@@ -91,7 +91,11 @@ def paint_device_card(
 
 
 class DeviceChips(Segmented):
-    """Same-category devices as one-click chips (status dot + short name)."""
+    """One-click chips with a status dot and a short label.
+
+    Used for same-category devices, and for the roles of a multi-function instrument that runs
+    several roles at once (Moku:Pro).
+    """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__((), parent)
@@ -103,7 +107,19 @@ class DeviceChips(Segmented):
     def set_devices(self, devices: Sequence[tuple[str, str, str, str]], current: str) -> None:
         """``devices``: (short label, device id, status kind, tooltip)."""
         signature = tuple(devices)
-        if signature != self.signature:
+        if signature != self.signature and [d[1] for d in devices] == self._data:
+            # Same items, new state: update in place. Rebuilding would blank the chips until the
+            # new buttons are shown, which flickers on every status change.
+            self.signature = signature
+            for index, (text, _device_id, kind, tooltip) in enumerate(devices):
+                chip = self.group.button(index)
+                if chip.text() != text:
+                    chip.setText(text)
+                chip.setIcon(icons.icon("record", tk.STATUS.get(kind, tk.IDLE)))
+                chip.setToolTip(tooltip)
+            # sizeHint comes from the row; tell the parent layout that the chip widths changed.
+            self.updateGeometry()
+        elif signature != self.signature:
             self.signature = signature
             for item in list(self.group.buttons()):
                 self.group.removeButton(item)

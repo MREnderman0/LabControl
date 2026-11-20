@@ -114,6 +114,7 @@ class Adapter:
             self.api.close()
             raise
         self.slots: dict[str, int] = {}
+        self.output_receipts: dict[str, dict] = {}
 
     def identify(self):
         return self.identity
@@ -151,7 +152,10 @@ class Adapter:
 
     @property
     def capability_details(self):
-        return {"workspace_attached": bool(self.api.key and self.slots)}
+        return {
+            "workspace_attached": bool(self.api.key and self.slots),
+            "output_receipts": self.output_receipts.copy(),
+        }
 
     def read_status(self):
         # No ownership claim. While recording locks writes, another role may join
@@ -397,6 +401,7 @@ class Adapter:
                 raise ValidationError("只允许已核实 0 dB 增益及 50 Ω 终端设置的输出")
             body.update(type="Sine", offset=0, **params)
         if dest not in mapping:
+            self.output_receipts.pop(str(ch), None)
             self.api.call(
                 "POST", "mim/set_connections", {"connections": [{"destination": dest, "source": src}]}
             )
@@ -405,6 +410,8 @@ class Adapter:
                 raise DeviceError("信号源路由读回不符，未发送波形命令；请核对路由")
         if op == "connect_generator_channel":
             return ApplyResult("success", op, params, {"channel": f"信号源 ch{ch}"}, 1)
+        # A write or its verification can fail after the instrument changed the output.
+        self.output_receipts[str(ch)] = {"state": "uncertain"}
         ack = self._slot(role, "POST", "generate_waveform", body)
         if (
             not isinstance(ack, dict)
@@ -413,6 +420,11 @@ class Adapter:
             or self._routes() != mapping
         ):
             raise DeviceError("输出回执或路由异常，最终状态待核实；不会重发")
+        self.output_receipts[str(ch)] = (
+            {"state": "on", "frequency": ack["frequency"], "amplitude": ack["amplitude"]}
+            if body["type"] == "Sine"
+            else {"state": "off"}
+        )
         return ApplyResult("success", op, params, {"channel": f"信号源 ch{ch}"}, 1, acknowledged=True)
 
     def close(self):
@@ -421,3 +433,4 @@ class Adapter:
             self.api.key = None
         self.api.close()
         self.slots = {}
+        self.output_receipts.clear()

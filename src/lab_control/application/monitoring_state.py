@@ -101,6 +101,8 @@ class MonitorTask:
     recovery_pending: Future[Any] | None = None
 
     record_kinds: set[str] | None = None
+    # Roles attached to the current binary writer, retained through finalization.
+    recorder_kinds: set[str] = field(default_factory=set)
     watch_owned: bool = False
     watch_session: str = ""
 

@@ -1,7 +1,9 @@
 from PySide6.QtWidgets import QGridLayout, QLabel
 
-from lab_control.ui.kit import Card, button
+from lab_control.ui.kit import Card, Pill, button
 from lab_control.ui.pages.device_control.editors import ParameterEditor
+
+from .role_bar import RECEIPT_NOTE, output_display
 
 
 class GeneratorCard(Card):
@@ -10,6 +12,10 @@ class GeneratorCard(Card):
     def __init__(self, page, channel):
         super().__init__(f"CH {channel}", padding=(16, 12, 16, 14))
         self.page, self.channel = page, channel
+        # Hidden until this session has attempted a waveform write.
+        self.output = Pill("", "neutral", dot=True)
+        self.output.hide()
+        self.header().addWidget(self.output)
         self.header().addStretch()
         self.add_status("正弦 · 零偏置", dot=False)
         self.fields = fields = QGridLayout()
@@ -54,6 +60,13 @@ class GeneratorCard(Card):
             self.fields.addWidget(caption, row, col, 1, span)
             self.fields.addWidget(editor, row + 1, col, 1, span)
 
+    def show_output(self, receipt: dict | None) -> None:
+        self.output.setVisible(receipt is not None)
+        if receipt is not None:
+            label, kind, detail = output_display(receipt)
+            self.output.set(label, kind)
+            self.output.setToolTip(f"CH{self.channel}  {detail}\n{RECEIPT_NOTE}")
+
     def start(self):
         try:
             values = {name: editor.value() for name, editor in self.editors.items()}
@@ -68,4 +81,9 @@ class GeneratorCard(Card):
             self.page.status.setText(str(exc))
 
     def stop(self):
-        self.page.command("waveform_stop", {}, f"关闭信号源 CH {self.channel}？", channel=self.channel)
+        self.page.command(
+            "waveform_stop",
+            {},
+            f"关闭信号源 CH {self.channel}？",
+            channel=self.channel,
+        )
