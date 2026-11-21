@@ -14,7 +14,8 @@ from pathlib import Path
 from lab_control.application.static_addresses import StaticAddressStore
 from lab_control.discovery.service import DiscoveryCandidate, Inventory
 from lab_control.domain.connections import ConnectionConfig
-from lab_control.domain.instruments import DeviceError, ValidationError
+from lab_control.domain.instruments import DeviceError, DeviceIdentity, ValidationError
+from lab_control.instruments.registry import recognized_identity
 from lab_control.transport.visa import VisaRuntime
 
 
@@ -182,6 +183,16 @@ def discovery_networks(
     return networks, restriction
 
 
+def _recognized_legacy_alias(record: dict) -> bool:
+    """A verified pre-normalization ID can supply a probe address, never a connection."""
+    saved = record.get("identity") or {}
+    if not (saved.get("manufacturer") and saved.get("model") and saved.get("serial")):
+        return False
+    identity = DeviceIdentity(saved["manufacturer"], saved["model"], saved["serial"])
+    canonical, _ = recognized_identity(identity)
+    return identity.key == record.get("identityKey") and canonical.key != identity.key
+
+
 class RememberedLanDiscoveryProvider:
     """Recheck a verified primary address even when its service does not advertise.
 
@@ -218,7 +229,7 @@ class RememberedLanDiscoveryProvider:
                 or entry.get("retired")
                 or entry.get("verifiedIdentityKey") != identity_key
                 or config.get("transport") != "visa"
-                or not config.get("adapter")
+                or (not config.get("adapter") and not _recognized_legacy_alias(record))
                 or not resource.upper().startswith("TCPIP")
                 or not resource.upper().endswith(("::INSTR", "::SOCKET"))
             ):

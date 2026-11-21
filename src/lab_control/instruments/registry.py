@@ -86,6 +86,14 @@ def match(identity: DeviceIdentity) -> str:
     return ""
 
 
+def recognized_identity(identity: DeviceIdentity) -> tuple[DeviceIdentity, str]:
+    adapter = match(identity)
+    definition = DEVICE_DEFINITIONS.get(adapter)
+    if definition and definition.adapter_type:
+        identity = definition.adapter_type.canonical_identity(identity)
+    return identity, adapter
+
+
 def transport_for(config: ConnectionConfig, runtime: VisaRuntime) -> Transport:
     definition = DEVICE_DEFINITIONS.get(config.adapter)
     if definition and definition.transport_factory:
