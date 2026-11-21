@@ -87,7 +87,20 @@ class FphAdapter(SpectrumPanelAdapter):
         self._acquisition_context: dict[str, Any] | None = None
         self._context_timestamp = ""
         self._options_checked = False
+        self._qualified_real32_le = False
         self._context_key: tuple[str, str] = ("", "")
+
+    def bind_control_state(self, load, save) -> None:
+        """Load the host's wire-format qualification after the session verifies identity."""
+        identity = self.identity
+        self._qualified_real32_le = False
+        if identity is None or not identity.key or identity.firmware != "V2.40":
+            return
+        state = load()
+        self._qualified_real32_le = isinstance(state, dict) and state.get("real32_little_endian") == {
+            "identity_key": identity.key,
+            "firmware": identity.firmware,
+        }
 
     @property
     def _k13(self) -> bool:
@@ -467,7 +480,7 @@ class FphAdapter(SpectrumPanelAdapter):
         if self._k13 and before["transfer_format"] != "ASC":
             raise Unsupported("FPH13 V2.33 仅验证了 ASCII 迹线，当前传输格式尚未验证")
         raw = self.transport.query(TRACE_QUERY)
-        frame_config = trace_format(raw, before, self.identity)
+        frame_config = trace_format(raw, before, self.identity, qualified_real32_le=self._qualified_real32_le)
         if not cached:
             after = {op: self.read(op) for op in frame_settings}
             changes = {op: (before[op], after[op]) for op in frame_settings if before[op] != after[op]}
