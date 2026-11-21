@@ -95,6 +95,7 @@ def test_qualified_model_processing_profiles_are_registered():
         "rs.fph": "frames",
         "rigol.dho924": "frames",
         "rs.rtm3004": "frames",
+        "liquid.moku_pro": "frames",
         "pico.6404e": "frames",
         "rs.rto64": "frames",
         "rigol.dsa815": "frames",
