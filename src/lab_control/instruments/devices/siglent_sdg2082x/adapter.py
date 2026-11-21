@@ -110,6 +110,8 @@ def sdg2082x() -> Profile:
 
 
 class Sdg2082xAdapter(ScpiAdapter):
+    optional_firmware_evidence = "exact"
+
     def read_settings(self, operations: tuple[str, ...], channel: int = 1) -> tuple[ParameterReading, ...]:
         readings: list[ParameterReading] = []
         for operation in operations:

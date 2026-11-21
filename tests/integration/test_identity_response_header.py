@@ -21,6 +21,28 @@ def test_identity_response_header_is_not_part_of_the_asset_key(header):
     assert identity_from_scpi(b"IDN Industries,MODEL,SERIAL,1").manufacturer == "IDN Industries"
 
 
+@pytest.mark.parametrize(
+    ("adapter_id", "idn"),
+    [
+        ("keysight.n9030a", b"Agilent Technologies,N9030A,FIXTURE"),
+        ("siglent.sdg6032x", b"Siglent Technologies,SDG6032X,FIXTURE"),
+        ("siglent.sdg2082x", b"Siglent Technologies,SDG2082X,FIXTURE"),
+    ],
+)
+def test_verified_serial_supports_an_idn_without_the_optional_revision(adapter_id, idn):
+    from lab_control.application.acquisition_recovery import identify_for_connection
+
+    config = ConnectionConfig("mock://partial-idn", adapter_id, "mock")
+    wire = MockTransport([("*IDN?", idn + b",1.2"), ("*IDN?", idn)])
+    wire.open()
+    adapter = build_scpi_adapter(config, wire)
+    original = adapter.identify()
+    partial = identify_for_connection(adapter, original)
+    assert partial.key == original.key
+    assert partial.firmware == "" and partial.last_known_firmware == "1.2"
+    assert wire.history == ["*IDN?", "*IDN?"]
+
+
 def test_lan_probe_and_explicit_connection_keep_one_asset_without_setting_writes(tmp_path, monkeypatch):
     raw = b"*IDN LECROY,WAVERUNNER9404M,FIXTURE,9.2.0"
     config = ConnectionConfig("mock://header-scope", "lecroy.9404m", "mock", expected_serial="FIXTURE")

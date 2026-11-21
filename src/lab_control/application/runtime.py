@@ -411,6 +411,7 @@ class ApplicationRuntime:
             device_id,
             config,
             expected_firmware=firmware,
+            previous_identity=record.get("identity"),
             configure_acquisition=configure_acquisition,
             admission=admission,
         )

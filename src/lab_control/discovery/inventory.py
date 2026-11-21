@@ -532,6 +532,8 @@ class Inventory:
                     else asdict(candidate.config)
                 )
             if identity and not conflict:
+                if not identity.firmware and record.get("identity"):
+                    identity = identity.with_firmware_history(DeviceIdentity(**record["identity"]))
                 record["identity"], record["identityKey"] = jsonable(identity), identity.key
                 if identity.key and reason != "cached_active_session":
                     remember_identity(record, resource, identity, scan_id)

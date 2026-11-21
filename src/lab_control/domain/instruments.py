@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
@@ -66,6 +66,26 @@ class DeviceIdentity:
     firmware: str = ""
     confidence: str = "exact"
     raw: str = ""
+    last_known_firmware: str = ""
+
+    @property
+    def firmware_reference(self) -> str:
+        """Last observed hardware version even when the current readback is unavailable."""
+        return self.firmware or self.last_known_firmware
+
+    def with_firmware_history(self, previous: DeviceIdentity) -> DeviceIdentity:
+        """Carry forward a reference only when a trustworthy readback identifies the same physical unit."""
+        if (
+            not self.firmware
+            and self.confidence in {"exact", "usb_descriptor"}
+            and self.manufacturer.strip()
+            and self.model.strip()
+            and self.key
+            and self.key == previous.key
+            and previous.firmware_reference
+        ):
+            return replace(self, last_known_firmware=previous.firmware_reference)
+        return self
 
     @property
     def key(self) -> str | None:

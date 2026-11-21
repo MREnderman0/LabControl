@@ -40,6 +40,67 @@ def asset(app, name="scope"):
     return app.inventory.merge(DiscoveryCandidate(cfg, "configured"), "scan", identity, cfg.adapter)["id"]
 
 
+@pytest.mark.parametrize("confidence", ["exact", "usb_descriptor"])
+def test_idle_firmware_is_retained_across_connection_and_recovery(app, confidence):
+    key = asset(app)
+    record = next(row for row in app.inventory.all() if row["id"] == key)
+    previous = record["identity"]["firmware"]
+    assert previous
+    firmware = ""
+
+    def factory(config):
+        adapter = SimulatedInstrument(config)
+        reported = adapter.identify()
+        adapter.optional_firmware_evidence = confidence
+        adapter.identify = lambda: replace(reported, firmware=firmware, confidence=confidence)
+        return adapter
+
+    app.sessions.factory = factory
+    idle = app.connections.request(key).result(4)
+    assert idle.firmware == "" and idle.last_known_firmware == previous
+    assert app.sessions.reconnect(key, allow_connected=True).result(4) == idle
+    assert app.repository.records()[0]["identity"]["last_known_firmware"] == previous
+    firmware = "different"
+    with pytest.raises(DeviceError) as error:
+        app.sessions.reconnect(key, allow_connected=True).result(4)
+    assert error.value.code == "qualification_stale"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"serial": "another"},
+        {"serial": ""},
+        {"model": "other"},
+        {"manufacturer": "other"},
+        {"confidence": "model_only"},
+        {"confidence": "manual_protocol"},
+        {"confidence": "device_reported"},
+    ],
+)
+def test_missing_firmware_cannot_borrow_an_unverified_baseline(changes):
+    from lab_control.domain.instruments import DeviceIdentity
+
+    previous = DeviceIdentity("Maker", "Model", "S123", "1.2")
+    observed = replace(previous, firmware="", **changes)
+    assert not observed.with_firmware_history(previous).firmware_reference
+
+
+def test_missing_firmware_stays_blocked_for_an_adapter_without_partial_identity_support(app):
+    key = asset(app)
+
+    def factory(config):
+        adapter = SimulatedInstrument(config)
+        identity = replace(adapter.identify(), firmware="")
+        adapter.identify = lambda: identity
+        return adapter
+
+    app.sessions.factory = factory
+    with pytest.raises(DeviceError) as error:
+        app.connections.request(key).result(4)
+    assert error.value.code == "qualification_stale"
+
+
 def test_absent_serial_waits_for_exact_enumeration_and_shares_open(app, monkeypatch):
     key = asset(app)
     calls = []

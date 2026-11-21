@@ -274,7 +274,8 @@ def run(config: ConnectionConfig, *, control: bool = False) -> Path:
         runtime.sessions.disconnect(device_id, drain_reads=True)
         report["stages"][stage] = "passed"
         stage = "reconnection"
-        second = runtime.connect(device_id, configure_acquisition=False).result()
+        # Exercise the desktop admission check against the inventory saved by the first connection.
+        second = runtime.connections.request(device_id, configure=False).result(timeout=30)
         report["reconnected"] = {
             "identity": jsonable(second),
             "status": jsonable(call("status")),

@@ -4,6 +4,7 @@ import time
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from lab_control.application.acquisition_recovery import identify_for_connection
 from lab_control.domain.instruments import (
     AcquisitionRequest,
     DeviceCommand,
@@ -159,7 +160,7 @@ class SessionOperations:
                     raise
             result: Any
             if operation == "identify":
-                result = adapter.identify()
+                result = identify_for_connection(adapter, session.identity)
                 if session.identity and result.key != session.identity.key:
                     raise DeviceError("Identity changed in existing session", "identity_conflict")
                 session.identity = result

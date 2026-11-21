@@ -9,7 +9,11 @@ from typing import Any, Callable, TypeVar
 from uuid import uuid4
 
 from lab_control.application.acquisition_pipeline import validate_cadence
-from lab_control.application.acquisition_recovery import AcquisitionRecovery, Recovery
+from lab_control.application.acquisition_recovery import (
+    AcquisitionRecovery,
+    Recovery,
+    identify_for_connection,
+)
 from lab_control.application.config import ConnectionConfig
 from lab_control.application.leases import ResourceLeases, connection_claims
 from lab_control.application.recorded_acquisition import RecordedAcquisitionRunner
@@ -346,6 +350,7 @@ class SessionManager:
         config: ConnectionConfig,
         *,
         expected_firmware: str = "",
+        previous_identity: dict[str, Any] | None = None,
         configure_acquisition: bool = True,
         admission: Callable[[DeviceIdentity | None], None] | None = None,
     ) -> Future[DeviceIdentity]:
@@ -356,6 +361,7 @@ class SessionManager:
                 device_id,
                 config,
                 expected_firmware=expected_firmware,
+                previous_identity=previous_identity,
                 configure_acquisition=configure_acquisition,
                 admission=admission,
             )
@@ -366,6 +372,7 @@ class SessionManager:
         config: ConnectionConfig,
         *,
         expected_firmware: str,
+        previous_identity: dict[str, Any] | None,
         configure_acquisition: bool,
         admission: Callable[[DeviceIdentity | None], None] | None = None,
     ) -> Future[DeviceIdentity]:
@@ -407,7 +414,8 @@ class SessionManager:
                     admission(None)
                 adapter = self.factory(config)
                 session.adapter = adapter
-                identity = adapter.identify()
+                previous = DeviceIdentity(**previous_identity) if previous_identity else None
+                identity = identify_for_connection(adapter, previous)
                 # Some model-level protocols have no serial-number query.  An
                 # expected serial is still retained as a user-supplied asset label
                 # and lease key, but can only be checked when the adapter reports

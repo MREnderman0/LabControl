@@ -291,7 +291,7 @@ class ConnectionRetry:
                 known.get("manufacturer", ""),
                 known.get("model", ""),
                 known.get("serial", ""),
-                known.get("firmware", ""),
+                known.get("firmware") or known.get("last_known_firmware", ""),
             )
 
         def verify(identity):
@@ -306,7 +306,7 @@ class ConnectionRetry:
                 or (serial and serial != identity.serial)
             ):
                 raise DeviceError("设备身份与原连接不一致", "identity_conflict")
-            if firmware and identity.firmware != firmware:
+            if firmware and identity.firmware_reference != firmware:
                 raise DeviceError("设备固件与原连接不一致", "qualification_stale")
 
         connect = app._connect if batch else app.connect

@@ -19,6 +19,26 @@ if TYPE_CHECKING:
     from lab_control.storage.recording import Recording
 
 
+def identify_for_connection(adapter, previous: DeviceIdentity | None) -> DeviceIdentity:
+    observed = adapter.identify()
+    if previous is None:
+        return observed
+    identity = observed
+    if observed.confidence == getattr(adapter, "optional_firmware_evidence", None):
+        identity = observed.with_firmware_history(previous)
+    if (
+        previous.last_known_firmware
+        and identity.key == previous.key
+        and identity.firmware_reference != previous.last_known_firmware
+    ):
+        if getattr(adapter, "identity", None) is observed:
+            adapter.identity = previous
+        raise DeviceError("设备固件与上次实读版本不一致或缺失", "qualification_stale")
+    if identity is not observed:
+        adapter.identity = identity
+    return identity
+
+
 RECOVERABLE_CODES = frozenset(
     {
         "timeout",
@@ -186,7 +206,7 @@ class AcquisitionRecovery:
                     require_present(config)
                 candidate = manager.factory(config)
             check()
-            identity = candidate.identify()
+            identity = identify_for_connection(candidate, original)
             same_model = (identity.manufacturer.strip().casefold(), identity.model.strip().casefold()) == (
                 original.manufacturer.strip().casefold(),
                 original.model.strip().casefold(),
@@ -199,7 +219,7 @@ class AcquisitionRecovery:
                 and identity.serial != session.config.expected_serial
             ):
                 raise DeviceError("重连设备序列号与配置不一致", "identity_conflict")
-            if original.firmware and identity.firmware != original.firmware:
+            if original.firmware_reference and identity.firmware_reference != original.firmware_reference:
                 raise DeviceError("重连设备固件与原采集会话不一致", "qualification_stale")
             if recovery.network and config.resource != session.config.resource and self.verify_move:
                 self.verify_move(session, config, identity)
