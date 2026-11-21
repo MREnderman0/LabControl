@@ -154,7 +154,7 @@ def acquire_run(
     *,
     resume_state: dict | None = None,
 ) -> Iterator[MeasurementBatch]:
-    from .adapter import is_ready, serial_response
+    from .adapter import fpga_firmware, is_ready, serial_response
 
     validate_run(adapter, request)
     assert adapter.identity is not None and request.sample_rate is not None and request.duration is not None
@@ -282,6 +282,13 @@ def acquire_run(
                     raise DeviceError(
                         "Active acquisition serial differs from selected USB instrument", "identity_conflict"
                     )
+                if adapter.identity.last_known_firmware:
+                    firmware = fpga_firmware(adapter._query("show version"))
+                    if firmware != adapter.identity.last_known_firmware:
+                        raise DeviceError(
+                            "采集时读回的 53100A 固件与历史实读版本不符或缺失", "qualification_stale"
+                        )
+                    base["verified_firmware"] = firmware
                 verified = True
             new_spectrum: tuple[Measurement, ...] = ()
             if acquired == total or (acquired // int(rate)) % 5 == 0:

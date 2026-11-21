@@ -28,6 +28,15 @@ from .profile import FREQUENCIES, capability_schema, profile
 from .transport import TserveTransport
 
 
+def fpga_firmware(version: str) -> str:
+    match = re.search(
+        r"^[ \t]*(?:FPGA(?:[ \t]+firmware)?|firmware)(?:[ \t]+version)?[ \t]*[:=][ \t]*([^\r\n]+)",
+        version,
+        re.I | re.M,
+    )
+    return match[1].strip() if match else ""
+
+
 def serial_response(raw: str) -> str:
     value = re.sub(r"^(?:serial(?:\s+number)?|s/n)\s*[#:=]?\s*", "", raw.strip(), flags=re.I)
     value = value.strip().strip('"')
@@ -69,6 +78,7 @@ def is_ready(raw: str) -> bool:
 
 
 class Microchip53100AAdapter(ScpiAdapter):
+    optional_firmware_evidence = "usb_descriptor"
     recorded_run_kinds = ("timed_phase",)
     server: Any = None
     service_inspected = False
@@ -116,7 +126,6 @@ class Microchip53100AAdapter(ScpiAdapter):
             raise DeviceError("USB 身份后备路径仅用于自有空闲服务", "identity_required")
         if re.search(r"not found|no instrument|disconnected", state, re.I):
             raise DeviceError("TSERVE 未连接设备：" + state, "disconnected")
-        firmware = re.search(r"(?:firmware|FPGA)\s*(?:version)?\s*[:=]\s*([^\r\n]+)", version, re.I)
         self.capability_details = {
             "server_version": version,
             "identity_evidence": "USB GET_DESCRIPTOR" if usb_identity is not None else "show serial",
@@ -128,7 +137,7 @@ class Microchip53100AAdapter(ScpiAdapter):
             "Microchip",
             "53100A",
             serial,
-            firmware[1].strip() if firmware else "",
+            fpga_firmware(version),
             confidence="usb_descriptor" if usb_identity is not None else "device_reported",
             raw=version + "\nserial=" + serial + "\n" + state,
         )

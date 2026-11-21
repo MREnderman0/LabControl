@@ -92,6 +92,28 @@ def instrument(monkeypatch):
     return adapter, state, history, Stream
 
 
+@pytest.mark.parametrize(
+    ("version", "accept"),
+    [(b"FPGA firmware: V1.16", True), (b"FPGA firmware: V1.17", False), (b"USB firmware: V1.16", False)],
+)
+def test_deferred_firmware_is_checked_before_first_sample(instrument, version, accept):
+    from dataclasses import replace
+
+    adapter, _, history, _ = instrument
+    adapter.identity = replace(adapter.identity, last_known_firmware="V1.16")
+    query = adapter._query
+    adapter._query = lambda command: version.decode() if command == "show version" else query(command)
+    run = adapter.run_acquisition(REQUEST, threading.Event())
+    if accept:
+        assert next(run).configuration["verified_firmware"] == "V1.16"
+        run.close()
+    else:
+        with pytest.raises(DeviceError) as error:
+            next(run)
+        assert error.value.code == "qualification_stale"
+    assert history.count("stop") == 1
+
+
 def test_complete_run_saves_exact_span_both_statistics_and_stops_once(instrument):
     adapter, state, history, stream = instrument
     frames = list(adapter.run_acquisition(REQUEST, threading.Event()))

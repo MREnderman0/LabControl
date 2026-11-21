@@ -166,6 +166,8 @@ def sdg6032x() -> Profile:
 
 
 class Sdg6032xAdapter(ScpiAdapter):
+    optional_firmware_evidence = "exact"
+
     def validate_command(self, cmd: DeviceCommand) -> tuple[CommandSpec, dict[str, Any]]:
         spec, values = super().validate_command(cmd)
         if cmd.operation == "upload_waveform":

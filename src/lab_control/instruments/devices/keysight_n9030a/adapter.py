@@ -37,6 +37,7 @@ FRAME_SETTINGS = (
 
 
 class N9030aAdapter(SpectrumPanelAdapter):
+    optional_firmware_evidence = "exact"
     acquisition_revision = "n9030a-swept-sa-xy-v1"
 
     def frequency_bounds(self):
