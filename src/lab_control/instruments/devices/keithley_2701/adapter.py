@@ -7,6 +7,7 @@ from typing import Any
 from lab_control.domain.instruments import (
     AcquisitionRequest,
     DeviceError,
+    DeviceIdentity,
     MeasurementBatch,
     Unsupported,
     ValidationError,
@@ -63,6 +64,14 @@ class Keithley2701Adapter(ScpiAdapter):
     capability_revision = 0
 
     pt100: Pt100Inputs | None = None
+
+    @staticmethod
+    def canonical_identity(identity: DeviceIdentity) -> DeviceIdentity:
+        if identity.model.upper() in {"2701", "MODEL 2701"} and identity.manufacturer.upper() == (
+            "+KEITHLEY INSTRUMENTS INC."
+        ):
+            return replace(identity, manufacturer=identity.manufacturer[1:])
+        return identity
 
     def bind_control_state(self, load, save) -> None:
         state = load()

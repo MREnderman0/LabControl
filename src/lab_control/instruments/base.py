@@ -166,7 +166,11 @@ class ScpiAdapter:
         return identity
 
     def decode_identity(self, raw: bytes) -> DeviceIdentity:
-        return identity_from_scpi(raw)
+        return self.canonical_identity(identity_from_scpi(raw))
+
+    @staticmethod
+    def canonical_identity(identity: DeviceIdentity) -> DeviceIdentity:
+        return identity
 
     def capabilities(self) -> CapabilitySet:
         operations = []

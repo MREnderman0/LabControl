@@ -29,8 +29,8 @@ from lab_control.instruments.base import identity_from_scpi
 from lab_control.instruments.registry import (
     DEVICE_DEFINITIONS,
     create_adapter,
-    match,
     normalize_discovery_config,
+    recognized_identity,
     requires_manual_connection,
     transport_for,
 )
@@ -240,7 +240,7 @@ class ApplicationRuntime:
                 if identity_probe
                 else identity_from_scpi(transport.query("*IDN?"))
             )
-            return identity, match(identity)
+            return recognized_identity(identity)
 
     def add(self, config: ConnectionConfig) -> str:
         if not self.hardware and config.transport != "mock":
