@@ -23,6 +23,7 @@ class StateTransport:
         self.firmware = firmware
         self.options = b"0"
         self.state = context(byte_order="SWAP")
+        self.trace_byte_order = None
         self.history = []
 
     def open(self):
@@ -50,7 +51,7 @@ class StateTransport:
         if payload in extra:
             return extra[payload]
         if payload == "TRAC:DATA? TRACE1":
-            return raw_trace(self.state)
+            return raw_trace({**self.state, "byte_order": self.trace_byte_order or self.state["byte_order"]})
         operation = next(op for op, spec in fph().commands.items() if spec.query == payload)
         value = self.state[operation]
         return str(int(value) if isinstance(value, bool) else value).encode()
@@ -146,6 +147,44 @@ def test_v240_default_connect_capture_save_and_reconnect_are_query_only(
         np.testing.assert_allclose(arrays[sample["values_ref"]], np.linspace(-100, -20, 711), atol=1e-5)
     assert transport.history.count("TRAC:DATA? TRACE1") == 1
     assert "SYST:ERR?" not in transport.history
+
+
+@pytest.mark.parametrize(
+    ("qualified_serial", "qualified_firmware", "wire_order"),
+    [("TEST", "V2.40", "SWAP"), ("OTHER", "V2.40", "NORM"), ("TEST", "V2.41", "NORM")],
+)
+def test_v240_real_norm_uses_only_this_assets_verified_encoding(
+    tmp_path, qualified_serial, qualified_firmware, wire_order
+):
+    config = ConnectionConfig("mock://fph-session", "rs.fph", "mock")
+    transport = StateTransport("V2.40")
+    transport.state.update(transfer_format="REAL", byte_order="NORM")
+    transport.trace_byte_order = wire_order
+    with ApplicationRuntime((config,), root=tmp_path, hardware=False) as app:
+        app.sessions.factory = lambda _: FphAdapter(transport, fph(), config)
+        key = app.add(config)
+        app.repository.save_workspace(
+            f"device-control-state/{key}",
+            {
+                "real32_little_endian": {
+                    "identity_key": f"ROHDE&SCHWARZ|FPH|1321.1111K02/{qualified_serial}",
+                    "firmware": qualified_firmware,
+                }
+            },
+        )
+        request = AcquisitionRequest("spectrum", consistency="live", context_id="fph-v240-real")
+        for _ in range(2):
+            app.connect(key).result(5)
+            for validation in ("full", "cached"):
+                frame = app.sessions.submit(key, "acquire", request).result(5)
+                assert frame.validation == validation
+                assert frame.configuration["byte_order"] == "NORM"
+                assert frame.configuration["binary_encoding"] == wire_order
+                np.testing.assert_allclose(
+                    frame.measurements[0].values, np.linspace(-100, -20, 711), atol=1e-5
+                )
+            app.sessions.disconnect(key)
+    assert all("?" in query for query in transport.history)
 
 
 def test_v240_installed_b22_keeps_preamp_readback_in_trace(tmp_path):

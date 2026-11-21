@@ -54,7 +54,9 @@ def integer(raw: bytes) -> int:
     return int(value)
 
 
-def trace_format(raw: bytes, config: dict[str, Any], identity: DeviceIdentity) -> dict[str, Any]:
+def trace_format(
+    raw: bytes, config: dict[str, Any], identity: DeviceIdentity, *, qualified_real32_le: bool = False
+) -> dict[str, Any]:
     """Resolve encoding per frame without overwriting FORM and FORM:BORD readbacks."""
     if (
         raw.startswith(b"#42844")
@@ -65,14 +67,21 @@ def trace_format(raw: bytes, config: dict[str, Any], identity: DeviceIdentity) -
         and config["frequency_offset"] == 0
         and config["span"] > 0
         and config["amplitude_unit"] == "DBM"
-        and config["transfer_format"] == "ASC"
+        and (
+            config["transfer_format"] == "ASC"
+            or (config["transfer_format"] == "REAL" and qualified_real32_le)
+        )
         and config["byte_order"] == "NORM"
     ):
         return {
             **config,
             "wire_format": "REAL",
             "binary_encoding": "SWAP",
-            "binary_encoding_source": "FPH02 V2.40: same-frame absolute and delta marker readbacks",
+            "binary_encoding_source": (
+                "FPH02 V2.40: same-frame absolute and delta marker readbacks"
+                if config["transfer_format"] == "ASC"
+                else "FPH02 V2.40: asset-qualified REAL32 little-endian trace"
+            ),
         }
     return {**config, "wire_format": config["transfer_format"]}
 
