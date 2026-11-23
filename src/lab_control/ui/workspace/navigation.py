@@ -20,6 +20,7 @@ from lab_control.ui.pages.device_control.page import DeviceControlPage
 from lab_control.ui.pages.device_control.phase_noise import PhaseNoisePage
 from lab_control.ui.pages.device_control.power_supply import PowerSupplyPage
 from lab_control.ui.pages.device_control.signal_source import SignalSourcePage
+from lab_control.ui.pages.monitoring.acceleration import AccelerationMonitoringPage
 from lab_control.ui.pages.monitoring.frequency_counter import FrequencyCounterMonitoringPage
 from lab_control.ui.pages.monitoring.optical_power import OpticalPowerMonitoringPage
 from lab_control.ui.pages.monitoring.optical_spectrum import OpticalSpectrumMonitoringPage
@@ -103,6 +104,7 @@ class WorkspaceNavigation:
         if module not in {"设备管理", "实时监测"}:
             return ()
         monitoring_only = {
+            "accelerometer",
             "spectrum_analyzer",
             "oscilloscope",
             "optical_power_meter",
@@ -317,6 +319,8 @@ class WorkspaceNavigation:
                         if category == "power_supply"
                         else OpticalPowerMonitoringPage(window.controller, window.dashboard.add)
                         if category == "optical_power_meter"
+                        else AccelerationMonitoringPage(window.controller, window.dashboard.add)
+                        if category == "accelerometer"
                         else OpticalSpectrumMonitoringPage(window.controller, window.dashboard.add)
                         if category == "optical_spectrometer"
                         else FrequencyCounterMonitoringPage(window.controller, window.dashboard.add)

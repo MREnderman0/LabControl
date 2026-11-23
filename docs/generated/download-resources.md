@@ -6,6 +6,22 @@
 
 固定链接可能失效或被厂商更新；大小/哈希不符时拒绝使用，不自动改清单或升级版本。待补的接口驱动继续待核对，不提供猜测下载地址。
 
+## NI-DAQmx
+
+组件 ID：`ni-daqmx`；版本：26.8.0 (2026 Q4)。
+
+NI 9230 (BNC) IEPE acceleration acquisition on USB CompactDAQ
+
+1. [官方直连 — ni-daqmx_26.8.0_offline.iso](https://download.ni.com/support/nipkg/products/ni-d/ni-daqmx/26.8/offline/ni-daqmx_26.8.0_offline.iso)
+
+[来源说明](https://www.ni.com/en/support/downloads/drivers/download.ni-daq-mx.html)
+
+大小：3529433088 字节；SHA256：`62d34e243173fe034a2452216a9d455f629e3d928e7ebd3672a802ae818af7c0`。
+
+验证策略：`official-sha256`；分发依据：`pending`；安装验证：`pending`；目标环境验证：`pending`。
+
+该官方归档未签名，仅按固定哈希及指定解压成员验证，不标记为签名通过。
+
 ## R&S VISA
 
 组件 ID：`rs-visa`；版本：7.2.6。

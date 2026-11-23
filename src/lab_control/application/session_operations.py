@@ -297,6 +297,7 @@ class SessionOperations:
             manager._invalidate_acquisition(session, "error")
             code = getattr(exc, "code", "device_error")
             if operation == "acquire" and code in {
+                "monitor_no_signal",
                 "configuration_changed",
                 "waveform_unavailable",
                 "acquisition_setup_blocked",

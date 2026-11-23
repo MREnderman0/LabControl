@@ -97,6 +97,8 @@ class MonitorTask:
     timings: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=120))
     timing_report_at: float = 0
     before_acquire: Callable[[Any, AcquisitionRequest], None] | None = None
+    release_input: Callable[[], Future[Any]] | None = None
+    input_cleanup: Future[Any] | None = None
     recovery: Recovery | None = None
     recovery_pending: Future[Any] | None = None
 
@@ -110,7 +112,9 @@ class MonitorTask:
     def stopping(self) -> bool:
         """A stopped task still owns I/O or binary data; CSV alone does not block restart."""
         return not self.running and bool(
-            self.pending is not None
+            self.release_input is not None
+            or self.input_cleanup is not None
+            or self.pending is not None
             or self.write_pending is not None
             or self.recording_preparation is not None
             or self.recovery is not None

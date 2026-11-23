@@ -273,7 +273,7 @@ class MonitoringService:
             preparation.result()
         return preparation
 
-    def start_role(self, device_id, request, *, recording=False, mode=GENERAL):
+    def start_role(self, device_id, request, *, interval=0.5, recording=False, mode=GENERAL):
         """One request per panel; share the physical worker, clock and bounded writer."""
         request.validate()
         with self.lock:
@@ -282,7 +282,7 @@ class MonitoringService:
                 future = self.start(
                     device_id,
                     (request,),
-                    interval=0.5,
+                    interval=interval,
                     record_interval=None,
                     recording=recording,
                     background=True,
@@ -314,6 +314,18 @@ class MonitoringService:
                     task.recorder_kinds.add(request.kind)
             self.wake.set()
             return future
+
+    def stop_role_recording(self, device_id, kind):
+        """Leave the role monitoring and drain the shared writer after its last subscriber."""
+        with self.lock:
+            task = self.tasks.get(device_id)
+            if not task or not task.running or not task.record_kinds or kind not in task.record_kinds:
+                return
+            task.record_kinds.remove(kind)
+            if task.record_kinds:
+                task.recorder_kinds.discard(kind)
+            else:
+                self.set_recording(device_id, False)
 
     def stop_role(self, device_id, kind):
         with self.lock:

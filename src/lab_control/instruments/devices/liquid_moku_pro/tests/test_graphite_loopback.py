@@ -253,7 +253,8 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 wait(lambda: not spectrum.stop_button.isEnabled())
                 scope = open_role("oscilloscope")
             scope.record_button.click()
-            wait(lambda: scope.last and scope.record_button.text() == "记录中")
+            wait(lambda: scope.last and scope.record_button.text() == "停止记录")
+            assert scope.chart.property("recordingPhase") == "recording"
             assert not scope.capture.apply_button.isEnabled()
             trace = scope.last.batch.measurements[0]
             vpp = float(np.ptp(trace.values))
@@ -265,7 +266,8 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 capture(scope, "oscilloscope")
             spectrum = open_role("spectrum_analyzer")
             spectrum.record_button.click()
-            wait(lambda: spectrum.last and spectrum.record_button.text() == "记录中")
+            wait(lambda: spectrum.last and spectrum.record_button.text() == "停止记录")
+            assert spectrum.chart.property("recordingPhase") == "recording"
             spectrum.refresh_status()
             assert "共用 ch1 输入前端" in spectrum.role_bar.note.text()
             trace = spectrum.last.batch.measurements[0]
@@ -278,6 +280,11 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 dict(set_hz=frequency, measured_vpp=vpp, period_us=period * 1e6, peak_hz=peak, peak_dbm=level)
             )
             scope = open_role("oscilloscope")
+            scope.record_button.click()
+            wait(lambda: scope.record_button.text() == "逐帧记录")
+            shared = runtime.monitoring.snapshots()[device]
+            assert set(shared["recording_kinds"]) == {"spectrum"}
+            assert set(shared["kinds"]) == {"waveform", "spectrum"}
             scope.stop_button.click()
             wait(lambda: not scope.stop_button.isEnabled())
             spectrum = open_role("spectrum_analyzer")

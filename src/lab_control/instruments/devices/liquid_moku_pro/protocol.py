@@ -13,6 +13,7 @@ from lab_control.domain.instruments import DeviceError, DeviceIdentity, Validati
 MODEL = "Moku:Pro"
 ADAPTER = "liquid.moku_pro"
 CHANNELS = (1, 2, 3, 4)
+FOUR_SLOT_SESSION = "moku_four_slot_session"
 
 
 def serial_id(value):
@@ -51,12 +52,21 @@ class Rest:
             self.connection = None
 
     def call(self, method, path, params=None):
-        conn = self.connection or http.client.HTTPConnection(self.host, 80, timeout=self.timeout)
+        # Selecting a platform can load the FPGA. Ordinary reads keep the configured deadline.
+        timeout = max(60, self.timeout) if path == "moku/platform/4" else self.timeout
+        conn = self.connection or http.client.HTTPConnection(self.host, 80, timeout=timeout)
         self.connection = conn
         headers = {"Content-Type": "application/json"}
+        if "%" in self.host:
+            # The interface index selects the local route, but isn't part of the HTTP authority.
+            headers["Host"] = f"[{self.host.partition('%')[0]}]"
         if self.key:
             headers["Moku-Client-Key"] = self.key
         try:
+            if conn.timeout != timeout:
+                conn.timeout = timeout
+                if conn.sock is not None:
+                    conn.sock.settimeout(timeout)
             conn.request(method, "/api/" + path, None if params is None else json.dumps(params), headers)
             response = conn.getresponse()
             limit = 4 * 1024 * 1024
@@ -71,9 +81,14 @@ class Rest:
                 raise DeviceError(f"{path}: HTTP {response.status}")
             result = json.loads(raw)
             if not isinstance(result, dict) or result.get("success") is not True or "data" not in result:
-                raise DeviceError(
-                    f"{path}: {result.get('code') if isinstance(result, dict) else 'invalid response'}"
+                code = result.get("code") if isinstance(result, dict) else "invalid response"
+                messages = result.get("messages") if isinstance(result, dict) else None
+                detail = (
+                    " / ".join(m for m in messages if isinstance(m, str))
+                    if isinstance(messages, list)
+                    else ""
                 )
+                raise DeviceError(f"{path}: {code}" + (f" · {detail[:600]}" if detail else ""))
             if path == "moku/claim_ownership":
                 self.key = response.getheader("Moku-Client-Key") or result["data"]
                 if not isinstance(self.key, str) or not self.key:

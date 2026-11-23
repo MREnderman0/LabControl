@@ -79,6 +79,7 @@
 | Keysight / Agilent 53220A | `keysight.53220a` | LAN VXI-11 / VISA SOCKET；优先 PyVISA | [卡片](devices/measurement-analyzers/keysight-53220a.md) |
 | 光梳地检泵浦驱动 | `custom.optical_comb_pump` | RS232，自动验证 CH 1 协议，115200 8N1 | [卡片](devices/temperature-load-drivers/pump-driver.md) |
 | DC / CH3 / CH4 开关板 | `custom.dc_switch` | CP210x 串口，115200 8N1 | [卡片](devices/temperature-load-drivers/dc-switch-board.md) |
+| NI 9230 (BNC) | `ni.9230` | USB cDAQ / NI-DAQmx | [卡片](devices/measurement-analyzers/ni-9230.md) |
 <!-- device-modules:end -->
 
 ## 现场盘点与状态提升

@@ -185,6 +185,7 @@ class SessionManager:
                     "capabilityVersion": item.capability_snapshot.version if item.capability_snapshot else 0,
                     "capabilityStale": item.capability_snapshot.stale if item.capability_snapshot else True,
                     "capabilityDetails": item.capability_snapshot.details if item.capability_snapshot else {},
+                    "managesMonitorInput": callable(getattr(item.adapter, "prepare_monitor_input", None)),
                     "supportsLiveAcquisition": bool(
                         getattr(item.adapter, "supports_live_acquisition", False)
                     ),

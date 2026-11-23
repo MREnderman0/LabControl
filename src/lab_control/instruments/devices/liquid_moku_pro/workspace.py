@@ -26,6 +26,7 @@ from lab_control.ui.kit import Card, Dot, ReadoutStrip, style_button
 from lab_control.ui.pages.monitoring.frame import page_layout, show_state
 from lab_control.ui.pages.monitoring.recording_state import recording_phase, update_recording_frame
 from lab_control.ui.pages.monitoring.spectrum import SpectrumMarkerActions
+from lab_control.ui.pages.monitoring.timing import SpectrumInterval
 from lab_control.ui.widgets.device_selector import DeviceSelector
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -33,7 +34,7 @@ from .adapter import LABELS
 from .capture_controls import CaptureControls
 from .capture_settings import field
 from .display_controls import MokuScopePlot, MokuSpectrumPlot
-from .protocol import CHANNELS
+from .protocol import CHANNELS, FOUR_SLOT_SESSION
 from .role_bar import RoleBar, role_recording
 from .source_card import GeneratorCard
 
@@ -134,7 +135,7 @@ class RolePage(SpectrumMarkerActions, QWidget):
     def _build_monitor(self, layout, header):
         self.monitor_button = self._button(header, "开始监测", lambda: self.start(False), icon="play")
         self.stop_button = self._button(header, "停止本面板", self.stop, icon="stop")
-        self.record_button = self._button(header, "逐帧记录", lambda: self.start(True), icon="record")
+        self.record_button = self._button(header, "逐帧记录", self.toggle_recording, icon="record")
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
         # chartCard: same frame as the shared monitoring pages, including the red recording border.
@@ -160,6 +161,11 @@ class RolePage(SpectrumMarkerActions, QWidget):
         footer.addWidget(self.dot)
         self.status.setObjectName("chartStatus")
         footer.addWidget(self.status, 1)
+        self.timing = SpectrumInterval(self.controller)
+        self.timing.setMinimum(0.5)
+        self.timing.setToolTip("同一台 Moku 的两个测量面板共享采集间隔（0.5 至 60 秒）。")
+        self.timing.bind(self.device_id, self.controller.mode)
+        footer.addWidget(self.timing)
         self.actual = QLabel("实际 — s/帧")
         self.actual.setObjectName("rangeHint")
         footer.addWidget(self.actual)
@@ -264,7 +270,13 @@ class RolePage(SpectrumMarkerActions, QWidget):
 
     def _confirm(self, message):
         if not self._attached():
-            message = "首次使用将连接已有四槽，不部署、不强占。请确认原配置已备份且可恢复。\n" + message
+            options = self.controller.records[self.device_id]["config"].get("options", ())
+            action = (
+                "本次连接将选择四槽模式，再核对已部署的仪器。切换模式可能更改当前 FPGA 状态。"
+                if FOUR_SLOT_SESSION in options
+                else "本次连接将核对已有四槽。"
+            )
+            message = action + "请确认原配置已备份且可恢复。\n" + message
         return (
             QMessageBox.question(
                 self,
@@ -298,6 +310,14 @@ class RolePage(SpectrumMarkerActions, QWidget):
             )
         except Exception as exc:
             self.status.setText(str(exc))
+
+    def toggle_recording(self):
+        snap = self.service.snapshots().get(self.device_id, {})
+        if self.kind in snap.get("recording_kinds", ()):
+            self.service.stop_role_recording(self.device_id, self.kind)
+            self.refresh_status()
+        else:
+            self.start(True)
 
     def start(self, recording):
         if self._start_ticket is not None:
@@ -334,6 +354,7 @@ class RolePage(SpectrumMarkerActions, QWidget):
                 future = self.service.start_role(
                     self.device_id,
                     AcquisitionRequest(self.kind, (ch,)),
+                    interval=self.timing.value(),
                     recording=recording,
                     mode=self.controller.mode,
                 )
@@ -413,9 +434,13 @@ class RolePage(SpectrumMarkerActions, QWidget):
         update_recording_frame(self.chart, role_task)
         ready = connected and not pending and not snap.get("stopping")
         self.monitor_button.setEnabled(ready and not running)
-        self.record_button.setEnabled(ready and phase == "idle" and recording_phase(snap) != "draining")
+        self.record_button.setEnabled(
+            ready and phase in {"idle", "recording"} and recording_phase(snap) != "draining"
+        )
         self.record_button.setText(
-            {"idle": "逐帧记录", "preparing": "准备记录", "recording": "记录中", "draining": "收尾中"}[phase]
+            {"idle": "逐帧记录", "preparing": "准备记录", "recording": "停止记录", "draining": "收尾中"}[
+                phase
+            ]
         )
         self.stop_button.setEnabled(pending or running)
         self.channels.setEnabled(not (pending or running))

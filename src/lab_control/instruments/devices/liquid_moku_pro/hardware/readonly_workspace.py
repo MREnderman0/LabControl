@@ -11,9 +11,10 @@ from ..adapter import LABELS
 from ..workspace import RolePage
 
 
-def inspect_workspace(runtime, device_id, folder):
+def inspect_workspace(runtime, device_id, folder, *, attached=False):
     app = QApplication.instance() or QApplication([])
-    assert isinstance(app, QApplication)
+    if not isinstance(app, QApplication):
+        raise DeviceError("检查仪器面板需要 QApplication")
     app.setStyle("Fusion")
     app.setStyleSheet(load_stylesheet())
     app.setFont(QFont(load_ui_font(), 10))
@@ -47,7 +48,7 @@ def inspect_workspace(runtime, device_id, folder):
             if (
                 state["connectionState"] != "connected"
                 or state["lastError"]
-                or state["capabilityDetails"].get("workspace_attached")
+                or bool(state["capabilityDetails"].get("workspace_attached")) != attached
             ):
                 raise DeviceError(f"{label}只读打开后会话状态不符")
             image = f"ui-{role}.png"

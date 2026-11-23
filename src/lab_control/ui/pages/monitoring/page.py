@@ -218,9 +218,11 @@ class MonitoringPage(QWidget):
                 widget.deleteLater()
         self.channel_checks = {}
         if device_id:
+            definition = DEVICE_DEFINITIONS.get(self.controller.records[device_id]["adapterId"])
             channels = (
                 self.controller.capabilities(device_id).channels
                 if self.category in {"power_supply", "oscilloscope"}
+                or (definition and definition.multi_channel_sources)
                 else ()
             )
             for channel in () if self.instrument_scan_channels() is not None else channels:
@@ -229,8 +231,6 @@ class MonitoringPage(QWidget):
                 self.channel_checks[channel] = check
                 self.channel_row.addWidget(check)
             self.channel_row.addStretch()
-            adapter = self.controller.records[device_id]["adapterId"]
-            definition = DEVICE_DEFINITIONS.get(adapter)
             self.initiate.setChecked(bool(definition and definition.acquisition_initiate_default))
             self.initiate.setEnabled(definition is None or definition.acquisition_initiate_editable)
         self.plot.reset()

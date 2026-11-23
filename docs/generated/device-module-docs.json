@@ -1,5 +1,5 @@
 {
-  "docs/devices/oscilloscopes/moku-pro.md": "1d509b1eaf74323d539648d95e70162945b9b244fc173c2d02c6838854b11751",
+  "docs/devices/oscilloscopes/moku-pro.md": "62b6c39e773d924f8f7f46a1b5104dd2bdb6b694a6d9b1a9216e3d2812b42d81",
   "docs/devices/oscilloscopes/picoscope-6404e.md": "49df218ee64f59ddabcef49bdb60995056d906c5649f85b451dfd3abbd689ca5",
   "docs/devices/measurement-analyzers/thorlabs-pm100d-s154c.md": "443bed4420315b4f96a093cfd1cd41bda607dcae86c473b079fcbf98cab6f027",
   "docs/devices/oscilloscopes/rtm3004.md": "72fdfaca215ae6292d20693360458670272d2eb38db8b3d2e81dae43e89b438f",
@@ -39,5 +39,6 @@
   "docs/devices/measurement-analyzers/kplusk-fxe.md": "2b905d1b0813ea0df510a14165b2e8fb7fab51d8c8a2d5325e8d3a4523b448bd",
   "docs/devices/measurement-analyzers/keysight-53220a.md": "54bbdbe53260b1b97a61112e0e3c0144c8f69a3bf24d5752296f29901109107f",
   "docs/devices/temperature-load-drivers/pump-driver.md": "18e31c4666f6bcfa038a4ab3f2c7410d046a530ad658369627d79342868e6029",
-  "docs/devices/temperature-load-drivers/dc-switch-board.md": "0118368912637538798cad46d9d23c02aa27d825c96fe3993b2a6240a2c53eb6"
+  "docs/devices/temperature-load-drivers/dc-switch-board.md": "0118368912637538798cad46d9d23c02aa27d825c96fe3993b2a6240a2c53eb6",
+  "docs/devices/measurement-analyzers/ni-9230.md": "6610ef72d3260cf629e54b6925326e82d5d345799926fe02b226df9b67ff8a20"
 }

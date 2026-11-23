@@ -503,6 +503,7 @@ QLabel#powerMeterTitle { color: #ececee; font-size: 14px; font-weight: 600; }
 QLabel#powerMeterChannel { color: #ececee; font-size: 14px; font-weight: 600; }
 QLabel#powerMeterValue { color: #ececee; font-size: 17px; font-weight: 600; padding: 1px 0; }
 QLabel#powerMeterMeta, QLabel#powerMeterStatus { color: #6e7179; font-size: 11px; }
+QLabel#powerMeterStatus[inputFault="true"] { color: #f2555a; }
 QFrame#powerMeterReadoutList, QFrame#scanReadoutList { background: #16171a; border: 1px solid #25272c; border-radius: 10px; }
 QFrame#powerMeterReadoutList .QWidget, QFrame#scanReadoutList .QWidget { background: transparent; }
 QFrame#scanReadoutCell { border: 0; border-bottom: 1px solid #1f2125; border-radius: 0; }

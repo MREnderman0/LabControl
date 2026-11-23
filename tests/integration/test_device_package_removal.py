@@ -40,6 +40,7 @@ def test_removed_package_keeps_old_inventory_cli_scan_and_ui_usable(
         category = registry.describe(configs[1]).category
         # The approved cards group several instrument categories into shared pools.
         card_category = {
+            "accelerometer": "measurement_analyzers",
             "optical_spectrometer": "optical_power_meter",
             "multimeter": "measurement_analyzers",
             "frequency_counter": "measurement_analyzers",

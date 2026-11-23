@@ -17,6 +17,7 @@ from lab_control.instruments.devices.microchip_53100a.profile import (
 from lab_control.instruments.registry import DEVICE_DEFINITIONS, PROFILES, describe
 
 MEASUREMENT_CATEGORIES = {
+    "accelerometer",
     "oscilloscope",
     "spectrum_analyzer",
     "optical_power_meter",
@@ -34,6 +35,15 @@ waveform=波形
 control_state=控制状态
 connect_generator_channel=连接信号源通道
 shared_frontend=共享模拟前端
+scope_timebase=示波器时基
+scope_samplerate=示波器采样率
+scope_trigger=示波器边沿触发
+scope_acquisition=示波器采集模式
+scope_interpolation=示波器波形插值
+spectrum_span=频谱分析频段
+spectrum_rbw=频谱分辨率带宽
+spectrum_window=频谱窗函数
+spectrum_averaging=频谱帧平均
 attach_workspace=连接现有四槽配置
 select_measurement_input=连接测量通道
 scope_timebase=示波器时基
@@ -511,6 +521,8 @@ def data_sources(config: ConnectionConfig) -> tuple[DataSource, ...]:
     schema = describe(config)
     category = schema.category
     definition = DEVICE_DEFINITIONS.get(config.adapter)
+    if category == "accelerometer":
+        return (DataSource("acceleration", "瞬时加速度", "scalar", "acceleration", "acceleration"),)
     if definition and definition.role_categories:
         return tuple(
             DataSource(k, {"waveform": "时域波形", "spectrum": "频谱"}.get(k, k), k)

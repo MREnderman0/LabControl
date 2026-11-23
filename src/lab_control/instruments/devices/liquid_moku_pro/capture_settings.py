@@ -1,6 +1,7 @@
 """MokuOS 4.4 measurement-slot commands and their documented response fields."""
 
 from math import isclose, isfinite
+from typing import Any
 
 from lab_control.domain.instruments import ApplyResult, Capability, DeviceError, Parameter, ValidationError
 
@@ -113,7 +114,7 @@ def matches(actual, expected):
 
 def wire_parameters(name, params):
     method, _ = CAPTURE[name]
-    body = {k: TOKENS[v] if isinstance(v, str) else v for k, v in params.items()}
+    body: dict[str, Any] = {k: TOKENS[v] if isinstance(v, str) else v for k, v in params.items()}
     if method == "timebase" and body["t1"] >= body["t2"]:
         raise ValidationError("时窗终点必须晚于起点")
     if method == "span" and body["frequency1"] >= body["frequency2"]:
