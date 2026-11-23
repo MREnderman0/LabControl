@@ -474,7 +474,13 @@ class MonitoringDashboard(QWidget):
         category = instrument_category(record)
         if category == "electronic_load":
             return readable_power_channels(self.controller, device_id)
-        if category not in {"oscilloscope", "power_supply", "optical_power_meter", "frequency_counter"}:
+        if category not in {
+            "oscilloscope",
+            "power_supply",
+            "optical_power_meter",
+            "frequency_counter",
+            "accelerometer",
+        }:
             return (1,)
         try:
             channels = tuple(self.controller.capabilities(device_id).channels)

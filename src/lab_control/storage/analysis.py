@@ -32,6 +32,7 @@ INDEX = "帧索引.csv"
 CHECKPOINT = "analysis-checkpoint.json"
 PENDING = "analysis-pending.json"
 LABELS = {
+    "acceleration": "加速度",
     "voltage": "电压",
     "current": "电流",
     "power": "功率",

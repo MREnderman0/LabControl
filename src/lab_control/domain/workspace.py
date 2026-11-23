@@ -11,6 +11,7 @@ CATEGORY_LABELS = {
     "spectrum_analyzer": "频谱仪",
     "optical_power_meter": "光功率计",
     "multimeter": "万用表",
+    "accelerometer": "加速度采集",
     "frequency_counter": "频率计数器",
     "network_analyzer": "网络分析仪",
     "phase_noise_analyzer": "相噪仪",

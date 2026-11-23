@@ -27865,6 +27865,46 @@
           "ui_location": ""
         }
       ]
+    },
+    {
+      "adapter_id": "ni.9230",
+      "model": "NI 9230 (BNC)",
+      "category": "accelerometer",
+      "control_page": "实时监测 / 加速度采集",
+      "channels": [
+        1,
+        2,
+        3
+      ],
+      "source": "NI 9230 Specifications",
+      "revision": "NI-DAQmx C API 26.8",
+      "acquisition": "scalar",
+      "metric_profiles": [],
+      "channel_limits": {},
+      "hardware_passed": false,
+      "operations": [
+        {
+          "name": "channel",
+          "parameters": {},
+          "readable": true,
+          "writable": false,
+          "requires_confirmation": false,
+          "channel_scoped": true,
+          "source": "NI-DAQmx C API",
+          "section": "DAQmxGetPhysicalChanAITermCfgs",
+          "verification": "documented_pending_hardware",
+          "option": "",
+          "available": true,
+          "reason": "",
+          "partial_update": "none",
+          "implementation": "implemented",
+          "schema_tested": false,
+          "protocol_fixture_tested": true,
+          "hardware_passed": false,
+          "ui_label": "通道配置",
+          "ui_location": ""
+        }
+      ]
     }
   ],
   "pending": {

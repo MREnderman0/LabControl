@@ -17,6 +17,7 @@ from lab_control.instruments.devices.microchip_53100a.profile import (
 from lab_control.instruments.registry import DEVICE_DEFINITIONS, PROFILES, describe
 
 MEASUREMENT_CATEGORIES = {
+    "accelerometer",
     "oscilloscope",
     "spectrum_analyzer",
     "optical_power_meter",
@@ -511,6 +512,8 @@ def data_sources(config: ConnectionConfig) -> tuple[DataSource, ...]:
     schema = describe(config)
     category = schema.category
     definition = DEVICE_DEFINITIONS.get(config.adapter)
+    if category == "accelerometer":
+        return (DataSource("acceleration", "瞬时加速度", "scalar", "acceleration", "acceleration"),)
     if definition and definition.role_categories:
         return tuple(
             DataSource(k, {"waveform": "时域波形", "spectrum": "频谱"}.get(k, k), k)

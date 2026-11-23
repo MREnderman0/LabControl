@@ -16,5 +16,6 @@
 | 盘古 KT616R | 以太网 / Modbus TCP | [型号说明](pangu-kt616r.md) |
 | K+K FXE / FXE2 | Ethernet（FXE2 使用 DHCP，已登记身份随租约更新地址） | [型号说明](kplusk-fxe.md) |
 | Keysight / Agilent 53220A | LAN VXI-11 / VISA SOCKET；优先 PyVISA | [型号说明](keysight-53220a.md) |
+| NI 9230 (BNC) | USB cDAQ / NI-DAQmx | [型号说明](ni-9230.md) |
 | GOCA-8-NK2603212 | 未注册，待补资料 | [待补卡片](goca-8.md) |
 | 多通道光功率计 | 未注册，待补资料 | [待补卡片](multi-channel-optical-power-meter.md) |

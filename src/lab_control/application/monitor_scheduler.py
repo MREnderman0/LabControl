@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import replace
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from lab_control.application.acquisition_pipeline import (
@@ -52,6 +53,14 @@ class MonitorScheduler:
         except DeviceError as exc:
             if record_session and task.recorder:
                 task.recorder.cancel_reservation()
+            if exc.code in {"monitor_wait", "monitor_no_signal"}:
+                task.frames.clear()
+                task.frame_history.clear()
+                task.notice = str(exc)
+                task.next_at = time.monotonic() + (
+                    0.5 if exc.code == "monitor_wait" else max(0.5, task.interval)
+                )
+                return
             if exc.code == "waiting_for_trigger":
                 task.empty_waveform_since = 0
                 task.notice = "等待触发"
@@ -208,6 +217,17 @@ class MonitorScheduler:
         snapshots = {s["stableDeviceId"]: s for s in owner.sessions.snapshots()}
         for device_id, task in tuple(owner.tasks.items()):
             try:
+                if task.input_cleanup is not None:
+                    if not task.input_cleanup.done():
+                        continue
+                    cleanup, task.input_cleanup = task.input_cleanup, None
+                    try:
+                        cleanup.result()
+                    except Exception as exc:
+                        if task.stop_future and not task.stop_future.done():
+                            task.stop_future.set_exception(exc)
+                        owner._pause(device_id, f"释放连续采集输入失败：{exc}")
+                        continue
                 if (
                     task.running
                     and task.configuration_wait_deadline
@@ -294,7 +314,20 @@ class MonitorScheduler:
                     context_id=task.acquisition_context_id if task.recording else task.monitoring_context_id,
                 )
                 admission: dict[str, Any] = {}
-                if task.before_acquire is not None:
+                if state.get("managesMonitorInput"):
+                    if task.once:
+                        raise DeviceError("此输入使用连续监测", "unsupported")
+
+                    def prepare_input(session, task=task, request=request):
+                        if task.before_acquire:
+                            task.before_acquire(session, request)
+                        adapter = session.adapter
+                        # Pair cleanup with the same handle and serialized worker as preparation.
+                        task.release_input = partial(session.worker.submit, adapter.end_monitor_input)
+                        adapter.prepare_monitor_input(request)
+
+                    admission["before_io"] = prepare_input
+                elif task.before_acquire is not None:
                     check = task.before_acquire
                     admission["before_io"] = lambda session, check=check, request=request: check(
                         session, request
@@ -328,9 +361,14 @@ class MonitorScheduler:
                 )
                 # An error can finish the last in-flight read/write during close.
                 # Release the monitoring flag in this tick, before _loop may exit.
+                if (not task.running or not task.requests) and not task.pending and task.release_input:
+                    release, task.release_input = task.release_input, None
+                    task.input_cleanup = release()
+                    task.input_cleanup.add_done_callback(lambda _future: owner.wake.set())
                 if (
                     not task.running
                     and not task.pending
+                    and task.input_cleanup is None
                     and not task.recovery_pending
                     and not task.write_pending
                     and task.recording_preparation is None
@@ -363,6 +401,8 @@ class MonitorScheduler:
                     and not owner.capture_saves
                     and all(
                         not t.pending
+                        and t.input_cleanup is None
+                        and t.release_input is None
                         and not t.write_pending
                         and not t.recovery_pending
                         and t.recording_preparation is None

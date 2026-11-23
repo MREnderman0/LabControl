@@ -1,0 +1,30 @@
+{
+  "adapter": "ni.9230",
+  "profile": null,
+  "commands": {},
+  "capabilities": {
+    "category": "accelerometer",
+    "channels": [
+      1,
+      2,
+      3
+    ],
+    "operations": [
+      {
+        "name": "channel",
+        "parameters": {},
+        "readable": true,
+        "writable": false,
+        "requires_confirmation": false,
+        "channel_scoped": true,
+        "source": "NI-DAQmx C API",
+        "section": "DAQmxGetPhysicalChanAITermCfgs",
+        "verification": "documented_pending_hardware",
+        "option": "",
+        "available": true,
+        "reason": "",
+        "partial_update": "none"
+      }
+    ]
+  }
+}

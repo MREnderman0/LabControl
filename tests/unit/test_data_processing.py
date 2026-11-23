@@ -83,6 +83,7 @@ def test_qualified_model_processing_profiles_are_registered():
         if definition.offline_processing
     }
     assert profiles == {
+        "ni.9230": "scalar",
         "duoheyi.dh8318": "scalar",
         "joinwit.jw8105": "scalar",
         "rigol.m300": "scalar",

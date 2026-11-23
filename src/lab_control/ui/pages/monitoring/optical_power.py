@@ -162,7 +162,7 @@ class OpticalPowerPlot(QWidget):
             self.time_origin = frame.received_at
         elapsed = frame.received_at - self.time_origin
         if np.allclose(self.plot.viewRange()[0], self.follow_range, rtol=0, atol=1e-6):
-            self.follow_range = (max(0.0, elapsed - 600), max(600.0, elapsed))
+            self.follow_range = self.time_range(elapsed)
             self.plot.setXRange(*self.follow_range, padding=0)
         self.channels = tuple(channels)
         for channel, value in watts.items():
@@ -190,6 +190,7 @@ class OpticalPowerPlot(QWidget):
             for channel, history in self.history.items()
             if channel in self.channels
             for _, value in history
+            if math.isfinite(value)
         ]
         if values:
             low, high = min(values), max(values)
@@ -201,6 +202,9 @@ class OpticalPowerPlot(QWidget):
     def display_value(self, value: float, unit: str) -> float | None:
         return power_to_watts(value, unit)
 
+    def time_range(self, elapsed: float) -> tuple[float, float]:
+        return max(0.0, elapsed - 600), max(600.0, elapsed)
+
     def lower_limit(self, value: float) -> float:
         return max(0.0, value) if self.nonnegative else value
 
@@ -210,6 +214,7 @@ class OpticalPowerPlot(QWidget):
             for channel, history in self.history.items()
             if channel in self.channels
             for _, value in history
+            if math.isfinite(value)
         ]
         if values:
             low, high = min(values), max(values)

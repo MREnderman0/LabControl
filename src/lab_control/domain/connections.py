@@ -40,6 +40,7 @@ class ConnectionConfig:
             "tlpmx",
             "pm100d",
             "pico",
+            "nidaqmx",
             "moku",
             "tserve",
             "kplusk",

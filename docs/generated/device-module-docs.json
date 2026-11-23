@@ -39,5 +39,6 @@
   "docs/devices/measurement-analyzers/kplusk-fxe.md": "2b905d1b0813ea0df510a14165b2e8fb7fab51d8c8a2d5325e8d3a4523b448bd",
   "docs/devices/measurement-analyzers/keysight-53220a.md": "54bbdbe53260b1b97a61112e0e3c0144c8f69a3bf24d5752296f29901109107f",
   "docs/devices/temperature-load-drivers/pump-driver.md": "18e31c4666f6bcfa038a4ab3f2c7410d046a530ad658369627d79342868e6029",
-  "docs/devices/temperature-load-drivers/dc-switch-board.md": "0118368912637538798cad46d9d23c02aa27d825c96fe3993b2a6240a2c53eb6"
+  "docs/devices/temperature-load-drivers/dc-switch-board.md": "0118368912637538798cad46d9d23c02aa27d825c96fe3993b2a6240a2c53eb6",
+  "docs/devices/measurement-analyzers/ni-9230.md": "55868175b6046b1656c7eefacc5877978df95eb0dfced5d02c223f3a6fdfa2e9"
 }
