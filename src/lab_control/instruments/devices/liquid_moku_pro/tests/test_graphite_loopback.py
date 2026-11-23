@@ -344,8 +344,10 @@ def test_ambiguous_output_write_replaces_only_its_channel_receipt(qtbot, tmp_pat
         window.navigate("仪器测控", "signal_generator", device)
         page = window.stack.currentWidget()
         card = page.cards[1]
+        qtbot.waitUntil(card.off.isEnabled)
         card.off.click()
         qtbot.waitUntil(lambda: card.output.label.text() == "已关闭")
+        qtbot.waitUntil(page.cards[2].off.isEnabled)
         page.cards[2].off.click()
         qtbot.waitUntil(lambda: page.role_bar.chips.group.button(0).text() == "信号源 · CH1、CH2 已关闭")
         original = wire.call
@@ -359,6 +361,7 @@ def test_ambiguous_output_write_replaces_only_its_channel_receipt(qtbot, tmp_pat
             return result
 
         monkeypatch.setattr(wire, "call", bad_ack)
+        qtbot.waitUntil(card.on.isEnabled)
         card.on.click()
         qtbot.waitUntil(lambda: card.output.label.text() == "状态待核实")
         assert wire.outputs[4]["type"] == "Sine"
