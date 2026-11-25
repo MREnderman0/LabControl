@@ -84,6 +84,125 @@ def test_monitoring_reconnects_same_asset_and_continues_same_recording(tmp_path,
         assert not runtime.sessions.sessions[device].controls_locked
 
 
+def hold_second_read(adapter, error):
+    entered, release = threading.Event(), threading.Event()
+    acquire = adapter.acquire
+
+    def read(request):
+        if adapter.sample_index == 1 and not entered.is_set():
+            entered.set()
+            assert release.wait(8), "test did not release in-flight read"
+            if error:
+                raise DeviceError("in-flight read failed", error)
+        return acquire(request)
+
+    adapter.acquire = read
+    return entered, release
+
+
+@pytest.mark.parametrize("update", ["replace", "append", "clear_then_select"])
+def test_revised_request_recovers_latest_channels_in_same_recording(tmp_path, update):
+    config = ConnectionConfig("mock://power", "joinwit.jw8105", "mock")
+    with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
+        monitor = runtime.monitoring
+        device = runtime.add(config)
+        runtime.connect(device).result(3)
+        session = runtime.sessions.sessions[device]
+        original = session.adapter
+        error_code = "connection_failed" if update == "append" else "timeout"
+        entered, release = hold_second_read(original, error_code)
+        initial = AcquisitionRequest("scalar", channels=(9, 10), points=1, quantity="power")
+        latest = replace(initial, channels=(9, 10, 11))
+        peer = runtime.add(replace(config, resource="mock://peer"))
+        runtime.connect(peer).result(3)
+        monitor.start(peer, (initial,), interval=0.05)
+        monitor.start(device, (initial,), interval=0.05, record_interval=None, recording=True)
+        task = monitor.tasks[device]
+        try:
+            assert entered.wait(5)
+            recorder = task.recorder
+            peer_sequence = monitor.tasks[peer].sequence
+            if update == "append":
+                monitor.start(
+                    device, (replace(initial, channels=(11,)),), interval=0.05, record_interval=None
+                )
+            elif update == "clear_then_select":
+                monitor.replace_requests(device, ())
+            else:
+                monitor.replace_requests(device, (replace(initial, channels=(9,)),))
+                monitor.replace_requests(device, (latest,))
+            wait_for(lambda: monitor.tasks[peer].sequence > peer_sequence)
+        finally:
+            release.set()
+        if update == "clear_then_select":
+            wait_for(lambda: (task.recovery and task.recovery.ready) or not task.running)
+            assert task.running and task.sequence == 1
+            monitor.replace_requests(device, (latest,))
+        wait_for(lambda: task.sequence >= 3 or not task.running)
+        assert original.closed and task.running and task.recording
+        assert task.recorder is recorder and recorder is not None
+        monitor.stop(device).result(10)
+        frames = [frame for path in recorder.segments.paths for frame in read_frames(Path(path))]
+        assert len(frames) >= 3
+        assert [m["channel"] for m in frames[0]["measurements"]] == [9, 10]
+        assert all([m["channel"] for m in frame["measurements"]] == [9, 10, 11] for frame in frames[1:])
+        assert [i for i, frame in enumerate(frames) if "_acquisition_gap" in frame["configuration"]] == [1]
+        gap = frames[1]["configuration"]["_acquisition_gap"]
+        assert gap["last_valid_at"] == frames[0]["timestamp"]
+        assert gap["attempts"] == 1 and gap["code"] == error_code
+        events = (recorder.raw_folder / "acquisition-events.jsonl").read_text(encoding="utf-8").splitlines()
+        assert [json.loads(line)["event"] for line in events] == [
+            "acquisition_interrupted",
+            "acquisition_resumed",
+        ]
+
+
+@pytest.mark.parametrize(
+    "adapter,quantity,action",
+    [
+        ("joinwit.jw8105", "power", "stop"),
+        ("joinwit.jw8105", "power", "replace_success"),
+        ("keysight.53220a", "frequency", "watch_disconnect"),
+    ],
+)
+def test_inflight_revision_respects_stop_success_and_watch_updates(tmp_path, adapter, quantity, action):
+    config = ConnectionConfig("mock://revision", adapter, "mock")
+    with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
+        monitor = runtime.monitoring
+        device = runtime.add(config)
+        runtime.connect(device).result(3)
+        original = runtime.sessions.sessions[device].adapter
+        entered, release = hold_second_read(original, None if action == "replace_success" else "disconnected")
+        initial = AcquisitionRequest("scalar", channels=(1,), points=1, quantity=quantity)
+        latest = replace(initial, channels=(2,))
+        if action == "watch_disconnect":
+            monitor.sync_watch(device, (initial,), 0.5, "interval", monitor.stop_revision(device))
+        else:
+            monitor.start(device, (initial,), interval=0.05)
+        task = monitor.tasks[device]
+        try:
+            assert entered.wait(5)
+            if action == "watch_disconnect":
+                monitor.sync_watch(device, (latest,), 0.5, "interval", monitor.stop_revision(device))
+            else:
+                monitor.replace_requests(device, (latest,))
+            if action == "stop":
+                stopped = monitor.stop(device)
+        finally:
+            release.set()
+        if action == "stop":
+            stopped.result(5)
+            assert not original.closed and not task.running and task.recovery is None
+            assert task.sequence == 1
+        else:
+            wait_for(lambda: task.sequence >= 2 or not task.running)
+            assert task.running and original.closed == (action == "watch_disconnect")
+            assert task.frames[("scalar", quantity)].request.channels == latest.channels
+            assert all(
+                f.request.channels == latest.channels for f in task.frame_history[("scalar", quantity)]
+            )
+
+
 def test_unavailable_device_keeps_retrying_until_user_stop_without_affecting_peer(tmp_path):
     with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
         config = ConnectionConfig("mock://target", "rigol.dg5504pro", "mock")
