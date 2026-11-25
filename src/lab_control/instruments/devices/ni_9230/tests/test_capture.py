@@ -56,6 +56,28 @@ class Fake:
         return {"OpenCurrentLoop": self.bad, "Overcurrent": []}
 
 
+def test_missing_module_is_retryable_and_cleanup_keeps_the_release_error(monkeypatch):
+    drv = Fake()
+    monkeypatch.setattr(adapter, "Driver", lambda: drv)
+    cfg = ConnectionConfig("NIDAQMX::00000001", adapter.ID, "nidaqmx")
+    dev = adapter.Adapter(cfg)
+    monkeypatch.setattr(drv, "modules", lambda: {})
+    with pytest.raises(DeviceError) as absent:
+        dev.identify()
+    assert absent.value.code == "device_not_present"
+    dev.handle = daqmx.HANDLE(1)
+    dev.names = ("Mod/ai0",)
+
+    def unplugged(names):
+        raise DeviceError("unplugged", "disconnected")
+
+    monkeypatch.setattr(drv, "disable_excitation", unplugged)
+    with pytest.raises(DeviceError, match="unplugged"):
+        dev.end_monitor_input()
+    dev.close_local()
+    assert not dev.handle.value and not dev.names and drv.calls == ["ClearTask"]
+
+
 def test_repeated_points_share_one_task_and_omit_faults(monkeypatch):
     drv = Fake()
     monkeypatch.setattr(adapter, "Driver", lambda: drv)

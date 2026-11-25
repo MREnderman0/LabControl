@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from concurrent.futures import Future
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from lab_control.application.acquisition_pipeline import (
@@ -40,7 +41,9 @@ class FrameExportService:
             context = owner.repository.new_save_context(mode, "single_frame", identity=frame.batch.identity)
             return owner.writer.submit(owner.repository.export, frame.batch, mode, context=context)
 
-    def export_displayed_frame(self, device_id: str, frame: MonitorFrame, mode: str) -> Future[Any]:
+    def export_displayed_frame(
+        self, device_id: str, frame: MonitorFrame, mode: str, *, directory: Path | None = None
+    ) -> Future[Any]:
         """Export this displayed snapshot without I/O or upgrading its provenance."""
         owner = self.owner
         validate_displayed_batch(frame.batch)
@@ -56,6 +59,8 @@ class FrameExportService:
                 identity=frame.batch.identity,
                 channels=tuple(m.channel for m in frame.batch.measurements),
             )
+            if directory is not None:
+                context = replace(context, export_parent=directory)
             future = owner.writer.submit(owner.repository.export, frame.batch, mode, context=context)
             owner.display_exports[device_id] = future
 

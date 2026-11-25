@@ -17,11 +17,33 @@ from lab_control.domain.instruments import DeviceError, ValidationError
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.storage.frame_files import directory, filename, publish
 
+# Retain immutable download copies, including when users edit their exported CSV.
+# Count existing files so the limit also covers exports from previous versions.
+ARCHIVE_BYTES = 2 * 1024**3
+ARCHIVE_TASKS = 4096
+
+
+def check_archive_capacity(root: Path, *, new_task: bool) -> None:
+    used = 0
+    count = 0
+    if root.exists():
+        for task_dir in root.iterdir():
+            if task_dir.is_symlink() or task_dir.is_junction() or not task_dir.is_dir():
+                continue
+            count += 1
+            for item in task_dir.iterdir():
+                if not item.is_symlink() and not item.is_junction() and item.is_file():
+                    used += item.stat().st_size
+            if used > ARCHIVE_BYTES or count + int(new_task) > ARCHIVE_TASKS:
+                raise DeviceError("单帧下载缓存已满，请在采数机归档并清理旧副本", "storage_full")
+
 
 def supported_modes(source, grant, definition):
     actions = set(grant["actions"])
     defaults = source["request_defaults"]
     if not {"acquire", "results"} <= actions or defaults.get("duration") is not None:
+        return []
+    if source["kind"] == "status" and "read_parameters" not in actions:
         return []
     if (
         definition.acquisition_requires_confirmation
@@ -66,14 +88,16 @@ def render(path, batch, source, check):
 
 
 def start_frame(service, ctx, client, grant, device, spec):
+    ctx["frame_export"] = True
     (channel,) = spec["channels"]
     stem = filename(spec["stem"])
     destination, mode = spec["destination"], spec["mode"]
     if destination not in {"labcontrol", "client"}:
         raise ValidationError("未知保存目标")
-    folder = directory(spec["directory"]) if destination == "labcontrol" else None
+    export_root = service.repository.data_root
+    folder = directory(spec["directory"], export_root) if destination == "labcontrol" else None
     caps = service.get_capabilities(client, grant, device)
-    advertised = next((s for s in caps["data_sources"] if s["key"] == spec["source"]), {})
+    advertised: dict = next((s for s in caps["data_sources"] if s["key"] == spec["source"]), {})
     if (
         mode not in advertised.get("frame_modes", [])
         or channel not in advertised["channel_selection"]["channels"]
@@ -94,6 +118,8 @@ def start_frame(service, ctx, client, grant, device, spec):
     cancel = ctx["cancel"] = threading.Event()
 
     def check():
+        if folder is not None:
+            directory(str(folder), export_root)
         if cancel.is_set():
             raise DeviceError("单帧保存已取消", "cancelled")
         scope = service._check(client, grant, device, "acquire", channels=(channel,))
@@ -132,8 +158,11 @@ def start_frame(service, ctx, client, grant, device, spec):
             raise DeviceError("所选数据源没有有效采样点", "acquisition_failed")
         batch = replace(batch, measurements=selected)
         task = ctx["task"]
-        archive = service.repository.root / "agent-frame-artifacts" / task["id"]
-        archive.mkdir(parents=True)
+        archive = service.repository.root.absolute() / "agent-frame-artifacts" / task["id"]
+        directory(str(archive), service.repository.root.absolute())
+        with service.frame_archive_lock:
+            check_archive_capacity(archive.parent, new_task=True)
+            archive.mkdir(parents=True)
         try:
             formats = ("png", "csv") if mode == "both" else (mode,)
             files = []
@@ -167,7 +196,9 @@ def start_frame(service, ctx, client, grant, device, spec):
                             channels=[channel],
                         )
                     )
-                service.ledger.save_artifacts(entries)
+                with service.frame_archive_lock:
+                    check_archive_capacity(archive.parent, new_task=False)
+                    service.ledger.save_artifacts(entries)
 
             if folder:
                 with TemporaryDirectory(dir=folder, prefix=".frame-") as stage:
@@ -191,7 +222,8 @@ def start_frame(service, ctx, client, grant, device, spec):
                 points=sum(np.asarray(m.values).size for m in selected),
             )
         except BaseException:
-            shutil.rmtree(archive)
+            with service.frame_archive_lock:
+                shutil.rmtree(archive)
             raise
 
     ctx["future"] = service.worker.submit(save)

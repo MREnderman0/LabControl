@@ -39,6 +39,9 @@ def amplitude_unit(token: object) -> str | None:
 
 
 def convert_level(values, source, target, impedance=None):
+    source, target = amplitude_unit(source), amplitude_unit(target)
+    if source is None or target is None:
+        raise ValueError("Unknown spectrum amplitude unit")
     if source == target:
         return values
     src, src_factor = LINEAR_UNITS[LOG_UNITS.get(source, source)]
@@ -71,6 +74,9 @@ def panel_scale(
     unit, reference, *, span_db=None, reference_position=1.0, offset_db=0.0, percent=False, impedance=None
 ):
     """Reference position runs from bottom (0) to top (1). Offset is in dB."""
+    unit = amplitude_unit(unit)
+    if unit is None:
+        raise ValueError("Unknown spectrum amplitude unit")
     linear = LOG_UNITS.get(unit, unit)
     family, _ = LINEAR_UNITS[linear]
     factor = 10 if family == "power" else 20

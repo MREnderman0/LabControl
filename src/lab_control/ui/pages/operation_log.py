@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.ui.kit import icons
+from lab_control.ui.kit.base import plain_tooltip
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -101,7 +103,7 @@ class LogEntry:
     event: str
     details: dict[str, Any]
 
-    @property
+    @cached_property
     def category(self) -> str:
         if self.event.startswith("agent_"):
             return "agent"
@@ -111,14 +113,14 @@ class LogEntry:
             return "operation"
         return "acquisition"
 
-    @property
+    @cached_property
     def apply_result(self) -> dict:
         result = self.details.get("result")
         if self.event == "operation_completed" and isinstance(result, dict) and "outcome" in result:
             return result
         return {}
 
-    @property
+    @cached_property
     def problem(self) -> bool:
         text = self.event.lower()
         status = str(self.details.get("status", "")).lower()
@@ -131,7 +133,7 @@ class LogEntry:
             or status in {"failed", "error", "rejected"}
         )
 
-    @property
+    @cached_property
     def label(self) -> str:
         outcome = str(self.apply_result.get("outcome", ""))
         if outcome in APPLY_PROBLEMS:
@@ -143,7 +145,7 @@ class LogEntry:
             return f"历史数据 · {action}" + (" 失败" if self.event.endswith("_failed") else "")
         return self.event
 
-    @property
+    @cached_property
     def device(self) -> str:
         for key in ("device_id", "device", "label", "slot", "source", "scan_id", "task_id"):
             value = self.details.get(key)
@@ -151,7 +153,7 @@ class LogEntry:
                 return value
         return "—"
 
-    @property
+    @cached_property
     def summary(self) -> str:
         result = self.apply_result
         if result.get("error"):
@@ -166,7 +168,7 @@ class LogEntry:
             parts.append(f"{key}={text}")
         return "  ".join(parts)
 
-    @property
+    @cached_property
     def local_time(self) -> str:
         try:
             return datetime.fromisoformat(self.timestamp).astimezone().strftime("%H:%M:%S")
@@ -178,7 +180,20 @@ def read_log(path: Path, limit: int = MAX_ENTRIES) -> list[LogEntry]:
     """Newest first; malformed lines are skipped, never fatal."""
     entries = []
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
+        if limit <= 0:
+            return []
+        with path.open("rb") as stream:
+            end = stream.seek(0, 2)
+            chunks = []
+            breaks = 0
+            while end and breaks <= limit:
+                size = min(end, 65536)
+                end -= size
+                stream.seek(end)
+                chunk = stream.read(size)
+                chunks.append(chunk)
+                breaks += chunk.count(b"\n")
+            lines = b"".join(reversed(chunks)).decode("utf-8", errors="replace").splitlines()[-limit:]
     except OSError:
         return []
     for line in lines:
@@ -231,21 +246,22 @@ class LogModel(QAbstractTableModel):
             return None
         if role == Qt.ItemDataRole.ToolTipRole:
             if column == 4:
-                return json.dumps(entry.details, ensure_ascii=False, indent=2, default=str)
+                return plain_tooltip(json.dumps(entry.details, ensure_ascii=False, indent=2, default=str))
             if column == 0:
-                return entry.timestamp
+                return plain_tooltip(entry.timestamp)
         if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
             return None
         device = entry.device
         if column == 3 and self.resolve is not None and device != "—":
             device = self.resolve(device) or device
-        return (
+        value = (
             entry.local_time,
             dict(CATEGORIES)["problem"] if entry.problem else dict(CATEGORIES)[entry.category],
             entry.label,
             device,
             entry.summary,
         )[column]
+        return plain_tooltip(value) if role == Qt.ItemDataRole.ToolTipRole else value
 
 
 class OperationLogPage(QWidget):
@@ -297,11 +313,12 @@ class OperationLogPage(QWidget):
         bar.addWidget(refresh)
         folder = QPushButton("打开日志目录")
         folder.setProperty("buttonSize", "compact")
-        folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder))))
+        folder.clicked.connect(self.open_folder)
         bar.addWidget(folder)
         layout.addLayout(bar)
 
         self.summary = QLabel()
+        self.summary.setTextFormat(Qt.TextFormat.PlainText)
         self.summary.setObjectName("overviewNote")
         layout.addWidget(self.summary)
         self.model = LogModel(resolve_device, self)
@@ -330,6 +347,14 @@ class OperationLogPage(QWidget):
         self.timer.setInterval(2000)
         self.timer.timeout.connect(self.load)
         self.refresh_days()
+
+    def open_folder(self) -> None:
+        try:
+            self.folder.mkdir(parents=True, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder))):
+                self.summary.setText("无法打开日志目录")
+        except OSError as exc:
+            self.summary.setText(str(exc))
 
     def refresh_days(self) -> None:
         days = (

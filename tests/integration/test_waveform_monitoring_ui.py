@@ -1,13 +1,16 @@
 from dataclasses import replace
 
 import numpy as np
+import pytest
 
 from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.ui.real_window import RealWindow
 
 
-def test_scope_page_and_overview_fit_current_frame_without_instrument_io(qtbot, tmp_path):
+def test_scope_page_and_overview_fit_current_frame_without_instrument_io(
+    qtbot, tmp_path, frame_export_directory, monkeypatch
+):
     runtime = ApplicationRuntime(root=tmp_path, hardware=False)
     key = runtime.add(ConnectionConfig("mock://scope-ui", "lecroy.9404m", "mock"))
     runtime.connect(key).result(3)
@@ -53,11 +56,16 @@ def test_scope_page_and_overview_fit_current_frame_without_instrument_io(qtbot, 
         page.fit_action.trigger()
         assert page.plot.plot.viewRange()[0][1] < 1e-5
         frame = page.plot.displayed_frame
+        with monkeypatch.context() as cancelled:
+            cancelled.setattr("lab_control.ui.controller.choose_frame_destination", lambda _parent: None)
+            cancelled.setattr(
+                runtime.monitoring, "export_displayed_frame", lambda *a, **kw: pytest.fail("cancelled export")
+            )
+            page.save()
+        assert not list(frame_export_directory.iterdir())
         page.save()
-        qtbot.waitUntil(
-            lambda: bool(list(runtime.repository.root.glob("data/**/*/samples.npz"))), timeout=5000
-        )
-        with np.load(next(runtime.repository.root.glob("data/**/*/samples.npz"))) as saved:
+        qtbot.waitUntil(lambda: bool(list(frame_export_directory.rglob("samples.npz"))), timeout=5000)
+        with np.load(next(frame_export_directory.rglob("samples.npz"))) as saved:
             np.testing.assert_array_equal(saved["axis_0"], frame.batch.measurements[0].axis)
             np.testing.assert_array_equal(saved["values_0"], frame.batch.measurements[0].values)
         assert len(calls) == reads_after_stop

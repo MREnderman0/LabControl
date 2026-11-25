@@ -108,6 +108,11 @@ class MonitorTask:
     watch_owned: bool = False
     watch_session: str = ""
 
+    def clear_recording_intent(self) -> None:
+        self.recording = False
+        if self.record_kinds is not None:
+            self.record_kinds.clear()
+
     @property
     def stopping(self) -> bool:
         """A stopped task still owns I/O or binary data; CSV alone does not block restart."""

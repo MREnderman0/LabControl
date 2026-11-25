@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
+from functools import partial
 from typing import Any
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt, QTimer, Signal
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLayout,
+    QLayoutItem,
     QLineEdit,
     QPushButton,
     QScrollArea,
@@ -317,7 +319,7 @@ class CategoryGrid(QLayout):
         super().__init__(parent)
         self.setContentsMargins(0, 0, 0, 0)
         self.setSpacing(12)
-        self._items = []
+        self._items: list[QLayoutItem] = []
 
     @property
     def items(self):
@@ -383,7 +385,12 @@ class CategoryGrid(QLayout):
                 left = space * column // columns
                 width = space * (column + 1) // columns - left
                 card = item.widget()
-                height = card.heightForWidth(width) if card.hasHeightForWidth() else card.sizeHint().height()
+                if card is None:
+                    height = item.sizeHint().height()
+                else:
+                    height = (
+                        card.heightForWidth(width) if card.hasHeightForWidth() else card.sizeHint().height()
+                    )
                 cells.append(
                     (
                         item,
@@ -931,6 +938,12 @@ class MonitoringDashboard(QWidget):
             detail = "" if channels else f"{label} 当前会话没有已配置并启用的通道，请在设备页配置后重试。"
             finish(key, channels, detail)
 
+        def read_status(key, selector, status):
+            checked(key, selector(status.values))
+
+        def read_failed(key, exc):
+            finish(key, error=f"采集通道检查失败：{exc}")
+
         for key, record in scopes.items():
             definition = DEVICE_DEFINITIONS.get(record["adapterId"])
             selector = definition.recording_channels_from_status if definition else None
@@ -939,22 +952,22 @@ class MonitoringDashboard(QWidget):
                     future = self.controller.runtime.sessions.submit(key, "status")
                     self.controller.watch(
                         future,
-                        lambda status, k=key, fn=selector: checked(k, fn(status.values)),
-                        lambda exc, k=key: finish(k, error=f"采集通道检查失败：{exc}"),
+                        partial(read_status, key, selector),
+                        partial(read_failed, key),
                     )
                 except Exception as exc:
                     finish(key, error=f"采集通道检查失败：{exc}")
             else:
                 self._read_enabled_inputs(
                     key,
-                    lambda channels, k=key: checked(k, channels),
-                    lambda exc, k=key: finish(k, error=f"采集通道检查失败：{exc}"),
+                    partial(checked, key),
+                    partial(read_failed, key),
                 )
 
     def _read_enabled_inputs(self, key, ready, failed):
         """Read physical enable states on the existing per-device worker, without applying settings."""
         channels = iter(self.controller.capabilities(key).channels)
-        enabled = []
+        enabled: list[int] = []
         generation = self._preparation_generation
 
         def read_next():

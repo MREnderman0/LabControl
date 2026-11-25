@@ -40,7 +40,7 @@ def choice(items):
 
 def number(spec, value, suffix="", *, integer=False):
     field = QSpinBox() if integer else QDoubleSpinBox()
-    if not integer:
+    if isinstance(field, QDoubleSpinBox):
         field.setDecimals(6)
     field.setRange(spec.minimum, spec.maximum)
     field.setValue(value)
@@ -91,7 +91,8 @@ class PicoScopeControls(QFrame):
         self._on_ready: Callable[[], None] | None = None
         self._draft_commands = []
         self._current = {}
-        self._reads, self._commands = deque(), deque()
+        self._reads: deque[tuple[int, list[str]]] = deque()
+        self._commands: deque[DeviceCommand] = deque()
         self._stop_revision = 0
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -437,7 +438,7 @@ class PicoScopeControls(QFrame):
             self._on_ready = ready
             # Pico's native SDK supplies session-cached input settings. Read those
             # through the ordinary worker so other UI and SSH edits are respected.
-            groups = {}
+            groups: dict[int, list[str]] = {}
             for cmd in self._draft_commands:
                 groups.setdefault(cmd.channel, []).append(cmd.operation)
             self._reads = deque(groups.items())
@@ -485,7 +486,8 @@ class PicoScopeControls(QFrame):
                 self.applied_draft = self.draft()
                 ready = self._on_ready
                 self.finish()
-                ready()
+                if ready is not None:
+                    ready()
         except Exception as exc:
             self.failed(exc)
 

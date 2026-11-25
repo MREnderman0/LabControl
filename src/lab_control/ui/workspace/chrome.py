@@ -31,6 +31,7 @@ from lab_control.ui.kit import (
     SubNavButton,
     set_property,
 )
+from lab_control.ui.kit.base import plain_tooltip
 
 if TYPE_CHECKING:
     from lab_control.ui.real_window import RealWindow
@@ -189,13 +190,17 @@ class WorkspaceChrome:
 
     def _search_chosen(self, text: str) -> None:
         window = self.window
+        if not text.strip():
+            return
         device_id = next((key for label, key in self._search_entries if label == text), "")
         if not device_id:
             matches = [key for label, key in self._search_entries if text.strip().lower() in label.lower()]
             device_id = matches[0] if len(matches) == 1 else ""
         if not device_id:
             return
-        record = window.controller.records[device_id]
+        record = window.controller.records.get(device_id)
+        if record is None:
+            return
         category = instrument_category(record)
         self.search.edit.clear()
         self.search.edit.clearFocus()
@@ -284,7 +289,9 @@ class WorkspaceChrome:
         problems = self._problems()
         self.alerts.set_badge(bool(problems))
         self.alerts.setToolTip(
-            "\n".join(text for _, text in problems[:5]) if problems else "没有设备告警 · 点击查看操作日志"
+            plain_tooltip("\n".join(text for _, text in problems[:5]))
+            if problems
+            else "没有设备告警 · 点击查看操作日志"
         )
         message = window.message.text()
         set_property(
@@ -292,7 +299,8 @@ class WorkspaceChrome:
             "kind",
             "err" if any(word in message for word in ("失败", "错误", "异常", "failed", "error")) else "",
         )
-        window.message.setToolTip(message)
+        window.message.setTextFormat(Qt.TextFormat.PlainText)
+        window.message.setToolTip(plain_tooltip(message) if message else "")
 
     def apply_collapsed(self, collapsed: bool) -> None:
         self.category_box.setVisible(bool(self.category_buttons) and not collapsed)

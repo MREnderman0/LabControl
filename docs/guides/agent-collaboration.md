@@ -6,7 +6,7 @@
 
 先从 `get_capabilities.data_sources` 选择数据源的 `key`、授权通道和该源公布的 `frame_modes`。调用 `save_frame` 时传入 `grant_id`、`device_id`、唯一的 `request_id`、`source`、`channel`、`mode`、`destination` 和 `stem`。模式 `png`、`csv`、`both` 分别生成曲线图、完整采样数据或同一帧的两种文件。标量设备支持 CSV。
 
-保存到采数机时使用 `destination=labcontrol`，在 `directory` 填写采数机的绝对目录。原始 HTTP MCP 返回异步任务，完成后在 `get_task_status.result.files` 查看实际路径或下载标识。保存到客户端时使用 `destination=client`。OFC Host 或 stdio 连接器在自己的电脑上解释目录，下载后校验完整性并写入。断线后凭原任务号、授权号和本地目录调用连接器的 `download_frame` 可重新下载。文件主名由步骤填写，扩展名自动添加。重名时同一组使用相同的编号。
+保存到采数机时使用 `destination=labcontrol`，在 `directory` 填写桌面设置中数据保存目录内的绝对路径（模拟模式使用其实际数据目录）。原始 HTTP MCP 返回异步任务，完成后在 `get_task_status.result.files` 查看实际路径或下载标识。保存到客户端时使用 `destination=client`。OFC Host 或 stdio 连接器在自己的电脑上解释目录，下载后校验完整性并写入。stdio 连接器默认允许写入用户目录下的 `Downloads/LabControl`，也可在本机连接 JSON 的 `export_root` 指定其他绝对目录。两端均拒绝经过符号链接或 Windows 目录联接的路径。连接器等待单帧最多 10 分钟，每个单帧文件上限为 512 MiB。采数机在运行目录的 `agent-frame-artifacts` 保留可重新下载的原始副本。缓存上限为 2 GiB 和 4096 个任务，满后拒绝新导出；操作员可归档并清理已无须重新下载的任务目录。断线后凭原任务号、授权号和本地目录调用连接器的 `download_frame` 可重新下载。文件主名由步骤填写，扩展名自动添加。重名时同一组使用相同的编号。
 
 发行包包含 `LabControl.exe` 和 `LabControl-Agent.exe`，同时提供旧名 EXE 供已有启动配置使用。原库存和设备锁继续使用原运行目录。
 

@@ -156,16 +156,18 @@ def test_broadcast_duplicate_keeps_model_handshake(saved_runtime, monkeypatch):
 
 @pytest.mark.parametrize("kind", ["unverified", "retired", "conflict", "removed"])
 def test_untrusted_or_removed_model_does_not_receive_saved_credentials(saved_runtime, monkeypatch, kind):
-    runtime, _ = saved_runtime
-    record = runtime.inventory.by_resource(RESOURCE)
-    if kind == "unverified":
-        record["candidates"][RESOURCE].pop("verifiedIdentityKey")
-    elif kind == "retired":
-        record["candidates"][RESOURCE]["retired"] = True
-    elif kind == "conflict":
-        record["identityConflict"] = {"reason": "fixture"}
-    else:
-        monkeypatch.delitem(DEVICE_DEFINITIONS, "ceyear.6362d")
+    runtime, device_id = saved_runtime
+    # Arrange the stored inventory state. Public lookups return detached snapshots.
+    with runtime.inventory.lock:
+        record = runtime.inventory.records[device_id]
+        if kind == "unverified":
+            record["candidates"][RESOURCE].pop("verifiedIdentityKey")
+        elif kind == "retired":
+            record["candidates"][RESOURCE]["retired"] = True
+        elif kind == "conflict":
+            record["identityConflict"] = {"reason": "fixture"}
+        else:
+            monkeypatch.delitem(DEVICE_DEFINITIONS, "ceyear.6362d")
     instrument = LoginInstrument()
     install_transport(monkeypatch, instrument)
     with pytest.raises(AssertionError):

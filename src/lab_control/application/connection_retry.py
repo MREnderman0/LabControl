@@ -381,7 +381,11 @@ class ConnectionRetry:
             with self.runtime.sessions.lock:
                 session = self.runtime.sessions.sessions.get(key)
                 recovery = session.recovery if session else None
-                if recovery and resource not in (session.config.resource, recovery.discovered_resource):
+                if (
+                    session
+                    and recovery
+                    and resource not in (session.config.resource, recovery.discovered_resource)
+                ):
                     recovery.discovered_resource = resource
                     recovery.next_at = time.monotonic()
                     self.runtime.monitoring.wake.set()

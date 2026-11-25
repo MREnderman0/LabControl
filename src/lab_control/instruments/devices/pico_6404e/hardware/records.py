@@ -11,7 +11,9 @@ def recognizes(report: dict[str, Any], folder: Path) -> bool:
 
 
 def summarize(report: dict[str, Any]) -> dict[str, Any]:
-    summary = normalize(report, adapter_id=ADAPTER_ID, model="6404E", stage_names={}, expected_models=("6404E",))
+    summary = normalize(
+        report, adapter_id=ADAPTER_ID, model="6404E", stage_names={}, expected_models=("6404E",)
+    )
     if summary["resource"].startswith("PICO::"):
         summary.update(interface="USB", protocol="PicoSDK ps6000a")
     return summary

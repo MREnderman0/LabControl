@@ -23,6 +23,8 @@ class AccelerationPlot(OpticalPowerPlot):
     nonnegative = False
 
     def time_range(self, elapsed):
+        if not math.isfinite(elapsed):
+            return 0.0, 5.0
         if elapsed >= 600:
             return elapsed - 600, elapsed
         return 0.0, next(limit for limit in (5, 10, 20, 30, 60, 120, 300, 600) if limit >= elapsed)
@@ -72,7 +74,11 @@ class AccelerationCard(PowerMeterReadoutCard):
         super().update_measurement(measurement, timestamp)
         set_property(self.status, "inputFault", False)
         if measurement is not None and isinstance(timestamp, str):
-            local = datetime.fromisoformat(timestamp).astimezone()
+            try:
+                local = datetime.fromisoformat(timestamp).astimezone()
+            except (ValueError, OverflowError, OSError):
+                self.meta.clear()
+                return
             self.meta.setText("更新时间  " + local.strftime("%H:%M:%S.%f")[:-3])
 
 

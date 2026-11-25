@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.ui.controller import (
@@ -75,10 +76,21 @@ class ServiceBridge(QObject):
 
     def watch(self, future: Future[Any], label: str) -> None:
         def finish(task):
+            if not isValid(self):
+                return
+            args: tuple[Any, ...]
             try:
-                self.completed.emit(label, task.result())
+                result = task.result()
             except Exception as exc:
-                self.failed.emit(str(exc))
+                signal, args = self.failed, (str(exc),)
+            else:
+                signal, args = self.completed, (label, result)
+            if isValid(self):
+                try:
+                    signal.emit(*args)
+                except RuntimeError:
+                    if isValid(self):
+                        raise
 
         future.add_done_callback(finish)
 
@@ -387,7 +399,7 @@ class RealWindow(QMainWindow):
             self._watched_screen.availableGeometryChanged.disconnect(self.fit_to_screen)
         self._watched_screen = screen
         screen.availableGeometryChanged.connect(self.fit_to_screen)
-        QTimer.singleShot(0, self.fit_to_screen)
+        QTimer.singleShot(0, self, self.fit_to_screen)
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)

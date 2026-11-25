@@ -60,7 +60,7 @@ class ScopePoints(WorkspaceComboBox):
                 suffix = "（当前）"
             except DeviceError:
                 suffix = "（超出范围）"
-            self.addItem(engineering(actual, "").strip() + suffix, actual)
+            self.addItem(engineering(int(actual), "").strip() + suffix, actual)
         if not spec.choices:
             self.addItem("自定义…", "custom")
         self.setCurrentIndex(self.findData(actual))

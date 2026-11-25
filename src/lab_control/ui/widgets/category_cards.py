@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.ui.kit import icons
-from lab_control.ui.kit.base import Dot, ElideLabel
+from lab_control.ui.kit.base import Dot, ElideLabel, set_property
 from lab_control.ui.styles import tokens as tk
 
 DEVICE_ROWS = 3
@@ -204,9 +204,7 @@ class CategoryCard(QFrame):
                 detail.setText(info)
             if state.text() != state_text:
                 state.setText(state_text)
-                state.setProperty("alert", connection in {"error", "degraded"})
-                state.style().unpolish(state)
-                state.style().polish(state)
+            set_property(state, "alert", connection in {"error", "degraded"})
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:

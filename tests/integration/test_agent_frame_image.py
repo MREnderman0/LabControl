@@ -231,8 +231,8 @@ def test_named_frame(experiment, tmp_path, monkeypatch, model, source, mode):
     device = connect(experiment, model)
     grant = agent.grant_all_devices()[0]
     scope = ("internal", grant, device)
-    folder = tmp_path / "试验 A"
-    folder.mkdir()
+    folder = experiment.repository.data_root / "试验 A"
+    folder.mkdir(parents=True)
     (folder / "无关.txt").write_bytes(b"private")
     adapter = experiment.sessions.sessions[device].adapter
     acquire = adapter.acquire
@@ -297,6 +297,9 @@ def test_named_frame(experiment, tmp_path, monkeypatch, model, source, mode):
     assert len(reads) == 3
     bad = wait(agent, scope, call("bad", directory=str(folder / "无关.txt")))
     assert bad["state"] == "failed" and len(reads) == 3
+    outside = tmp_path / "outside-export-root"
+    denied = wait(agent, scope, call("outside", directory=str(outside)))
+    assert denied["state"] == "failed" and not outside.exists() and len(reads) == 3
     if mode == "csv":
         assert wait(agent, scope, call("bad-mode", mode="both"))["state"] == "failed"
         assert len(reads) == 3
@@ -310,8 +313,8 @@ def test_named_frame_aborted_set_keeps_existing_files(experiment, tmp_path, monk
     device = connect(experiment, "rigol.dsa815")
     grant = agent.grant_all_devices()[0]
     scope = ("internal", grant, device)
-    folder = tmp_path / "实验"
-    folder.mkdir()
+    folder = experiment.repository.data_root / "实验"
+    folder.mkdir(parents=True)
     before = folder / "已有.csv"
     before.write_bytes(b"before")
     started, release = Event(), Event()

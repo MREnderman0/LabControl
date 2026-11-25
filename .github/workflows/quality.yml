@@ -1,0 +1,20 @@
+name: Code quality
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-types:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Prepare the locked development environment
+        run: ./scripts/setup-dev.ps1 -Python (Get-Command python.exe).Source
+      - name: Check formatting, lint and types
+        run: ./.venv-dev/Scripts/python.exe scripts/check_project.py --only lint types

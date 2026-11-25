@@ -5,19 +5,23 @@ from __future__ import annotations
 import threading
 from concurrent.futures import Future
 from dataclasses import replace
+from pathlib import Path
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtWidgets import QWidget
 
 from lab_control.application.catalog import instrument_categories, mode_applicable
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import control_capabilities
+from lab_control.application.monitoring_state import MonitorFrame
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.application.watch_measurements import RecordedWindows
 from lab_control.discovery.presence import LIVE_CONNECTIONS
 from lab_control.domain.instruments import DeviceCommand, DeviceError
 from lab_control.domain.workspace import GENERAL, WORKSPACE_MODES
 from lab_control.instruments.registry import DEVICE_DEFINITIONS, describe
+from lab_control.ui.widgets.frame_destination import choose_frame_destination
 
 Job = tuple[Future[Any], Callable[[Any], None] | None, Callable[[Exception], None] | None]
 
@@ -103,6 +107,35 @@ class WorkspaceController(QObject):
         if not self.runtime.closed:
             for device_id in devices:
                 self.frame_ready.emit(device_id)
+
+    def save_displayed_frame(
+        self,
+        parent: QWidget,
+        device_id: str,
+        frame: MonitorFrame,
+        mode: str,
+        *,
+        on_saved: Callable[[Path], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        directory = choose_frame_destination(parent)
+        if directory is None:
+            return
+        try:
+            future = self.runtime.monitoring.export_displayed_frame(
+                device_id, frame, mode, directory=directory
+            )
+        except Exception as exc:
+            if on_error:
+                on_error(exc)
+            else:
+                self.message.emit(str(exc))
+            return
+        self.watch(
+            future,
+            on_saved or (lambda path: self.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}")),
+            on_error,
+        )
 
     def watch(
         self,

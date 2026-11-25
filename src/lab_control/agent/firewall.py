@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -47,7 +48,8 @@ def launch_firewall(runtime, settings, *, remove=False):
         folder.mkdir(parents=True, exist_ok=True)
         name = uuid4().hex
         path, report = folder / f"{name}.json", folder / f"{name}.report.json"
-        path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+        plan_bytes = json.dumps(plan, ensure_ascii=False, indent=2).encode("utf-8")
+        path.write_bytes(plan_bytes)
         runtime.repository.audit("agent_firewall_requested", plan=plan, report=str(report))
         arguments = subprocess.list2cmdline(
             [
@@ -59,18 +61,21 @@ def launch_firewall(runtime, settings, *, remove=False):
                 str(Path(__file__).with_name("firewall.ps1")),
                 "-Plan",
                 str(path),
+                "-PlanHash",
+                hashlib.sha256(plan_bytes).hexdigest(),
                 "-Report",
                 str(report),
             ]
         )
-        literal = "'" + arguments.replace("'", "''") + "'"
+        powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
         command = (
-            "$ErrorActionPreference='Stop'; try { $child = Start-Process -FilePath powershell.exe "
-            "-ArgumentList " + literal + " -Verb RunAs -WindowStyle Hidden -Wait -PassThru; "
+            "$ErrorActionPreference='Stop'; try { $child = Start-Process -FilePath (Join-Path $PSHOME powershell.exe) "
+            "-ArgumentList $env:LABCONTROL_FIREWALL_ARGS -Verb RunAs -WindowStyle Hidden -Wait -PassThru; "
             "exit $child.ExitCode } catch { Write-Error $_; exit 2 }"
         )
         completed = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+            [str(powershell), "-NoProfile", "-NonInteractive", "-Command", command],
+            env={**os.environ, "LABCONTROL_FIREWALL_ARGS": arguments},
             creationflags=subprocess.CREATE_NO_WINDOW,
             capture_output=True,
         )

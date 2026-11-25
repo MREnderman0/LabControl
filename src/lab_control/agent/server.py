@@ -84,7 +84,9 @@ def create_app(service, host: str, port: int, *, tls=False, local_commands=None)
                 INTERNAL_CLIENT, request.query_params.get("grant_id", ""), request.path_params["artifact_id"]
             )
             return FileResponse(
-                path, filename=Path(value["name"]).name, headers={"Cache-Control": "no-store"}
+                path,
+                filename=Path(value["name"]).name,
+                headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
             )
         except DeviceError as exc:
             return JSONResponse({"error": exc.code}, status_code=403)

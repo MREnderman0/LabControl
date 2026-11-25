@@ -303,7 +303,11 @@ class ConnectionDialogs:
         adapter.addItems([key for key in (*PROFILES, *SDK_ADAPTERS) if not requires_manual_connection(key)])
         if current.adapter:
             adapter.setCurrentText(current.adapter)
-        transport.addItems(["visa", "serial", "tcp", "vicp", "tlpmx", "pm100d", "pico", "tserve", "kplusk"])
+        transports = {
+            t for definition in DEVICE_DEFINITIONS.values() for t in definition.supported_transports
+        }
+        transports.update(("visa", "serial", "tcp", "tserve", "kplusk", current.transport))
+        transport.addItems(sorted(transports - {""}))
         transport.setCurrentText(current.transport)
         resource.setReadOnly(False)
         form.addRow("资源地址", resource)

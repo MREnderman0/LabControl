@@ -25,6 +25,11 @@ class WindowShutdown:
         window._shutdown_started = True
         window.timer.stop()
         window.agent_panel.timer.stop()
+        from lab_control.ui.pages.operation_log import OperationLogPage
+
+        log_page = window.page_map.get(("操作日志", ""))
+        if isinstance(log_page, OperationLogPage):
+            log_page.timer.stop()
         watchlists = window.page_map.get(("监视列表", ""))
         if isinstance(watchlists, WatchlistsPage):
             watchlists.shutdown()

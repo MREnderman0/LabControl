@@ -1568,7 +1568,7 @@
     "local": "127.0.0.1:8765 /mcp, authenticated",
     "lan": "operator-selected IPv4:8766 HTTPS, exported certificate trust only",
     "firewall": "explicit elevated helper; one program/interface/port; Private and Domain; LocalSubnet; readback and rollback",
-    "credentials": "per-client bearer token; server stores SHA256 only",
+    "credentials": "Trusted clients share desktop experiment grants. No client token is required.",
     "acceptance": "development tests required; second computer and physical instruments pending"
   }
 }

@@ -233,7 +233,7 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
     qtbot.addWidget(window)
     window.show()
     try:
-        assert len(runtime.inventory.all()) == 26
+        assert len(runtime.inventory.all()) == sum(map(len, DEMO_MODELS.values()))
         assert not runtime.monitoring.snapshots()
         for category in DEMO_MODELS:
             window.navigate("设备管理", category)
@@ -326,6 +326,10 @@ def test_shared_demo_pages_layout_modes_and_live_tasks(qtbot, tmp_path):
                     assert all(check.isChecked() for check in monitor.channel_checks.values())
                     assert not hasattr(monitor, "parameter_card")
                     assert runtime.monitoring.settings_sync.advanced == ()
+                    assert not hasattr(monitor, "form")
+                elif category == "accelerometer":
+                    assert monitor.quantity == "acceleration"
+                    assert set(monitor.channel_checks) == set(caps.channels)
                     assert not hasattr(monitor, "form")
                 elif category == "frequency_counter":
                     assert isinstance(monitor, FrequencyCounterMonitoringPage)

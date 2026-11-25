@@ -62,6 +62,10 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
     service.server.start()
     connection = runtime.repository.root / "connector.json"
     service.server.export_connection(connection, lan=True)
+    folder = runtime.repository.root / "连接器 本机导出"
+    settings = json.loads(connection.read_text(encoding="utf-8"))
+    settings["export_root"] = str(folder)
+    connection.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
     if connector is None and getattr(sys, "frozen", False):
         connector = Path(sys.executable).with_name("LabControl-Agent.exe")
     command = str(connector) if connector else sys.executable
@@ -106,7 +110,6 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
             scope = {"grant_id": grant, "device_id": device}
             await settled(await call("connect_device", **scope, request_id="sdk-connect"))
             await call("get_capabilities", **scope)
-            folder = runtime.repository.root / "连接器 本机导出"
             frame = await call(
                 "save_frame",
                 **scope,

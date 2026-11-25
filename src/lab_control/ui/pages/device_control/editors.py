@@ -56,7 +56,7 @@ class FeedbackLabel(QLabel):
         super().setText(text)
         self.setVisible(bool(text))
         self.relayout()
-        QTimer.singleShot(0, self.relayout)
+        QTimer.singleShot(0, self, self.relayout)
 
     def relayout(self) -> None:
         if not shiboken6.isValid(self):
@@ -128,7 +128,7 @@ class ParameterEditor(QWidget):
             self.input.textEdited.connect(lambda: self.feedback.clear())
             self.input.textChanged.connect(self.number_edited)
             self.input.textChanged.connect(self.sync_input_style)
-            self.input.editingFinished.connect(lambda: QTimer.singleShot(0, self.finish_editing))
+            self.input.editingFinished.connect(lambda: QTimer.singleShot(0, self, self.finish_editing))
         # Value and unit share one frame (focus / dirty / error ring); booleans and plain choices stand alone.
         self.box: FieldBox | None = None
         numeric = spec.kind in {"number", "integer"}
@@ -223,7 +223,7 @@ class ParameterEditor(QWidget):
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         if watched in (self.unit, getattr(self, "input", None)) and event.type() == QEvent.Type.FocusOut:
-            QTimer.singleShot(0, self.finish_editing)
+            QTimer.singleShot(0, self, self.finish_editing)
         return super().eventFilter(watched, event)
 
     def unit_changed(self) -> None:
@@ -494,7 +494,7 @@ class ArrayEditor(QWidget):
         self.info.setWordWrap(True)
         layout.addWidget(self.info)
         self.model.edited.connect(self._updated)
-        self.model.corrected.connect(lambda text: QTimer.singleShot(0, lambda: self.info.setText(text)))
+        self.model.corrected.connect(lambda text: QTimer.singleShot(0, self, lambda: self.info.setText(text)))
         self.range_label = QLabel()
         self.range_label.setObjectName("rangeHint")
         self.range_label.setWordWrap(True)

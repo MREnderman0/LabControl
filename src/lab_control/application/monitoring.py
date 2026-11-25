@@ -7,6 +7,7 @@ import time
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -245,7 +246,7 @@ class MonitoringService:
                             ) from exc
 
                         def wait_first(_session, _request):
-                            if not ready():
+                            if ready is not None and not ready():
                                 raise DeviceError("等待触发", "waiting_for_trigger")
 
                         candidate.before_acquire = wait_first if ready else None
@@ -340,7 +341,7 @@ class MonitoringService:
             if task.record_kinds:
                 task.recorder_kinds.discard(kind)
             else:
-                task.recording = False
+                task.clear_recording_intent()
                 task.recording_cancelled = True
             self.wake.set()
             return None
@@ -522,6 +523,7 @@ class MonitoringService:
                     except Exception as cleanup_error:
                         exc.add_note(f"Recording cleanup failed: {cleanup_error}")
                 with self.lock:
+                    task.clear_recording_intent()
                     if new_task:
                         task.running = False
                     if on_failure is not None:
@@ -631,8 +633,10 @@ class MonitoringService:
     def _validate_saved_batch(batch: MeasurementBatch) -> None:
         validate_recorded_batch(batch)
 
-    def export_displayed_frame(self, device_id: str, frame: MonitorFrame, mode: str) -> Future[Any]:
-        return self.exports.export_displayed_frame(device_id, frame, mode)
+    def export_displayed_frame(
+        self, device_id: str, frame: MonitorFrame, mode: str, *, directory: Path | None = None
+    ) -> Future[Any]:
+        return self.exports.export_displayed_frame(device_id, frame, mode, directory=directory)
 
     def _export(
         self, device_id: str, batch: MeasurementBatch, mode: str, context: SaveContext | None = None
@@ -665,7 +669,7 @@ class MonitoringService:
                 return task.stop_future
             task.running = False
             self.recovery.cancel(task)
-            task.recording = False
+            task.clear_recording_intent()
             task.recording_cancelled = True
             if not task.configuration_wait_expired:
                 task.configuration_wait_deadline, task.notice = 0, ""
@@ -707,7 +711,7 @@ class MonitoringService:
                     preparation = self._begin_recording_locked(device_id, task, mode=mode)
                 task.watch_owned = False
             else:
-                task.recording = False
+                task.clear_recording_intent()
                 task.recording_cancelled = True
                 self.sessions.set_monitoring(
                     device_id,
@@ -863,7 +867,7 @@ class MonitoringService:
             if task:
                 self.recovery.cancel(task)
                 task.running, task.error = False, error
-                task.recording = False
+                task.clear_recording_intent()
                 self.audit.try_record("monitor_paused", device_id=device_id, error=error)
         self.wake.set()
 
@@ -892,7 +896,7 @@ class MonitoringService:
                 errors.append(exc)
             for task in self.tasks.values():
                 task.running = False
-                task.recording = False
+                task.clear_recording_intent()
                 self.recovery.cancel(task)
         self.wake.set()
         for cleanup in (

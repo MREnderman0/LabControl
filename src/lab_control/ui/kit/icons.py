@@ -88,6 +88,9 @@ FILL = {
 }
 
 CATEGORY_ICONS = {
+    "accelerometer": "sine",
+    "measurement_analyzers": "meter",
+    "load_drivers": "load",
     "signal_generator": "sine",
     "power_supply": "zap",
     "oscilloscope": "scope",
@@ -121,12 +124,17 @@ def svg(name: str, color: str, stroke_width: float = 1.8) -> bytes:
     ).encode()
 
 
+@lru_cache(maxsize=256)
+def _renderer(data: bytes) -> QSvgRenderer:
+    return QSvgRenderer(QByteArray(data))
+
+
 def _pixmap(data: bytes, size: int) -> QPixmap:
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    QSvgRenderer(QByteArray(data)).render(painter, QRectF(0, 0, size, size))
+    _renderer(data).render(painter, QRectF(0, 0, size, size))
     painter.end()
     return pixmap
 
@@ -152,4 +160,4 @@ def icon(
 
 def paint(painter: QPainter, name: str, color: str, rect) -> None:
     """Draw an icon directly (for custom-painted widgets)."""
-    QSvgRenderer(QByteArray(svg(name, color))).render(painter, QRectF(rect))
+    _renderer(svg(name, color)).render(painter, QRectF(rect))

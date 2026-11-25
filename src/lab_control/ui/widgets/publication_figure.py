@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
-from PySide6.QtCore import QLineF, QMarginsF, QPointF, QRectF, QSize, QSizeF, Qt
+from PySide6.QtCore import QLineF, QMarginsF, QPointF, QRectF, QSize, QSizeF, Qt, QThread
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -35,7 +35,7 @@ def prepare_publication_font() -> str:
     """Load the existing Windows Arial font for headless Qt as well as desktop Qt."""
     if QGuiApplication.instance() is None:
         raise RuntimeError("导图需要已初始化的 Qt 图形应用")
-    if "Arial" not in QFontDatabase.families() and os.name == "nt":
+    if os.name == "nt" and QThread.isMainThread() and "Arial" not in QFontDatabase.families():
         path = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "arial.ttf"
         if path.is_file():
             QFontDatabase.addApplicationFont(str(path))

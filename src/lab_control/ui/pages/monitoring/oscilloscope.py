@@ -73,9 +73,9 @@ class OscilloscopeMonitoringPage(QWidget):
         self.connection.setObjectName("sourceConnectionState")
         self.connection.hide()  # The device card shows the connection state.
         header.addWidget(self.connection)
-        self.single_job = None
+        self.single_job: SingleCapture | None = None
         self.single_notice = ""
-        self.pausing_for_single = None
+        self.pausing_for_single: object | None = None
         self.frozen_at = 0.0
         self.start_button = QToolButton()
         self.start_button.setObjectName("runButton")
@@ -558,13 +558,7 @@ class OscilloscopeMonitoringPage(QWidget):
             self.export_snapshot().save_raw()
 
     def save_frame(self, device, mode, frame):
-        try:
-            self.controller.watch(
-                self.controller.runtime.monitoring.export_displayed_frame(device, frame, mode),
-                lambda path: self.controller.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}"),
-            )
-        except Exception as exc:
-            self.controller.message.emit(str(exc))
+        self.controller.save_displayed_frame(self, device, frame, mode)
 
     def read_memory(self) -> None:
         if not self.controls or self.memory_busy:
@@ -733,15 +727,18 @@ class OscilloscopeMonitoringPage(QWidget):
         if not isinstance(controls, OscilloscopeControls):
             config = frame.batch.configuration if frame else {}
             interval = config.get("sample_interval_s")
-            valid = isinstance(interval, (int, float)) and interval > 0
-            self.readouts.set("rate", engineering(1 / interval, "Sa/s") if valid else "—")
+            rate_text = interval_text = "—"
+            if isinstance(interval, (int, float)) and interval > 0:
+                rate_text = engineering(1 / interval, "Sa/s")
+                interval_text = engineering(interval, "s") + "/点"
+            self.readouts.set("rate", rate_text)
             index = config.get("timebase")
-            timebase = (
+            timebase_text = (
                 f"索引 {index}"
                 if index is not None and config.get("capture_mode") == "waveform"
-                else (engineering(interval, "s") + "/点" if valid else "—")
+                else interval_text
             )
-            self.readouts.set("timebase", timebase)
+            self.readouts.set("timebase", timebase_text)
             self.readouts.set("points", f"{frame.request.points:,}" if frame else "—")
             self.readouts.set("trigger", "—")
             return

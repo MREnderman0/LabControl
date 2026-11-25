@@ -1,13 +1,13 @@
 """Shared stop-drain and manual recovery presentation for monitoring actions."""
 
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QAbstractButton
 
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.pages.monitoring.recording_state import recording_phase
 
 
 def refresh_reconnect_button(
-    button: QPushButton,
+    button: QAbstractButton,
     controller: WorkspaceController,
     device_id: str,
     task: dict,

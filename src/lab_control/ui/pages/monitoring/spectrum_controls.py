@@ -190,10 +190,10 @@ class SpectrumControls(QFrame):
                 if isinstance(field.input, QLineEdit):
                     field.input.textEdited.connect(lambda _text, n=name: self.frequency_started(n))
                     field.input.editingFinished.connect(
-                        lambda n=name: QTimer.singleShot(0, lambda: self.link(n))
+                        lambda n=name: QTimer.singleShot(0, self, lambda: self.link(n))
                     )
                 field.unit.currentIndexChanged.connect(
-                    lambda _i, n=name: QTimer.singleShot(0, lambda: self.link(n))
+                    lambda _i, n=name: QTimer.singleShot(0, self, lambda: self.link(n))
                 )
         for name, automatic in AUTOMATIC.items():
             if name in self.editors and automatic in self.editors:

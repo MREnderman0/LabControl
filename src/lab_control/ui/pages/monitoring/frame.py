@@ -116,10 +116,10 @@ def chart_card(chart: QFrame, *, status: QLabel | None = None, footer_extra: tup
     if items:
         first = items.pop(0)
         _style_tools(first)
-        if first.layout() is not None:
-            head_layout.addLayout(first.layout())
-        elif first.widget() is not None:
-            head_layout.addWidget(first.widget())
+        if (child_layout := first.layout()) is not None:
+            head_layout.addLayout(child_layout)
+        elif (widget := first.widget()) is not None:
+            head_layout.addWidget(widget)
         else:
             head_layout.addItem(first)
     layout.addWidget(head)
@@ -127,8 +127,8 @@ def chart_card(chart: QFrame, *, status: QLabel | None = None, footer_extra: tup
     body.setContentsMargins(12, 10, 14, 8)
     body.setSpacing(8)
     for item in items:
-        if item.layout() is not None:
-            body.addLayout(item.layout())
+        if (child_layout := item.layout()) is not None:
+            body.addLayout(child_layout)
         else:
             body.addItem(item)
     layout.addLayout(body, 1)

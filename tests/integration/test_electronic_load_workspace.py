@@ -9,7 +9,9 @@ from lab_control.ui.real_window import RealWindow
 
 
 @pytest.mark.parametrize("selection,channels", [("ALL", tuple(range(1, 9))), ("6", (6,))])
-def test_load_management_readback_and_export(qtbot, tmp_path, monkeypatch, selection, channels):
+def test_load_management_readback_and_export(
+    qtbot, tmp_path, monkeypatch, selection, channels, frame_export_directory
+):
     commands = []
     replies = {
         "*IDN?": "DUOHEYI,DH-8318,TEST0001,VER:TEST",

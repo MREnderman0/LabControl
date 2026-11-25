@@ -274,6 +274,8 @@ class DeviceSelector(QWidget):
                 self.combo.setCurrentIndex(self.combo.findData(self.device_id))
             self.controller.navigate.emit("仪器测控", self.category, device_id)
             return
+        if device_id and record is None:
+            device_id = ""
         self.device_id = device_id
         self._names_key = None
         self.channel.blockSignals(True)
@@ -282,7 +284,7 @@ class DeviceSelector(QWidget):
             names = self.controller.channel_names(device_id)
             for channel in self.controller.capabilities(device_id).channels:
                 self.channel.addItem(channel_label(names, channel), channel)
-            category = instrument_category(self.controller.records[device_id])
+            category = instrument_category(record or {})
             self.combo.icon_name = icons.CATEGORY_ICONS.get(category, self.combo.icon_name)
         self.channel.blockSignals(False)
         self.selected.emit(device_id)

@@ -74,9 +74,14 @@ class SaveContext:
     slot_label: str = ""
     channel_names: dict[str, str] = field(default_factory=dict, hash=False)
     resource: str = ""
+    export_parent: Path | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "root", self.root.absolute())
+        if self.export_parent is not None and (
+            not self.export_parent.is_absolute() or self.kind != "single_frame" or self.batch is not None
+        ):
+            raise ValidationError("请选择单帧导出的绝对目录")
         if self.mode not in WORKSPACE_MODES or self.kind not in {"single_frame", "continuous"}:
             raise ValidationError("Invalid save mode or type")
         if self.batch:
@@ -109,12 +114,8 @@ class SaveContext:
             device = f"{filename_part(self.slot_label or self.slot)}_{device}"
         if self.batch:
             return self.batch.folder / device
-        return (
-            self.root
-            / "单设备采集"
-            / self.started_at.strftime("%Y-%m-%d")
-            / f"{_time_name(self.started_at)}_{device}"
-        )
+        parent = self.export_parent or self.root / "单设备采集" / self.started_at.strftime("%Y-%m-%d")
+        return parent / f"{_time_name(self.started_at)}_{device}"
 
     def validate(self, mode: str, kind: SaveKind) -> None:
         if self.mode != mode or self.kind != kind:

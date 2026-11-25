@@ -30,7 +30,7 @@ class ReadOnlyPico(PicoAdapter):
         self.transcript = transcript
         super().__init__(config, library)
 
-    def call(self, name, types, *args, session=True):
+    def call(self, name, types, *args, session=True, accepted=()):
         if name not in {"OpenUnit", "GetUnitInfo", "CloseUnit"}:
             raise DeviceError(f"Read-only verification refused ps6000a{name}", "readonly_violation")
         entry = {"at": utc_now(), "call": "ps6000a" + name}
@@ -41,7 +41,7 @@ class ReadOnlyPico(PicoAdapter):
                     raise DeviceError("Expected exact serial and fixed 8-bit mode", "identity_conflict")
             elif name == "GetUnitInfo":
                 entry["info"] = args[-1]
-            super().call(name, types, *args, session=session)
+            super().call(name, types, *args, session=session, accepted=accepted)
             if name == "GetUnitInfo":
                 entry["response"] = args[0].value.decode("ascii")
             entry["status"] = "PICO_OK"

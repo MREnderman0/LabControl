@@ -147,6 +147,7 @@ def verify(config, channels=()):
         )
         report["stages"][stage] = "passed"
         stage = "acquisition"
+        assert isinstance(session.adapter, Keithley2701Adapter)
         request = AcquisitionRequest(
             channels=tuple(channels) or tuple(session.adapter.capability_details["acquisition_channels"]),
             confirmed=True,

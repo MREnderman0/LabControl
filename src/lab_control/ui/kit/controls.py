@@ -89,8 +89,9 @@ class Switch(QCheckBox):
 
     def setChecked(self, checked: bool) -> None:  # noqa: N802
         super().setChecked(checked)
-        if not self.isVisible():
-            self._position = 1.0 if checked else 0.0
+        if self.signalsBlocked() or not self.isVisible():
+            self._animation.stop()
+            self._move(float(self.isChecked()))
 
     def sizeHint(self) -> QSize:  # noqa: N802
         text = self.text()

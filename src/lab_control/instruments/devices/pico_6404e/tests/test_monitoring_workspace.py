@@ -9,7 +9,9 @@ from lab_control.ui.pages.monitoring.oscilloscope_plot import OscilloscopePlot
 from lab_control.ui.real_window import RealWindow
 
 
-def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qtbot, tmp_path, monkeypatch):
+def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(
+    qtbot, tmp_path, monkeypatch, frame_export_directory
+):
     runtime = ApplicationRuntime(root=tmp_path, hardware=False)
     pico = runtime.add(ConnectionConfig("mock://pico-window", "pico.6404e", "mock"))
     scpi = runtime.add(ConnectionConfig("mock://other-scope", "lecroy.9404m", "mock"))
@@ -90,7 +92,7 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(qt
 
         qtbot.waitUntil(scope.save_action.isEnabled)
         scope.save_action.trigger()
-        qtbot.waitUntil(lambda: bool(list(tmp_path.rglob("*.csv"))))
+        qtbot.waitUntil(lambda: bool(list(frame_export_directory.rglob("*.csv"))))
 
         panel.checks[2].setChecked(True)
         panel.offsets[2].setValue(0.1)

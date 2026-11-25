@@ -10,11 +10,13 @@ import time
 from pathlib import Path
 
 
-def powershell(script: str, *, cancel=None, timeout: float = 20) -> dict:
+def powershell(script: str, *, cancel=None, timeout: float = 20, target: Path | None = None) -> dict:
     if sys.platform != "win32":
         raise OSError("Windows inspection is unavailable on this platform")
     prefix = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $ErrorActionPreference='Stop'; "
     environment = dict(os.environ)
+    if target is not None:
+        environment["LABCONTROL_SIGNATURE_TARGET"] = str(target.resolve())
     windows = Path(environment.get("WINDIR", r"C:\Windows"))
     # A PowerShell 7 parent can leak incompatible Core modules into Windows PowerShell 5.1.
     environment["PSModulePath"] = os.pathsep.join(
@@ -62,12 +64,11 @@ def powershell(script: str, *, cancel=None, timeout: float = 20) -> dict:
 
 
 def signature_status(path: Path) -> dict:
-    # Pass path as a single-quoted PowerShell literal, with embedded quotes doubled.
-    literal = "'" + str(path.resolve()).replace("'", "''") + "'"
     try:
         return powershell(
-            f"$s=Get-AuthenticodeSignature -LiteralPath {literal}; "
-            "@{status=$s.Status.ToString();subject=$s.SignerCertificate.Subject}|ConvertTo-Json -Compress"
+            "$s=Get-AuthenticodeSignature -LiteralPath $env:LABCONTROL_SIGNATURE_TARGET; "
+            "@{status=$s.Status.ToString();subject=$s.SignerCertificate.Subject}|ConvertTo-Json -Compress",
+            target=path,
         )
     except (OSError, ValueError, TimeoutError) as exc:
         return {"status": "unknown", "error": str(exc)}

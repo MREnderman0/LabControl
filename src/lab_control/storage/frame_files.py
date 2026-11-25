@@ -18,7 +18,7 @@ def filename(stem: str) -> str:
     return stem
 
 
-def directory(value: str) -> Path:
+def directory(value: str, root: Path) -> Path:
     path = Path(value)
     if not path.is_absolute() or path.anchor.startswith(("\\\\", "//")) or ".." in path.parts:
         raise ValueError("请选择本机绝对目录")
@@ -29,6 +29,12 @@ def directory(value: str) -> Path:
             or any(ord(c) < 32 or c in '<>:"|?*' for c in part)
         ):
             raise ValueError("目录包含无效的 Windows 路径")
+    if not root.is_absolute() or root == Path(root.anchor) or not path.is_relative_to(root):
+        raise ValueError("所选目录必须在配置的导出目录内")
+    if any(p.is_symlink() or p.is_junction() for p in (path, *path.parents)):
+        raise ValueError("导出目录不能经过符号链接或目录联接")
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError("所选目录超出导出范围")
     return path
 
 

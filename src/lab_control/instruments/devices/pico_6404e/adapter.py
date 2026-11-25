@@ -385,7 +385,7 @@ class PicoAdapter:
                         count = info.count
                         if channel not in counts or not 0 <= count <= request.points - counts[channel]:
                             raise DeviceError("Invalid SDK streaming sample count", "parse_error")
-                        if count and request.consistency == "live" and info.start != counts[channel]:
+                        if count and info.start != counts[channel]:
                             raise DeviceError("Pico streaming batch contains a sample gap", "parse_error")
                         counts[channel] += count
                         if info.overflow:

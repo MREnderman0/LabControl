@@ -340,18 +340,9 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
 
     def save(self) -> None:
         frame = self.plot.displayed_frame
-        if frame is None:
-            return
-        try:
-            future = self.controller.runtime.monitoring.export_displayed_frame(
-                self.device_id, frame, self.mode
-            )
-            self.controller.watch(
-                future, lambda path: self.controller.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}")
-            )
+        if frame is not None:
+            self.controller.save_displayed_frame(self, self.device_id, frame, self.mode)
             self.refresh()
-        except Exception as exc:
-            self.controller.message.emit(str(exc))
 
     def focus_card(self, spec) -> None:
         self.selector.select(spec["device_id"])

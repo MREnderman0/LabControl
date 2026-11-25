@@ -264,6 +264,7 @@ class ProcessingViewer(QWidget):
                 "power": "功率",
                 "frequency": "频率",
                 "temperature": "温度",
+                "acceleration": "加速度",
                 "waveform": "波形",
                 "spectrum": "频谱",
                 "voltage": "电压",
@@ -320,7 +321,7 @@ class ProcessingViewer(QWidget):
                     spec = ScopeDisplay.parse(display)
                     if spec.unit != series["unit"]:
                         raise ValueError("波形单位与采集时示波器刻度不一致")
-                    self.scope_specs[f"CH {series.get('channel', 1)}"] = spec
+                    self.scope_specs[self._channel_name(series)] = spec
             power = bool(self.info.get("power_units"))
             if power and self.watts.isChecked() and series.get("unit") == "dBm":
                 y = np.power(10.0, np.asarray(y) / 10.0) * 1e-3
@@ -386,7 +387,9 @@ class ProcessingViewer(QWidget):
                         style=CHANNEL_STYLES[(channel // len(CHANNEL_PALETTE)) % len(CHANNEL_STYLES)],
                     ),
                     name=(
-                        f"{name} · {engineering(self.scope_specs[name].units_per_div, self.scope_specs[name].unit)}/格"
+                        escape(
+                            f"{name} · {engineering(self.scope_specs[name].units_per_div, self.scope_specs[name].unit)}/格"
+                        )
                         if scope
                         else escape(name)
                     ),

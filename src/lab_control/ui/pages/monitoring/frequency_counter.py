@@ -34,6 +34,7 @@ from lab_control.ui.pages.monitoring.recording_state import (
     RecordingButton,
     recording_phase,
     recording_save_notice,
+    update_recording_frame,
 )
 from lab_control.ui.pages.monitoring.timing import MonitoringTiming
 from lab_control.ui.widgets.device_selector import DeviceSelector
@@ -164,7 +165,7 @@ class FrequencyCounterMonitoringPage(QWidget):
         self.channel_notice = ""
         self._sync_channels()
         self.plot.reset()
-        self.plot.setVisible(bool(device_id))
+        self.chart.setVisible(bool(device_id))
         self.channel_frame.setVisible(bool(device_id))
         self.empty.setVisible(not device_id)
         self.timing.bind(device_id, "general")
@@ -258,17 +259,8 @@ class FrequencyCounterMonitoringPage(QWidget):
 
     def save(self) -> None:
         frame = self.plot.displayed_frame
-        if frame is None:
-            return
-        try:
-            future = self.controller.runtime.monitoring.export_displayed_frame(
-                self.device_id, frame, "general"
-            )
-            self.controller.watch(
-                future, lambda path: self.controller.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}")
-            )
-        except Exception as exc:
-            self.controller.message.emit(str(exc))
+        if frame is not None:
+            self.controller.save_displayed_frame(self, self.device_id, frame, "general")
 
     def focus_card(self, spec: dict) -> None:
         self.selector.select(spec["device_id"])
@@ -293,6 +285,7 @@ class FrequencyCounterMonitoringPage(QWidget):
         self._sync_channels()
         state = self.controller.states.get(self.device_id, {})
         task = self.controller.runtime.monitoring.snapshots().get(self.device_id, {})
+        update_recording_frame(self.chart, task)
         connected = state.get("connectionState") in {"connected", "busy"}
         self.connection.setText("已连接" if connected else state.get("connectionState", "未连接"))
         draining = recording_phase(task) == "draining"

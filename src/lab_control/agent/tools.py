@@ -253,7 +253,11 @@ def create_mcp_server(service, *, local_commands=None) -> Server:
                 tool=params.name,
                 code=getattr(exc, "code", "invalid_parameter"),
             )
-            payload = {"ok": False, "code": getattr(exc, "code", "invalid_parameter"), "message": str(exc)}
+            payload = {
+                "ok": False,
+                "code": getattr(exc, "code", "invalid_parameter"),
+                "message": "文件读写失败" if isinstance(exc, OSError) else str(exc),
+            }
             return types.CallToolResult(
                 is_error=True,
                 content=[types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],

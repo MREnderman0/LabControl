@@ -59,7 +59,9 @@ class ReadoutStrip(QFrame):
         self.columns = columns
         compact = columns < len(self.cells)
         for index, cell in enumerate(self.cells.values()):
-            cell.layout().setContentsMargins(
+            layout = cell.layout()
+            assert layout is not None
+            layout.setContentsMargins(
                 7 if compact else 12, 4 if compact else 9, 7 if compact else 12, 4 if compact else 9
             )
             self.grid.addWidget(cell, index // columns, index % columns)

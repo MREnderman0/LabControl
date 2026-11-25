@@ -97,7 +97,7 @@ class DisplayControls:
                 self.update_sliders()
 
     def update_sliders(self):
-        if self.sliders:
+        if self.sliders and self.offset is not None:
             scale = self.top.value() / 1000
             for slider, spin in zip(self.sliders, (self.top, self.offset), strict=True):
                 slider.setEnabled(not self.auto.isChecked())

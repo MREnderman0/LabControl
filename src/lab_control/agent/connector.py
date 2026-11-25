@@ -20,6 +20,17 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
+from pydantic import BaseModel, ConfigDict, Field
+
+FRAME_TIMEOUT = 600
+MAX_FRAME_BYTES = 512 * 1024 * 1024
+
+
+class DownloadFrame(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    grant_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    task_id: str = Field(min_length=1, max_length=128)
+    directory: str = Field(min_length=1, max_length=32767)
 
 
 def connection(path: Path) -> tuple[dict, ssl.SSLContext | bool]:
@@ -66,8 +77,10 @@ async def client_call(client, config, verify, name, arguments):
     if name != "download_frame" and not remote_save:
         return await client.call_tool(name, arguments)
     try:
-        folder = directory(arguments["directory"])
-        folder.mkdir(parents=True, exist_ok=True)
+        if name == "download_frame":
+            arguments = DownloadFrame.model_validate(arguments).model_dump()
+        export_root = Path(config.get("export_root", Path.home() / "Downloads" / "LabControl"))
+        folder = directory(arguments["directory"], export_root)
         grant = arguments["grant_id"]
         if remote_save:
             submitted = await client.call_tool(name, {**arguments, "directory": ""})
@@ -76,16 +89,22 @@ async def client_call(client, config, verify, name, arguments):
             task_id = submitted.structured_content["data"]["id"]
         else:
             task_id = arguments["task_id"]
-        while True:
-            status = await client.call_tool("get_task_status", {"grant_id": grant, "task_id": task_id})
-            if status.is_error:
-                return status
-            task = status.structured_content["data"]
-            if task["id"] != task_id:
-                raise ValueError("Unexpected task identity")
-            if task["state"] not in {"accepted", "running", "stopping"}:
-                break
-            await asyncio.sleep(0.25)
+        try:
+            async with asyncio.timeout(FRAME_TIMEOUT):
+                while True:
+                    status = await client.call_tool(
+                        "get_task_status", {"grant_id": grant, "task_id": task_id}
+                    )
+                    if status.is_error:
+                        return status
+                    task = status.structured_content["data"]
+                    if task["id"] != task_id:
+                        raise ValueError("Unexpected task identity")
+                    if task["state"] not in {"accepted", "running", "stopping"}:
+                        break
+                    await asyncio.sleep(0.25)
+        except TimeoutError as exc:
+            raise TimeoutError("等待单帧超时，可按原任务号重新下载") from exc
         result = task["result"]
         if (
             task["state"] != "completed"
@@ -97,12 +116,17 @@ async def client_call(client, config, verify, name, arguments):
         expected = {"both": ["png", "csv"], "png": ["png"], "csv": ["csv"]}[result["mode"]]
         if [f["format"] for f in result["files"]] != expected:
             raise ValueError("Incomplete frame manifest")
+        if any(type(f["size"]) is not int or not 0 < f["size"] <= MAX_FRAME_BYTES for f in result["files"]):
+            raise ValueError("Invalid frame artifact size")
+        directory(str(folder), export_root).mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=folder, prefix=".frame-") as stage:
             staged = {}
             for info in result["files"]:
                 ext = info["format"]
                 path = Path(stage) / ("frame." + ext)
-                await asyncio.to_thread(download, config, verify, info["artifact_id"], grant, path)
+                await asyncio.to_thread(
+                    download, config, verify, info["artifact_id"], grant, path, max_bytes=info["size"]
+                )
                 with path.open("rb") as stream:
                     if (
                         path.stat().st_size != info["size"]
@@ -115,11 +139,11 @@ async def client_call(client, config, verify, name, arguments):
             )
             if last.is_error:
                 return last
-            targets = publish(folder, stem, staged)
+            targets = publish(folder, stem, staged, check=lambda: directory(str(folder), export_root))
         for info in result["files"]:
             info["path"] = str(targets[info["format"]])
         payload = {"ok": True, "data": task}
-    except (OSError, ValueError, KeyError, httpx2.HTTPError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, httpx2.HTTPError) as exc:
         payload = {"ok": False, "message": str(exc), "task_id": locals().get("task_id", "")}
     return types.CallToolResult(
         is_error=not payload["ok"],
@@ -142,14 +166,7 @@ async def bridge(config, verify, *, check=False):
                     types.Tool(
                         name="download_frame",
                         description="下载原单帧任务到本机目录，可在传输中断后重试。",
-                        input_schema={
-                            "type": "object",
-                            "properties": {
-                                k: {"type": "string"} for k in ("grant_id", "task_id", "directory")
-                            },
-                            "required": ["grant_id", "task_id", "directory"],
-                            "additionalProperties": False,
-                        },
+                        input_schema=DownloadFrame.model_json_schema(),
                     )
                 )
             return listing
@@ -177,7 +194,7 @@ async def call_once(config, verify, name, arguments):
         return 1 if result.is_error else 0
 
 
-def download(config, verify, artifact: str, grant: str, output: Path):
+def download(config, verify, artifact: str, grant: str, output: Path, *, max_bytes: int | None = None):
     if not re.fullmatch(r"[a-f0-9]{32}", artifact) or not re.fullmatch(r"[a-f0-9]{32}", grant):
         raise ValueError("Invalid artifact or grant ID")
     url = config["url"].removesuffix("/mcp") + f"/artifacts/{artifact}?" + urlencode({"grant_id": grant})
@@ -194,12 +211,16 @@ def download(config, verify, artifact: str, grant: str, output: Path):
     ) as client:
         with client.stream("GET", url) as response:
             response.raise_for_status()
+            expected = response.headers.get("content-length")
+            if max_bytes is not None and expected is not None and int(expected) > max_bytes:
+                raise ValueError("Artifact exceeds download limit")
             count = 0
             with partial.open("xb") as stream:
                 for chunk in response.iter_bytes():
-                    stream.write(chunk)
                     count += len(chunk)
-            expected = response.headers.get("content-length")
+                    if max_bytes is not None and count > max_bytes:
+                        raise ValueError("Artifact exceeds download limit")
+                    stream.write(chunk)
             if expected is not None and count != int(expected):
                 raise OSError("Incomplete artifact download; partial file retained")
     # Windows rename refuses to replace an existing destination.

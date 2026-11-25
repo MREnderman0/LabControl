@@ -6,7 +6,7 @@ from .test_sessions import runtime as runtime
 from .test_workspace import page as page
 
 
-def test_drag_previews_without_io_and_saves_actual_frame(page, qtbot, monkeypatch):
+def test_drag_previews_without_io_and_saves_actual_frame(page, qtbot, monkeypatch, frame_export_directory):
     page, app, key, peer = page
     page.start()
     qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
@@ -26,7 +26,8 @@ def test_drag_previews_without_io_and_saves_actual_frame(page, qtbot, monkeypatc
     assert page.plot.displayed_frame is old
     saved = []
 
-    def export(_key, frame, mode):
+    def export(_key, frame, mode, *, directory):
+        assert directory == frame_export_directory
         saved.append(frame)
         future = Future()
         future.set_result([])

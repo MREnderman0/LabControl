@@ -92,7 +92,9 @@ def menu_actions(page):
     return {a.text(): a for a in menu.actions() if not a.isSeparator()}
 
 
-def test_save_displayed_frame_without_reading_and_preserve_draft(spectrum, qtbot, monkeypatch):
+def test_save_displayed_frame_without_reading_and_preserve_draft(
+    spectrum, qtbot, monkeypatch, frame_export_directory
+):
     _, page, runtime, key, adapter = spectrum
     adapter.supports_live_acquisition = True
     original = adapter.acquire
@@ -149,7 +151,9 @@ def test_save_displayed_frame_without_reading_and_preserve_draft(spectrum, qtbot
     runtime.monitoring.stop(key).result(3)
 
 
-def test_save_old_display_after_parameter_change_and_single_row(spectrum, qtbot, monkeypatch):
+def test_save_old_display_after_parameter_change_and_single_row(
+    spectrum, qtbot, monkeypatch, frame_export_directory
+):
     _, page, runtime, key, _ = spectrum
     from PySide6.QtWidgets import QDoubleSpinBox
 

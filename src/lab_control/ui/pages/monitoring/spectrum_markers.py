@@ -191,7 +191,7 @@ class SpectrumPlot(LivePlot):
                 angle=90, movable=False, pen=pg.mkPen(tk.ACCENT, width=1, style=Qt.PenStyle.DashLine)
             )
             label = MarkerLabel(color=tk.TEXT, anchor=(0.5, 1), fill=tk.SURFACE_2, border=tk.BORDER_STRONG)
-            point = pg.ScatterPlotItem(size=7, brush=tk.ACCENT, pen=None)
+            point = pg.ScatterPlotItem(size=7, brush=tk.ACCENT, pen=None, useCache=False)
             line.edit_requested.connect(lambda n=marker.number: self.edit_marker.emit(n))
             label.edit_requested.connect(lambda n=marker.number: self.edit_marker.emit(n))
             line.setZValue(10)

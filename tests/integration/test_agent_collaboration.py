@@ -386,6 +386,15 @@ def test_cross_model_capabilities_and_output_authority(tmp_path, adapter):
         capabilities = runtime.sessions.capability_snapshot(device).channels[1]
         operations = [c.name for c in capabilities.operations if c.writable]
         actions = ["view", "apply", "acquire"]
+        if adapter == "rigol.dg5504pro":
+            limited_grant = service.policy.create_grant(
+                client, [device], actions, channels=[1], operations=operations, limits={}
+            )
+            denied = service.acquire_once(
+                client, limited_grant, device, {"kind": "status", "quantity": "frequency"}, "status-read"
+            )
+            assert wait_task(service, client, limited_grant, denied)["code"] == "permission_denied"
+            actions.append("read_parameters")
         if adapter in {"keysight.3458a", "rs.rtm3004"}:
             actions.append("output_trigger")
         grant = service.policy.create_grant(

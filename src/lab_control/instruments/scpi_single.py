@@ -1,9 +1,13 @@
 """Single-arm protocols shared by compatible SCPI oscilloscopes."""
 
 import time
+from abc import abstractmethod
+from collections.abc import Callable
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
 
 from lab_control.domain.instruments import DeviceError
+from lab_control.transport.base import Transport
 
 
 def token(adapter, command):
@@ -11,6 +15,25 @@ def token(adapter, command):
 
 
 class ScpiSingle:
+    single_divisions: int
+    transport: Transport
+
+    if TYPE_CHECKING:
+        # The concrete adapter supplies its model-specific read implementation.
+        def read(self, operation: str, channel: int = 1) -> Any: ...
+
+    @abstractmethod
+    def single_initial(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def single_arm(self) -> Callable[[], bool]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def single_restore(self, initial):
+        raise NotImplementedError
+
     def single_span(self):
         return float(self.read("timebase")) * self.single_divisions
 
@@ -40,6 +63,14 @@ class ScpiSingle:
 
 
 class RohdeSingle(ScpiSingle):
+    @abstractmethod
+    def continuous_frame_ready(self) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def single_finished(self) -> bool:
+        raise NotImplementedError
+
     def ensure_continuous(self):
         if not self.single_initial():
             self.single_restore(True)

@@ -9,10 +9,11 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QFileDialog, QMenu, QMessageBox
+from PySide6.QtWidgets import QMenu, QMessageBox
 
 from lab_control.ui.styles import tokens as tk
 
+from .frame_destination import choose_frame_destination
 from .publication_figure import export_figure
 
 
@@ -92,11 +93,9 @@ class PublicationPlotWidget(pg.PlotWidget):
         return PlotExport(curves, label(xaxis), label(yaxis), xaxis.logMode, yaxis.logMode)
 
     def save_image(self, data):
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "保存图像", "", "PNG (*.png)", options=QFileDialog.Option.DontConfirmOverwrite
-        )
-        if filename:
+        filename = choose_frame_destination(self, png=True)
+        if filename is not None:
             try:
-                data.write(Path(filename).with_suffix(".png"))
+                data.write(filename)
             except (ValueError, OSError) as exc:
                 QMessageBox.warning(self, "保存图像", str(exc))

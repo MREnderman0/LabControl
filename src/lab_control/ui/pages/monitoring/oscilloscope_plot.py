@@ -1,6 +1,7 @@
 """Fixed instrument grid; decimation affects the display, never the saved frame."""
 
 from dataclasses import replace
+from html import escape
 
 import numpy as np
 import pyqtgraph as pg
@@ -127,6 +128,9 @@ class ScopeTag(pg.TextItem):
         view = self.getViewBox()
         if view is not None and self.press_pos is not None:
             delta = view.mapSceneToView(position).y() - view.mapSceneToView(self.press_pos).y()
+            if not np.isfinite(delta):
+                self.cancel_drag()
+                return
             y = max(-4.0, min(4.0, self.press_level + delta))
             self.setPos(self.pos().x(), y)
             self.dragged.emit(y, finished)
@@ -221,7 +225,7 @@ class OscilloscopePlot(LivePlot):
                 number = f"{float(number):.2f}"
             number = number.replace("-", "−")
             color = COLORS[(ch - 1) % len(COLORS)]
-            labels.append(f'<span style="color:{color}">CH{ch} {number} {scaled_unit}</span>')
+            labels.append(f'<span style="color:{color}">CH{ch} {number} {escape(scaled_unit)}</span>')
         self.bottom_voltage.setText(("预览 · " if preview else "") + "底边电压　" + "　".join(labels))
         self.bottom_voltage.setVisible(bool(labels))
 
@@ -379,7 +383,7 @@ class OscilloscopePlot(LivePlot):
             if update_legend:
                 legend.addItem(
                     curve,
-                    f'<span style="color:{color}">CH{m.channel}  {engineering(spec.units_per_div, m.unit)}/格</span>',
+                    f'<span style="color:{color}">CH{m.channel}  {escape(engineering(spec.units_per_div, m.unit))}/格</span>',
                 )
             used.add(key)
         for key, curve in self.curves.items():
@@ -445,6 +449,8 @@ class OscilloscopePlot(LivePlot):
     def clear_preview(self) -> None:
         self.preview_hint.hide()
         if not self.preview_targets:
+            if self.instrument_view and self.display_specs:
+                self._place_tags(self.display_specs)
             self.fit_current()
             return
         self.preview_timer.stop()
@@ -538,7 +544,7 @@ class OscilloscopePlot(LivePlot):
                 color = COLORS[(m.channel - 1) % len(COLORS)]
                 legend.addItem(
                     self.curves[m.channel, m.quantity],
-                    f'<span style="color:{color}">CH{m.channel}  {engineering(spec.units_per_div, m.unit)}/格</span>',
+                    f'<span style="color:{color}">CH{m.channel}  {escape(engineering(spec.units_per_div, m.unit))}/格</span>',
                 )
             self.legend_signature = signature
         self.meta.setText(
@@ -653,13 +659,13 @@ class OscilloscopePlot(LivePlot):
             color = COLORS[(m.channel - 1) % len(COLORS)]
             values = [f"Vpp {engineering(vpp, m.unit)}", f"RMS {engineering(rms, m.unit)}"]
             values.append(f"{engineering(frequency, 'Hz')}" if frequency else "频率 —")
-            text = "&nbsp;·&nbsp;".join(value.replace(" ", "&nbsp;") for value in values)
+            text = "&nbsp;·&nbsp;".join(escape(value).replace(" ", "&nbsp;") for value in values)
             parts.append(
                 f'<span style="color:{color}; font-weight:600">CH{m.channel}</span>'
                 f'&nbsp;&nbsp;<span style="color:{tk.TEXT_2}">{text}</span>'
             )
         # Wrap only between channels, never inside a value.
-        self.measurements.setText("&nbsp;&nbsp;&nbsp; ".join(parts).replace("-", "−"))
+        self.measurements.setText("&nbsp;&nbsp;&nbsp; ".join(parts))
         self.measurements.setVisible(bool(parts))
 
     def restrict_channels(self, channels: tuple[int, ...]) -> None:

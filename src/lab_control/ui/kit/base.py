@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape
+
 from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QFontMetrics, QPainter
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QToolButton, QWidget
@@ -24,9 +26,16 @@ def set_property(widget: QWidget, name: str, value) -> None:
         repolish(widget)
 
 
+def plain_tooltip(text: str) -> str:
+    if "<" in text:
+        return "<p>" + escape(text).replace("\n", "<br>") + "</p>"
+    return text
+
+
 def label(text: str = "", role: str = "", parent: QWidget | None = None) -> QLabel:
     """Text with a typographic role from the stylesheet: title, heading, caption, muted, value, mono."""
     widget = QLabel(text, parent)
+    widget.setTextFormat(Qt.TextFormat.PlainText)
     if role:
         widget.setProperty("role", role)
     return widget
@@ -47,8 +56,8 @@ class ElideLabel(QLabel):
         # Show the full text as a tooltip while elided, without replacing a tooltip set by the page.
         automatic = getattr(self, "_automatic_tip", "")
         if shown != full and self.toolTip() in ("", automatic):
-            self._automatic_tip = full
-            self.setToolTip(full)
+            self._automatic_tip = plain_tooltip(full)
+            self.setToolTip(self._automatic_tip)
         elif shown == full and automatic and self.toolTip() == automatic:
             self._automatic_tip = ""
             self.setToolTip("")
@@ -80,6 +89,7 @@ class Dot(QWidget):
         self._size = size
         self._phase = 0.0
         self._animation: QVariantAnimation | None = None
+        self._live = False
         self._color = QColor(tk.OK)
         self.status = ""
         extent = box or size + 6
@@ -89,16 +99,33 @@ class Dot(QWidget):
     def set_status(self, status: str, live: bool = False) -> None:
         self.status = status
         self._color = QColor(tk.STATUS.get(status, status))
+        self._live = live
         if live and self._animation is None:
             self._animation = QVariantAnimation(self, startValue=0.0, endValue=1.0, duration=1800)
             self._animation.setLoopCount(-1)
             self._animation.valueChanged.connect(self._tick)
-            self._animation.start()
-        elif not live and self._animation is not None:
-            self._animation.stop()
-            self._animation = None
-            self._phase = 0.0
+        self._sync_pulse()
         self.update()
+
+    def _sync_pulse(self) -> None:
+        if self._animation is None:
+            return
+        if self._live and self.isVisible():
+            if self._animation.state() != QVariantAnimation.State.Running:
+                self._animation.start()
+        else:
+            self._animation.stop()
+            self._phase = 0.0
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._sync_pulse()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        if self._animation is not None:
+            self._animation.stop()
+            self._phase = 0.0
 
     def _tick(self, value: float) -> None:
         self._phase = value
@@ -109,7 +136,7 @@ class Dot(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
         center = QPointF(self.width() / 2, self.height() / 2)
-        if self._animation is not None:
+        if self._live:
             halo = QColor(self._color)
             halo.setAlphaF(0.38 * (1 - self._phase))
             radius = min(self._size / 2 + 3 * self._phase, self.width() / 2)
@@ -139,6 +166,7 @@ class Pill(QFrame):
             self.icon_view.setFixedSize(13, 13)
             layout.addWidget(self.icon_view)
         self.label = QLabel(text)
+        self.label.setTextFormat(Qt.TextFormat.PlainText)
         self.label.setObjectName("statusPillText")
         layout.addWidget(self.label)
         self.kind = ""

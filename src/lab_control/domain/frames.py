@@ -81,10 +81,7 @@ def validate_recorded_batch(batch: MeasurementBatch) -> None:
         or not (set(batch.configuration) - software_keys) <= batch.settings_timestamps.keys()
     ):
         raise DeviceError("缺少本次采集的参数快照来源，未保存数据", "incomplete_snapshot")
-    if not batch.measurements or any(
-        m.quality not in {Quality.GOOD, Quality.SIMULATED} for m in batch.measurements
-    ):
-        raise DeviceError("采集失败，未保存数据", "acquisition_failed")
+    validate_displayed_batch(batch)
 
 
 def validate_displayed_batch(batch: MeasurementBatch) -> None:
@@ -98,7 +95,7 @@ def validate_displayed_batch(batch: MeasurementBatch) -> None:
             measurement.quality not in {Quality.GOOD, Quality.SIMULATED}
             or not values.size
             or not np.all(np.isfinite(values))
-            or (axis is not None and (axis.size != values.size or not np.all(np.isfinite(axis))))
+            or (axis is not None and (axis.shape != values.shape or not np.all(np.isfinite(axis))))
         ):
             raise DeviceError("显示帧数据无效，未保存", "acquisition_failed")
 

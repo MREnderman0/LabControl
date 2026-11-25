@@ -250,6 +250,7 @@ class SessionManager:
         argument: Any = None,
         *,
         quiet: bool = False,
+        scheduled_observation: bool = False,
         before_io: Callable[[DeviceSession], None] | None = None,
     ) -> Future[Any] | None:
         """Atomically reserve an idle worker; background jobs never form a queue."""
@@ -264,7 +265,12 @@ class SessionManager:
                 or session.pending
                 or session.control_group
                 or (quiet and (session.monitoring or session.recording))
-                or (operation == "read_settings" and session.controls_locked)
+                or (
+                    session.controls_locked
+                    and (
+                        operation == "read_settings" or (operation == "observe" and not scheduled_observation)
+                    )
+                )
                 or session.state not in {"connected", "busy"}
                 or (session.stream_future and not session.stream_future.done())
             ):
@@ -278,6 +284,7 @@ class SessionManager:
                     operation,
                     argument,
                     quiet=quiet,
+                    scheduled_observation=scheduled_observation,
                     submitted_at=time.perf_counter(),
                     before_io=before_io,
                 )
@@ -512,13 +519,14 @@ class SessionManager:
                 or self.leases.owns_resources(device_id)
             }
 
-    def _close_adapter(self, session: DeviceSession) -> None:
+    def _close_adapter(self, session: DeviceSession, *, local_only: bool = True) -> None:
         for attribute in ("adapter", "cleanup_handle"):
             handle = getattr(session, attribute)
             if handle is None:
                 continue
             try:
-                handle.close()
+                close = getattr(handle, "close_local", handle.close) if local_only else handle.close
+                close()
             except Exception:
                 with self.lock:
                     session.resource_state = "release_unconfirmed"
@@ -583,7 +591,7 @@ class SessionManager:
                 raise DeviceError("Stop acquisition before submitting another task", "task_busy")
             if session.controls_locked and (
                 self._controls_instrument(operation, argument)
-                or operation in {"read_settings", "refresh_capabilities"}
+                or operation in {"read_settings", "refresh_capabilities", "observe"}
             ):
                 raise DeviceError("采集中参数已锁定，请先停止采集或记录", "task_busy")
             if (
@@ -773,12 +781,17 @@ class SessionManager:
         argument: Any,
         *,
         quiet: bool = False,
+        scheduled_observation: bool = False,
         submitted_at: float | None = None,
         before_io: Callable[[DeviceSession], None] | None = None,
     ) -> Any:
-        if before_io is not None:
+        check_observation = operation == "observe" and not scheduled_observation
+        if before_io is not None or check_observation:
             try:
-                before_io(session)
+                if check_observation and session.controls_locked:
+                    raise DeviceError("记录期间不能额外读取参数", "task_busy")
+                if before_io is not None:
+                    before_io(session)
             except Exception:
                 # Admission failures are not communication failures. No device I/O
                 # has occurred; leave the session usable and release this reservation.
@@ -944,7 +957,7 @@ class SessionManager:
                 failure = exc
             finally:
                 try:
-                    self._close_adapter(session)
+                    self._close_adapter(session, local_only=cleanup_only)
                 except Exception as exc:
                     if failure is None:
                         failure = exc

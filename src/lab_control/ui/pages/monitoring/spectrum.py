@@ -310,16 +310,8 @@ class SpectrumMonitoringPage(SpectrumMarkerActions, QWidget):
         if frame is None:
             frame = self.plot.displayed_frame
         if frame is not None:
-            try:
-                self.controller.watch(
-                    self.controller.runtime.monitoring.export_displayed_frame(
-                        self.device_id, frame, self.mode
-                    ),
-                    lambda path: self.controller.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}"),
-                )
-                self.refresh()
-            except Exception as exc:
-                self.controller.message.emit(str(exc))
+            self.controller.save_displayed_frame(self, self.device_id, frame, self.mode)
+            self.refresh()
 
     def pin(self) -> None:
         if self.source:

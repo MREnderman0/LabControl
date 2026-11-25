@@ -117,3 +117,19 @@ def test_stale_frame_tags_unlock_only_on_fresh_scale(scope, qtbot, writes):
     qtbot.waitUntil(lambda: len(writes) == 2 and not page.controls.running)
     assert writes[-1].operation == "offset"
     assert writes[-1].parameters["value"] == pytest.approx(levels[0] * 1.0)
+
+
+def test_visible_switch_tracks_silent_readback(qtbot):
+    from PySide6.QtCore import QSignalBlocker
+
+    from lab_control.ui.kit.controls import Switch
+
+    switch = Switch()
+    qtbot.addWidget(switch)
+    switch.show()
+    switch.setChecked(True)
+    with QSignalBlocker(switch):
+        switch.setChecked(False)
+        switch.setChecked(True)
+    assert switch.isChecked() and switch._position == 1.0
+    assert switch._animation.state() == switch._animation.State.Stopped

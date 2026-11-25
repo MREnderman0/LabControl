@@ -25,6 +25,20 @@ function Find-Material($Entry) {
     }
     return ''
 }
+function Write-BootstrapRequirement($Name, $Version) {
+    $wheels = @($inventory.files | Where-Object {
+        [IO.Path]::GetFileName($_.path) -like "$Name-$Version-*.whl"
+    })
+    if (-not $wheels.Count) { throw "No pinned $Name wheel in the materials manifest." }
+    $hashes = foreach ($wheel in $wheels) {
+        if ($wheel.sha256 -notmatch '^[0-9a-f]{64}$') { throw "Invalid pinned hash for $Name." }
+        "--hash=sha256:$($wheel.sha256)"
+    }
+    $path = Join-Path $projectRoot ".tools/setup/$Name-requirement.txt"
+    New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
+    [IO.File]::WriteAllText($path, "$Name==$Version " + ($hashes -join ' '), [Text.Encoding]::ASCII)
+    return $path
+}
 $names = @('HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','UV_DEFAULT_INDEX','UV_INDEX','UV_EXTRA_INDEX_URL','UV_INDEX_URL','PIP_INDEX_URL','PIP_EXTRA_INDEX_URL','PIP_CONFIG_FILE','PIP_DISABLE_PIP_VERSION_CHECK','UV_PROJECT_ENVIRONMENT','UV_HTTP_TIMEOUT','UV_LINK_MODE','UV_PYTHON_DOWNLOADS','UV_FIND_LINKS','PSModulePath')
 $saved = @{}
 $names += @('UV_CACHE_DIR', 'PIP_CACHE_DIR')
@@ -70,7 +84,7 @@ try {
                 try {
                     $curlArgs = @('--fail','--location','--proto','=https','--proto-redir','=https','--connect-timeout','15','--max-time','600','--output',$partial)
                     if (-not $UseProxy) { $curlArgs += @('--noproxy','*') }
-                    & curl.exe @curlArgs $entry.source
+                    & (Join-Path $env:SystemRoot 'System32\curl.exe') @curlArgs $entry.source
                     if ($LASTEXITCODE -ne 0 -or -not (Test-Material $partial $entry)) { throw 'Pinned Python download/hash verification failed.' }
                     $signature = Get-AuthenticodeSignature -LiteralPath $partial
                     if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notlike '*Python Software Foundation*') { throw 'Python installer signature verification failed.' }
@@ -112,7 +126,8 @@ try {
         } else {
             & $envPython -m ensurepip
             if ($LASTEXITCODE -ne 0) { throw 'Could not bootstrap pip.' }
-            $pipArgs = @('-m','pip','--isolated','install','uv==0.12.18')
+            $uvRequirement = Write-BootstrapRequirement 'uv' '0.12.18'
+            $pipArgs = @('-m','pip','--isolated','install','--require-hashes','-r',$uvRequirement)
             if ($offlinePython) { $pipArgs += @('--no-index','--find-links',$offlinePython) } else { $pipArgs += @('--index-url',$index) }
             & $envPython @pipArgs
             if ($LASTEXITCODE -ne 0) { throw 'uv preparation failed; no foreign fallback.' }
@@ -141,7 +156,8 @@ try {
     Write-Host "Project environment: $envPython; domestic mirror: $index; verified cache: $offlinePython"
     & $uv pip sync $exportPath --require-hashes --python $envPython @sourceArgs
     if ($LASTEXITCODE -ne 0) { throw 'Locked dependency installation failed; no foreign fallback.' }
-    & $uv pip install "setuptools==$setuptools" --python $envPython @sourceArgs
+    $backendRequirement = Write-BootstrapRequirement 'setuptools' $setuptools
+    & $uv pip install --require-hashes -r $backendRequirement --python $envPython @sourceArgs
     if ($LASTEXITCODE -ne 0) { throw 'Build backend preparation failed; no foreign fallback.' }
     & $uv pip install --no-deps --no-build-isolation --python $envPython @sourceArgs -e .
     if ($LASTEXITCODE -ne 0) { throw 'Local project installation failed.' }

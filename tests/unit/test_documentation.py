@@ -200,7 +200,9 @@ def test_historical_and_redirect_documents_do_not_validate_old_commands(tmp_path
     assert not any("command" in error or "launch entry" in error for error in errors)
 
 
-@pytest.mark.parametrize("entry", ["python -m lab_control", "TF-LabControl-Agent.exe", "LabControl-Agent.exe", "lab-control"])
+@pytest.mark.parametrize(
+    "entry", ["python -m lab_control", "TF-LabControl-Agent.exe", "LabControl-Agent.exe", "lab-control"]
+)
 def test_agent_connector_options_use_early_dispatch_parser(tmp_path, entry):
     source = tmp_path / "src/lab_control/agent/connector.py"
     source.parent.mkdir(parents=True)

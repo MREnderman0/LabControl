@@ -22,7 +22,7 @@ CATEGORY_DESCRIPTIONS = {
     "spectrum_analyzer": "频率范围、RBW 与轨迹",
     "temperature_controller": "温度读回与稳定状态",
     "optical_power_meter": "光功率、光谱与传感器",
-    "measurement_analyzers": "万用表、频率计、网络分析与相位噪声",
+    "measurement_analyzers": "万用表、频率计、网络分析、相位噪声与加速度",
     "load_drivers": "电子负载、泵浦驱动与开关板",
     "unknown": "待确认身份与设备协议",
 }

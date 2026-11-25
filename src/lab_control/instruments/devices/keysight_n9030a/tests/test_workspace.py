@@ -11,7 +11,7 @@ from lab_control.ui.pages.monitoring.spectrum import SpectrumMonitoringPage
 from lab_control.ui.real_window import RealWindow
 
 
-def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch):
+def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch, frame_export_directory):
     monkeypatch.setitem(DEVICE_DEFINITIONS, ADAPTER_ID, DEFINITION)
     replies = {
         "*IDN?": b"Agilent Technologies,N9030A,FIXTURE,A.14.59",
@@ -75,7 +75,7 @@ def test_passive_spectrum_in_project_workspace(qtbot, tmp_path, monkeypatch):
             assert page.plot.plot.viewRange()[1] == [-120.0, -20.0]
             assert page.plot.trace_view.panel_y == (-70.0, -20.0)
             page.save()
-            qtbot.waitUntil(lambda: bool(list(runtime.repository.data_root.rglob("samples.npz"))))
+            qtbot.waitUntil(lambda: bool(list(frame_export_directory.rglob("samples.npz"))))
         finally:
             window.timer.stop()
             window.controller.close()

@@ -120,7 +120,9 @@ class SimulatedInstrument:
                     )
                 )
                 self.caps = replace(self.caps, operations=tuple(optical))
-        scan_channels = {"keithley.2701": (101, 102), "rigol.m300": (401, 402)}.get(config.adapter)
+        scan_channels: tuple[int, ...] | None = {"keithley.2701": (101, 102), "rigol.m300": (401, 402)}.get(
+            config.adapter
+        )
         if config.adapter == "pangu.kt616r":
             from lab_control.instruments.devices.pangu_kt616r.protocol import Settings
 

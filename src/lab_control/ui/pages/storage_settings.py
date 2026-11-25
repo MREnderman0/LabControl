@@ -46,7 +46,7 @@ class StorageSettingsPanel(QWidget):
         layout.addWidget(self.effective)
         example = QLabel(
             "单设备采集 / YYYY-MM-DD / HH-mm-ss-SSS_型号_序列号_continuous_批次标识\n"
-            "单帧保存使用 single_frame；日期以开始记录或保存时的本地时间为准。\n"
+            "监测图手动保存单帧时可另选位置，首次默认打开系统下载文件夹。\n"
             "修改仅影响之后开始的记录；已有文件和正在记录的路径保持不变。"
         )
         example.setWordWrap(True)
@@ -86,7 +86,7 @@ class StorageSettingsPanel(QWidget):
             except Exception as exc:
                 self.completed.emit(f"保存失败，原设置保持不变：{exc}", False)
             else:
-                self.completed.emit("已保存；从下一次记录或单帧保存开始生效。", True)
+                self.completed.emit("已保存；从下一次使用数据保存一级目录的采集开始生效。", True)
 
         self.job.add_done_callback(finished)
 

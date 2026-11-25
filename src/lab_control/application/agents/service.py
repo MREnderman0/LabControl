@@ -34,6 +34,7 @@ class AgentService:
     def __init__(self, runtime) -> None:
         self.runtime, self.repository = runtime, runtime.repository
         self.lock = threading.RLock()
+        self.frame_archive_lock = threading.Lock()
         self.policy = AgentPolicy(self.repository, self.identity)
         self.desktop_grant_enabled = False
         self.ledger = AgentLedger(self.repository)
@@ -792,6 +793,16 @@ class AgentService:
             }
         )
         request.validate()
+        if request.kind == "status":
+            from lab_control.application.controls import data_sources
+
+            config = self.runtime.sessions.sessions[device].config
+            if len(request.channels) != 1 or not any(
+                source.kind == "status" and source.quantity == request.quantity
+                for source in data_sources(config)
+            ):
+                raise ValidationError("请选择该设备公布的单通道参数读回数据源")
+            self._check(client, grant, device, "read_parameters", channels=request.channels)
         if len(request.channels) > 1:
             from lab_control.application.controls import data_sources
 
@@ -942,6 +953,8 @@ class AgentService:
                         or DEVICE_DEFINITIONS[session.config.adapter].acquisition_requires_confirmation
                     ):
                         self._check(client, grant_id, device_id, "output_trigger")
+                    if current.kind == "status":
+                        self._check(client, grant_id, device_id, "read_parameters", channels=current.channels)
                     if current.allow_setup:
                         self._check(client, grant_id, device_id, "acquisition_setup")
 
@@ -1183,7 +1196,12 @@ class AgentService:
     def _finish(self, ctx, result=None, exc=None):
         task = ctx["task"]
         if exc is not None:
-            task.update(state="failed", error=str(exc), code=getattr(exc, "code", "operation_failed"))
+            message = (
+                "单帧文件读写失败，请检查导出目录和可用空间"
+                if isinstance(exc, OSError) and ctx.get("frame_export")
+                else str(exc)
+            )
+            task.update(state="failed", error=message, code=getattr(exc, "code", "operation_failed"))
             from lab_control.storage.processing import ProcessingCancelled
 
             if isinstance(exc, ProcessingCancelled) or getattr(exc, "code", "") == "cancelled":
@@ -1248,6 +1266,7 @@ class AgentService:
                 )
 
     def list_artifacts(self, client, grant_id, task_id=""):
+        self.policy.require_grant(client, grant_id)
         result = []
         for artifact in self.ledger.artifacts(task_id):
             try:

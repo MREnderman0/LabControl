@@ -185,7 +185,9 @@ def test_channel_change_drains_old_read_and_empty_selection_stops(power, qtbot, 
     assert not page.plot.displayed_frame
 
 
-def test_record_every_frame_locks_controls_and_display_save_uses_old_frame(power, qtbot, monkeypatch):
+def test_record_every_frame_locks_controls_and_display_save_uses_old_frame(
+    power, qtbot, monkeypatch, frame_export_directory
+):
     _, page, runtime, key, adapter = power
     page.start()
     qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)

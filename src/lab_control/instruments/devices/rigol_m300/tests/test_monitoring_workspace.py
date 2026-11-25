@@ -49,7 +49,9 @@ def close_window(window, runtime):
     window.bridge.worker.shutdown()
 
 
-def test_scan_curve_selection_keeps_full_recording_and_snapshot(qtbot, tmp_path, monkeypatch):
+def test_scan_curve_selection_keeps_full_recording_and_snapshot(
+    qtbot, tmp_path, monkeypatch, frame_export_directory
+):
     config = ConnectionConfig("mock://scan-workspace", "rigol.m300", "mock")
     runtime = ApplicationRuntime(root=tmp_path, hardware=False)
     instrument = scan_instrument(config)
@@ -73,9 +75,10 @@ def test_scan_curve_selection_keeps_full_recording_and_snapshot(qtbot, tmp_path,
     monkeypatch.setattr(instrument, "apply", lambda command: writes.append(command))
     export = runtime.monitoring.export_displayed_frame
 
-    def capture_export(device_id, frame, mode):
+    def capture_export(device_id, frame, mode, *, directory):
+        assert directory == frame_export_directory
         saved_frames.append(frame)
-        result = export(device_id, frame, mode)
+        result = export(device_id, frame, mode, directory=directory)
         saved_results.append(result)
         return result
 

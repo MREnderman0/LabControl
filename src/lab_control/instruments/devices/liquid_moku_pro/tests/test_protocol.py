@@ -227,6 +227,14 @@ def test_external_trigger_without_input_and_hardware_format_ack(monkeypatch):
     assert sum(path.endswith("/set_trigger") for _, path, _ in wire.calls) == 1
 
 
+def test_local_cleanup_releases_no_network_ownership(monkeypatch):
+    dev, wire = instrument()
+    wire.key = "test-session"
+    monkeypatch.setattr(wire, "call", lambda *_: pytest.fail("local cleanup contacted the device"))
+    dev.close_local()
+    assert wire.key is None and not dev.slots and not dev.output_receipts
+
+
 def test_capture_readback_mismatch_does_not_repeat_write(monkeypatch):
     dev, wire = instrument()
     original = wire.call

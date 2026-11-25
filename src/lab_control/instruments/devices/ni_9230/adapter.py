@@ -103,8 +103,10 @@ class Adapter:
     def identify(self):
         serial = self.config.resource.removeprefix("NIDAQMX::")
         modules = self.driver.modules()
-        if serial not in modules or (self.config.expected_serial and self.config.expected_serial != serial):
-            raise DeviceError("NI 9230 module serial mismatch or missing", "identity_conflict")
+        if self.config.expected_serial and self.config.expected_serial != serial:
+            raise DeviceError("NI 9230 module serial mismatch", "identity_conflict")
+        if serial not in modules:
+            raise DeviceError("NI 9230 module is disconnected", "device_not_present")
         self.module = modules[serial]
         self.identity = DeviceIdentity("National Instruments", MODEL, serial)
         return self.identity
@@ -156,7 +158,7 @@ class Adapter:
         if not (request.initiate and request.confirmed and request.allow_setup):
             raise DeviceError("Explicit capture required to energize IEPE inputs", "confirmation_required")
         if self.inputs != request.channels:
-            self.close()
+            self.end_monitor_input()
             self.identify()
             self.driver.call("CreateTask", b"", ct.byref(self.handle))
             self.names = tuple(f"{self.module}/ai{ch - 1}" for ch in request.channels)
@@ -168,7 +170,7 @@ class Adapter:
                     [self.sensors[ch].sensitivity for ch in request.channels],
                 )
             except Exception:
-                self.close()
+                self.end_monitor_input()
                 raise
             self.inputs = request.channels
             self.states = dict.fromkeys(self.inputs, WAITING)
@@ -263,17 +265,21 @@ class Adapter:
         )
 
     def end_monitor_input(self):
-        self.close()
+        names = self.names
+        self.close_local()
+        if names:
+            self.driver.disable_excitation(names)
 
     def close(self):
+        self.end_monitor_input()
+
+    def close_local(self):
         self.inputs = ()
         self.last_scan_index = -1
         if self.handle.value:
             self.driver.call("ClearTask", self.handle)
             self.handle = HANDLE()
-        if self.names:
-            self.driver.disable_excitation(self.names)
-            self.names = ()
+        self.names = ()
         self.states.clear()
         self.valid_from.clear()
         self.stabilized_after.clear()

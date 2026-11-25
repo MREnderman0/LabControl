@@ -1,8 +1,11 @@
 """Electronic load management: one passive readback table and one channel editor."""
 
+from typing import Any
+
 from PySide6.QtCore import Qt, QTime, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -17,7 +20,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.monitoring_state import MonitorFrame
 from lab_control.domain.instruments import AcquisitionRequest, ParameterReading
 from lab_control.ui.controller import WorkspaceController
-from lab_control.ui.pages.device_control.form import ControlForm
+from lab_control.ui.pages.device_control.form import ControlForm, OperationEditor
 from lab_control.ui.pages.device_control.signal_source import ParameterGroup
 from lab_control.ui.widgets.device_selector import DeviceSelector
 
@@ -34,8 +37,10 @@ class LoadSettings(ParameterGroup):
 
     def __init__(self, controller, key, channel, caps):
         super().__init__(controller, key, channel, caps, columns=3, simplified=True)
-        self.layout().setContentsMargins(0, 0, 0, 0)
-        self.layout().setSpacing(6)
+        layout = self.layout()
+        assert layout is not None
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
         self.fields.setColumnStretch(2, 1)
         titles = {
             "load_input": "拉载输入",
@@ -46,10 +51,14 @@ class LoadSettings(ParameterGroup):
             "resistance": "恒阻设定",
         }
         for name, editor in self.editors.items():
-            editor.findChild(QLabel, "controlTitle").setText(titles[name])
+            title = editor.findChild(QLabel, "controlTitle")
+            if title is not None:
+                title.setText(titles[name])
             editor.auto_sync = False  # This panel receives one explicit snapshot shared by all channels.
             editor.editors["value"].changed.connect(self.refresh)
-        self.mode_box = self.editors["load_mode"].editors["value"].input
+        mode_box = self.editors["load_mode"].editors["value"].input
+        assert isinstance(mode_box, QComboBox)
+        self.mode_box = mode_box
         descriptions = {"CC": "恒流", "CV": "恒压", "CP": "恒功率", "CR": "恒阻"}
         for index in range(self.mode_box.count()):
             value = self.mode_box.itemData(index)
@@ -64,7 +73,7 @@ class LoadSettings(ParameterGroup):
         return 1 if name == "load_mode" else 2
 
     def show_target(self):
-        target = MODE_TARGETS.get(self.mode_box.currentData(), (None, ""))[0]
+        target = MODE_TARGETS.get(self.mode_box.currentData(), ("", ""))[0]
         self.context_hidden = {name for name, _ in MODE_TARGETS.values() if name != target}
         for name, editor in self.editors.items():
             editor.setVisible(name not in self.context_hidden)
@@ -89,18 +98,18 @@ class ElectronicLoadPage(QWidget):
         super().__init__(parent)
         self.controller = controller
         self.device_id = ""
-        self.session_id = None
+        self.session_id: str | None = None
         self.revision = 0
         self.reading = False
-        self.frame = None
-        self.settings = {}
-        self.editors = {}
-        self.fallback = None
-        self.channels = ()
-        self.channel = None
+        self.frame: MonitorFrame | None = None
+        self.settings: dict[int, dict[str, Any]] = {}
+        self.editors: dict[str, OperationEditor] = {}
+        self.fallback: ControlForm | None = None
+        self.channels: tuple[int, ...] = ()
+        self.channel: int | None = None
         self.mode = controller.mode
 
-        layout = QVBoxLayout(self)
+        self.page_layout = layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(8)
         header = QHBoxLayout()
@@ -122,9 +131,9 @@ class ElectronicLoadPage(QWidget):
             ("通道", "输入", "模式", "设定值", "实测电压 (V)", "实测电流 (A)")
         )
         for col in range(3, 6):
-            self.table.horizontalHeaderItem(col).setTextAlignment(
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            )
+            header_item = self.table.horizontalHeaderItem(col)
+            assert header_item is not None
+            header_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.verticalHeader().hide()
         self.table.verticalHeader().setDefaultSectionSize(34)
@@ -179,7 +188,7 @@ class ElectronicLoadPage(QWidget):
         )
         if generic and self.fallback is None:
             self.fallback = ControlForm(self.controller)
-            self.layout().addWidget(self.fallback)
+            self.page_layout.addWidget(self.fallback)
         if self.fallback:
             self.fallback.setVisible(generic)
             self.fallback.set_device(device_id if generic else "")
@@ -239,9 +248,11 @@ class ElectronicLoadPage(QWidget):
             return
         self.channel = channel
         while self.fields.count():
-            widget = self.fields.takeAt(0).widget()
-            widget.hide()
-            widget.deleteLater()
+            item = self.fields.takeAt(0)
+            widget = item.widget() if item else None
+            if widget is not None:
+                widget.hide()
+                widget.deleteLater()
         self.editors = {}
         self.panel.setVisible(channel in self.channels)
         if channel not in self.channels:
@@ -258,6 +269,8 @@ class ElectronicLoadPage(QWidget):
         self.update_fields()
 
     def update_fields(self):
+        if self.channel is None or not self.editors:
+            return
         values = self.settings.get(self.channel, {})
         for name, editor in self.editors.items():
             if not editor.busy and name in values:
@@ -274,7 +287,7 @@ class ElectronicLoadPage(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        QTimer.singleShot(0, self.read_snapshot)
+        QTimer.singleShot(0, self, self.read_snapshot)
 
     def read_snapshot(self):
         if not self.device_id or self.reading or not self.isVisible() or self.table.isHidden():
@@ -306,8 +319,10 @@ class ElectronicLoadPage(QWidget):
             request = AcquisitionRequest("scalar", channels, points=1, allow_setup=False)
 
             def got_batch(batch):
-                if token != self.revision or self.session_id != self.controller.states.get(key, {}).get(
-                    "sessionId"
+                if (
+                    self.session_id is None
+                    or token != self.revision
+                    or self.session_id != self.controller.states.get(key, {}).get("sessionId")
                 ):
                     return
                 self.settings = {int(ch): fields for ch, fields in status.values["channels"].items()}
@@ -341,23 +356,25 @@ class ElectronicLoadPage(QWidget):
         for row, ch in enumerate(self.channels):
             data = self.settings.get(ch, {})
             mode = data.get("load_mode", "—")
-            target, unit = MODE_TARGETS.get(mode, (None, ""))
+            target, unit = MODE_TARGETS.get(mode, ("", ""))
+            load_input = data.get("load_input")
             values = [
-                {True: "开启", False: "关闭"}.get(data.get("load_input"), "—"),
+                ("开启" if load_input else "关闭") if isinstance(load_input, bool) else "—",
                 mode,
                 f"{data[target]:g} {unit}" if target in data else "—",
                 *[f"{measured[ch, q]:g}" if (ch, q) in measured else "—" for q in ("voltage", "current")],
             ]
             for col, value in enumerate(values, 1):
-                self.table.item(row, col).setText(value)
+                item = self.table.item(row, col)
+                if item is not None:
+                    item.setText(value)
 
     def save(self):
-        if not self.frame:
-            return
-        try:
-            future = self.controller.runtime.monitoring.export_displayed_frame(
-                self.device_id, self.frame, self.controller.mode
+        if self.frame:
+            self.controller.save_displayed_frame(
+                self,
+                self.device_id,
+                self.frame,
+                self.controller.mode,
+                on_saved=lambda path: self.controller.message.emit(f"读数已保存 · {path}"),
             )
-            self.controller.watch(future, lambda path: self.controller.message.emit(f"读数已保存 · {path}"))
-        except Exception as exc:
-            self.controller.message.emit(str(exc))

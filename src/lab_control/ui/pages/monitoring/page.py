@@ -27,7 +27,11 @@ from lab_control.ui.pages.monitoring import frame as page_frame
 from lab_control.ui.pages.monitoring.channel_selection import instrument_scan_channels
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.plot import LivePlot
-from lab_control.ui.pages.monitoring.recording_state import recording_phase, recording_save_notice
+from lab_control.ui.pages.monitoring.recording_state import (
+    recording_phase,
+    recording_save_notice,
+    update_recording_frame,
+)
 from lab_control.ui.pages.monitoring.scan import ScanMonitoringPage
 from lab_control.ui.pages.monitoring.timing import MonitoringTiming
 from lab_control.ui.widgets.device_selector import DeviceSelector
@@ -122,9 +126,9 @@ class MonitoringPage(QWidget):
             button.clicked.connect(callback)
             self.buttons[key] = button
             buttons.addWidget(button, 0, len(self.buttons) - 1)
-        self.actions = QWidget()
-        self.actions.setLayout(buttons)
-        layout.addWidget(self.actions)
+        self.action_panel = QWidget()
+        self.action_panel.setLayout(buttons)
+        layout.addWidget(self.action_panel)
         self.plot = LivePlot()
         main_layout.addWidget(self.plot, 1)
         footer = QHBoxLayout()
@@ -175,7 +179,7 @@ class MonitoringPage(QWidget):
         self.refresh_frame(self.selector.device_id)
 
     def reflow_buttons(self) -> None:
-        columns = 3 if self.actions.width() < 560 else 5
+        columns = 3 if self.action_panel.width() < 560 else 5
         if columns == self.button_columns:
             return
         self.button_columns = columns
@@ -188,7 +192,7 @@ class MonitoringPage(QWidget):
         if self.scan_page is not None:
             scan = bool(device_id) and instrument_scan_channels(self.controller, device_id) is not None
             self.scan_page.setVisible(scan)
-            self.actions.setVisible(not scan and bool(device_id))
+            self.action_panel.setVisible(not scan and bool(device_id))
             self.selector.setVisible(not scan)
             if scan:
                 self.empty.hide()
@@ -201,7 +205,7 @@ class MonitoringPage(QWidget):
                 self.scan_page.select_device("")
         self.timing.bind(device_id, self.controller.mode)
         self.splitter.setVisible(bool(device_id))
-        self.actions.setVisible(bool(device_id))
+        self.action_panel.setVisible(bool(device_id))
         self.empty.setVisible(not device_id)
         self.source.blockSignals(True)
         self.source.clear()
@@ -225,9 +229,9 @@ class MonitoringPage(QWidget):
                 or (definition and definition.multi_channel_sources)
                 else ()
             )
-            for channel in () if self.instrument_scan_channels() is not None else channels:
+            for index, channel in enumerate(() if self.instrument_scan_channels() is not None else channels):
                 check = QCheckBox(f"CH {channel}")
-                check.setChecked(channel == channels[0])
+                check.setChecked(index == 0)
                 self.channel_checks[channel] = check
                 self.channel_row.addWidget(check)
             self.channel_row.addStretch()
@@ -338,16 +342,8 @@ class MonitoringPage(QWidget):
     def save(self) -> None:
         frame = self.plot.displayed_frame
         if frame is not None:
-            try:
-                service = self.controller.runtime.monitoring
-                future = service.export_displayed_frame(self.selector.device_id, frame, self.controller.mode)
-                self.controller.watch(
-                    future,
-                    lambda path: self.controller.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}"),
-                )
-                self.refresh()
-            except Exception as exc:
-                self.controller.message.emit(str(exc))
+            self.controller.save_displayed_frame(self, self.selector.device_id, frame, self.controller.mode)
+            self.refresh()
 
     def pin(self) -> None:
         source = self.selected_source()
@@ -372,6 +368,7 @@ class MonitoringPage(QWidget):
         task = self.controller.runtime.monitoring.snapshots().get(device_id, {})
         self.timing.bind(device_id, self.controller.mode)
         self.timing.refresh(task)
+        update_recording_frame(self.main_area, task)
         record = self.controller.records.get(device_id)
         available = bool(
             record

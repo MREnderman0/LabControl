@@ -247,7 +247,7 @@ def test_graphite_category_to_ch1_loopback(qtbot, tmp_path, monkeypatch):
                 capture(spectrum, "spectrum-settings")
                 window.resize(1100, 700)
                 qtbot.wait(60)
-                assert spectrum.capture.scroll.horizontalScrollBar().maximum() == 0
+                assert spectrum.capture.scroll_area.horizontalScrollBar().maximum() == 0
                 window.resize(1430, 900)
                 spectrum.stop_button.click()
                 wait(lambda: not spectrum.stop_button.isEnabled())

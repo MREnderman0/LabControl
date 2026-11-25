@@ -241,6 +241,9 @@ class SessionOperations:
                 if not isinstance(argument, AcquisitionRequest):
                     raise TypeError("Expected AcquisitionRequest")
                 argument.validate()
+                cap = adapter.capabilities().get(argument.quantity)
+                if not cap.readable or len(argument.channels) != 1:
+                    raise DeviceError("该参数不支持单通道读回", "unsupported")
                 with acquisition_read_wait(session.monitoring, transport=getattr(adapter, "transport", None)):
                     readings = adapter.read_settings((argument.quantity,), argument.channels[0])
                 manager._cache_readings(session, readings)
@@ -248,7 +251,6 @@ class SessionOperations:
                 value = reading.value
                 if isinstance(value, dict):
                     value = value.get("value")
-                cap = adapter.capabilities().get(argument.quantity)
                 spec = cap.parameters.get("value")
                 result = MeasurementBatch(
                     session.identity or DeviceIdentity("", ""),

@@ -152,7 +152,7 @@ class MonitorScheduler:
                 ),
             )
             if not task.recorder.submit(batch):
-                task.recording = False
+                task.clear_recording_intent()
                 task.recording_notice = task.recorder.pause_reason
             task.last_record_at = task.last_started_at
             task.next_record_at = (
@@ -226,6 +226,11 @@ class MonitorScheduler:
                     except Exception as exc:
                         if task.stop_future and not task.stop_future.done():
                             task.stop_future.set_exception(exc)
+                        with owner.sessions.lock:
+                            session = owner.sessions.sessions.get(device_id)
+                            if session is not None:
+                                session.state = "degraded"
+                                session.last_error = str(exc)
                         owner._pause(device_id, f"释放连续采集输入失败：{exc}")
                         continue
                 if (
@@ -246,10 +251,10 @@ class MonitorScheduler:
                     info = task.recorder.snapshot()
                     task.last_path = info["last_path"] or task.last_path
                     if info["error"]:
-                        task.recording = False
+                        task.clear_recording_intent()
                         task.recording_notice = info["error"]
                     if info["paused"]:
-                        task.recording = False
+                        task.clear_recording_intent()
                         task.recording_notice = info["paused"]
                     if not task.recording and not task.pending_record_session:
                         task.recorder.finish()
@@ -302,7 +307,8 @@ class MonitorScheduler:
                         max(65536, request.points * len(request.channels) * 32 + 4096)
                     )
                 ):
-                    task.recording = save_due = False
+                    task.clear_recording_intent()
+                    save_due = False
                     task.recording_notice = task.recorder.pause_reason
                 request = replace(
                     request,
@@ -332,6 +338,9 @@ class MonitorScheduler:
                     admission["before_io"] = lambda session, check=check, request=request: check(
                         session, request
                     )
+                if request.kind == "status":
+                    # The recorder may sample its own declared status source.
+                    admission["scheduled_observation"] = True
                 future = owner.sessions.try_submit_idle(
                     device_id, "observe" if request.kind == "status" else "acquire", request, **admission
                 )
@@ -377,7 +386,7 @@ class MonitorScheduler:
                 ):
                     if device_id in snapshots:
                         owner.sessions.set_monitoring(device_id, False)
-                    task.recording = False
+                    task.clear_recording_intent()
                     if (
                         task.stop_future
                         and not task.stop_future.done()

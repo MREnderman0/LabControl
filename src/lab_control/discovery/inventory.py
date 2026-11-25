@@ -170,51 +170,53 @@ class Inventory:
             del self.records[record["id"]]
 
     def all(self) -> tuple[dict[str, Any], ...]:
-        import copy
-
         from lab_control.discovery.serial_routes import empty_onboard_record
 
         with self.lock:
-            return tuple(
-                copy.deepcopy(item) for item in self.records.values() if not empty_onboard_record(item)
-            )
+            return tuple(deepcopy(item) for item in self.records.values() if not empty_onboard_record(item))
 
     def by_resource(self, resource: str) -> dict[str, Any] | None:
-        normalized = canonical_resource(resource)
         with self.lock:
-            fallback = None
-            for item in self.records.values():
-                for address in item["resources"]:
-                    if item["candidates"].get(address, {}).get("retired"):
-                        continue
-                    if address == resource:
-                        return item
-                    if fallback is None and canonical_resource(address) == normalized:
-                        fallback = item
-            return fallback
+            return deepcopy(self._by_resource(resource))
+
+    def _by_resource(self, resource: str) -> dict[str, Any] | None:
+        normalized = canonical_resource(resource)
+        fallback = None
+        for item in self.records.values():
+            for address in item["resources"]:
+                if item["candidates"].get(address, {}).get("retired"):
+                    continue
+                if address == resource:
+                    return item
+                if fallback is None and canonical_resource(address) == normalized:
+                    fallback = item
+        return fallback
 
     def by_stable_id(self, usb_instance_id: str) -> dict[str, Any] | None:
         """Find a serial device by its USB bridge identity, independent of COM."""
+        with self.lock:
+            return deepcopy(self._by_stable_id(usb_instance_id))
+
+    def _by_stable_id(self, usb_instance_id: str) -> dict[str, Any] | None:
         if not usb_instance_id:
             return None
-        with self.lock:
-            matches = [
-                item
-                for item in self.records.values()
-                if item.get("config", {}).get("usb_instance_id") == usb_instance_id
-                or any(
-                    entry.get("config", {}).get("usb_instance_id") == usb_instance_id
-                    or entry.get("rawDescriptor", {}).get("usb_instance_id") == usb_instance_id
-                    for entry in item.get("candidates", {}).values()
-                )
-            ]
-            # Prefer an already configured/identified asset when legacy rows
-            # and the current stable USB identity coexist in the inventory.
-            return max(
-                matches,
-                key=lambda item: (bool(item.get("adapterId")), bool(item.get("identityKey"))),
-                default=None,
+        matches = [
+            item
+            for item in self.records.values()
+            if item.get("config", {}).get("usb_instance_id") == usb_instance_id
+            or any(
+                entry.get("config", {}).get("usb_instance_id") == usb_instance_id
+                or entry.get("rawDescriptor", {}).get("usb_instance_id") == usb_instance_id
+                for entry in item.get("candidates", {}).values()
             )
+        ]
+        # Prefer an already configured/identified asset when legacy rows
+        # and the current stable USB identity coexist in the inventory.
+        return max(
+            matches,
+            key=lambda item: (bool(item.get("adapterId")), bool(item.get("identityKey"))),
+            default=None,
+        )
 
     @staticmethod
     def _serial_signature(descriptor: dict[str, Any]) -> tuple[int, int] | None:
@@ -280,8 +282,8 @@ class Inventory:
 
         with self.lock:
             resource = candidate.config.resource
-            stable_existing = self.by_stable_id(candidate.config.usb_instance_id)
-            resource_existing = self.by_resource(resource)
+            stable_existing = self._by_stable_id(candidate.config.usb_instance_id)
+            resource_existing = self._by_resource(resource)
             existing: dict[str, Any] | None
             if (
                 serial_binding is None

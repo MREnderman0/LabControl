@@ -174,8 +174,9 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.capture = CaptureControls(self)
         self.settings = self.capture.settings
         self.readback = self.capture.readback
-        if self.kind == "spectrum":
+        if isinstance(self.plot, MokuSpectrumPlot):
             self.marker_plot = self.plot
+            assert self.marker_list is not None
             self.markers = []
             self.marker_list.itemDoubleClicked.connect(
                 lambda item: self.edit_marker(item.data(Qt.ItemDataRole.UserRole))
@@ -197,6 +198,8 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.update_trigger()
 
     def update_trigger(self):
+        if not isinstance(self.plot, MokuScopePlot):
+            return
         if self.trigger_receipt and self.trigger_receipt[0] == self.state.get("sessionId"):
             _, actual, ch = self.trigger_receipt
             source = f"CH{ch}" if ch is not None else "外部"
@@ -207,6 +210,8 @@ class RolePage(SpectrumMarkerActions, QWidget):
             self.plot.set_drag_state(frozenset(), (None, None, False))
 
     def update_marker_list(self):
+        if self.marker_list is None:
+            return
         super().update_marker_list()
         visible_rows = min(3, self.marker_list.count())
         row_height = sum(
@@ -513,7 +518,7 @@ class RolePage(SpectrumMarkerActions, QWidget):
             return
         f = frame.batch.configuration["frontend"]
         m = frame.batch.measurements[0]
-        if self.kind == "waveform":
+        if isinstance(self.plot, MokuScopePlot):
             spec = self.plot.display_specs.get(self.channel)
             self.readouts.set("timebase", engineering(spec.seconds_per_div, "s") + "/格" if spec else "—")
             rate = field(frame.batch.configuration["settings"].get("samplerate"), "sample_rate")
@@ -547,7 +552,11 @@ class RolePage(SpectrumMarkerActions, QWidget):
         if frame is None or frame.request.channels != (self.channel,) or frame.request.kind != self.kind:
             self.status.setText("没有可导出的当前通道帧")
             return
-        self.controller.watch(
-            self.service.export_displayed_frame(self.device_id, frame, self.controller.mode),
-            lambda path: self.status.setText(str(path)),
+        self.controller.save_displayed_frame(
+            self,
+            self.device_id,
+            frame,
+            self.controller.mode,
+            on_saved=lambda path: self.status.setText(str(path)),
+            on_error=lambda exc: self.status.setText(str(exc)),
         )

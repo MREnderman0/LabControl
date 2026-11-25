@@ -15,6 +15,7 @@ DEMO_MODELS = {
     "optical_power_meter": ("thorlabs.pm100d", "sim.optical_power_meter"),
     "multimeter": ("keysight.3458a", "keysight.3458a"),
     "frequency_counter": ("sim.frequency_counter",) * 2,
+    "accelerometer": ("ni.9230",) * 2,
     "network_analyzer": ("rs.znb3004", "rs.znb3004"),
     "phase_noise_analyzer": ("microchip.53100a", "microchip.53100a"),
     "temperature_controller": ("sim.temperature_controller",) * 2,
@@ -25,11 +26,12 @@ DEMO_MODELS = {
 
 
 def create_demo_runtime(root: Path | None = None, *, all_models: bool = False) -> ApplicationRuntime:
-    models_by_category = DEMO_MODELS
+    models_by_category: dict[str, list[str]] = {}
     if all_models:
-        models_by_category = {}
         for adapter, definition in DEVICE_DEFINITIONS.items():
             models_by_category.setdefault(definition.category, []).append(adapter)
+    else:
+        models_by_category = {key: list(models) for key, models in DEMO_MODELS.items()}
     configs = tuple(
         ConnectionConfig(f"mock://workspace/{category}/{index}", adapter, "mock", identity_confirmed=True)
         for category, models in models_by_category.items()

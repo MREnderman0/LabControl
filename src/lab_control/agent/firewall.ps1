@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Plan, [Parameter(Mandatory=$true)][string]$Report)
+param([Parameter(Mandatory=$true)][string]$Plan, [Parameter(Mandatory=$true)][string]$PlanHash, [Parameter(Mandatory=$true)][string]$Report)
 $ErrorActionPreference = 'Stop'
 $result = @{passed=$false; before=$null; after=$null; rollback=$null; error=''; timestamp=[DateTime]::UtcNow.ToString('o')}
 $created = $false
@@ -34,7 +34,13 @@ function Assert-AgentRule {
     }
 }
 try {
-    $p = Get-Content -LiteralPath $Plan -Raw -Encoding UTF8 | ConvertFrom-Json
+    $bytes = [IO.File]::ReadAllBytes($Plan)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '')
+    } finally { $sha.Dispose() }
+    if ($hash -ne $PlanHash) { throw 'Maintenance plan changed after approval' }
+    $p = [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
     if ($p.schema_version -ne 1 -or $p.operation -notin @('add','remove') -or
         $p.rule -notmatch '^TF-LabControl-Agent-[a-f0-9]{16}$' -or
         [int]$p.port -lt 1024 -or [int]$p.port -gt 65535 -or

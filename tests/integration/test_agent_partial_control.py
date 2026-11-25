@@ -19,8 +19,12 @@ def test_partial_frequency_preserves_mode_and_rejects_changed_baseline(tmp_path)
         instrument.values[key] = {"automatic": False, "value": 10e6}
         service = runtime.agent
         grant = service.policy.create_grant(
-            INTERNAL_CLIENT, [device], ["view", "apply", "read_parameters"],
-            channels=[1], operations=["input_frequency"], limits={},
+            INTERNAL_CLIENT,
+            [device],
+            ["view", "apply", "read_parameters"],
+            channels=[1],
+            operations=["input_frequency"],
+            limits={},
         )
 
         def preview():
@@ -41,7 +45,9 @@ def test_partial_frequency_preserves_mode_and_rejects_changed_baseline(tmp_path)
             pytest.fail("apply task did not finish")
 
         with pytest.raises(DeviceError, match="value"):
-            service.preview_change(INTERNAL_CLIENT, grant, device, "input_frequency", {"automatic": True}, partial=True)
+            service.preview_change(
+                INTERNAL_CLIENT, grant, device, "input_frequency", {"automatic": True}, partial=True
+            )
         assert instrument.values[key] == {"automatic": False, "value": 10e6}
         prepared = preview()
         assert prepared["parameters"] == {"automatic": False, "value": 20e6}

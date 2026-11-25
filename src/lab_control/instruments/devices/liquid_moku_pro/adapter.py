@@ -194,10 +194,15 @@ class Adapter:
                 # Only explicitly commissioned assets may select this platform.
                 self.api.call("GET", "moku/platform/4")
             self.slots = slot_map(self.api.call("GET", "mim/get_instruments"))
-        except Exception:
+        except Exception as exc:
             self.slots = {}
             if newly_claimed:
-                self.close()
+                try:
+                    self._release_ownership()
+                except Exception as cleanup:
+                    exc.add_note(f"Could not confirm ownership release: {cleanup}")
+                finally:
+                    self.close_local()
             raise
 
     def _slot(self, role, method, operation, params=None):
@@ -435,10 +440,21 @@ class Adapter:
         )
         return ApplyResult("success", op, params, {"channel": f"信号源 ch{ch}"}, 1, acknowledged=True)
 
-    def close(self):
+    def _release_ownership(self):
         if self.api.key:
             self.api.call("POST", "moku/relinquish_ownership")
             self.api.key = None
-        self.api.close()
-        self.slots = {}
-        self.output_receipts.clear()
+
+    def close(self):
+        try:
+            self._release_ownership()
+        finally:
+            self.close_local()
+
+    def close_local(self):
+        try:
+            self.api.close()
+        finally:
+            self.api.key = None
+            self.slots = {}
+            self.output_receipts.clear()

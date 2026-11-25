@@ -108,7 +108,7 @@ class Dh8318Adapter(ScpiAdapter):
     def read_status(self) -> DeviceStatus:
         selected = self._selection()
         self._remember_selection(selected)
-        settings = {ch: {} for ch in selected}
+        settings: dict[int, dict[str, float | str | bool]] = {ch: {} for ch in selected}
 
         def read_column(operation):
             command = self.profile.commands[operation].query

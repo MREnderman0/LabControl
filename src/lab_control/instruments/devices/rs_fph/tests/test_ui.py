@@ -25,7 +25,7 @@ from lab_control.ui.real_window import RealWindow
 from .test_session import StateTransport
 
 
-def test_fph_controls_monitor_save_draft_and_disconnect(qtbot, tmp_path):
+def test_fph_controls_monitor_save_draft_and_disconnect(qtbot, tmp_path, frame_export_directory):
     config = ConnectionConfig("mock://fph-ui", "rs.fph", "mock")
     with ApplicationRuntime((config,), root=tmp_path, hardware=False) as app:
         key = app.add(config)
@@ -72,7 +72,7 @@ def test_fph_controls_monitor_save_draft_and_disconnect(qtbot, tmp_path):
         assert not (app.repository.root / "data").exists()
         app.monitoring.stop(key).result(3)
         page.save()
-        qtbot.waitUntil(lambda: bool(list(app.repository.data_root.rglob("samples.npz"))))
+        qtbot.waitUntil(lambda: bool(list(frame_export_directory.rglob("samples.npz"))))
         app.sessions.disconnect(key)
         controller.poll()
         page.refresh()
@@ -155,7 +155,7 @@ def test_fph_linear_graticule_preserves_reference_unit(qtbot, tmp_path, monkeypa
             controller.close()
 
 
-def test_official_fph_page_applies_and_saves_trace_one(qtbot, tmp_path, monkeypatch):
+def test_official_fph_page_applies_and_saves_trace_one(qtbot, tmp_path, monkeypatch, frame_export_directory):
     config = ConnectionConfig("mock://fph-panel", "rs.fph", "mock")
     transport = StateTransport("V2.40")
     writes = []
@@ -207,8 +207,8 @@ def test_official_fph_page_applies_and_saves_trace_one(qtbot, tmp_path, monkeypa
             assert scale["unit"] == "dBm"
             assert (scale["lower"], scale["upper"]) == pytest.approx((-87, 13))
             page.save(frame)
-            qtbot.waitUntil(lambda: bool(list(app.repository.data_root.rglob("snapshot.json"))))
-            (snapshot,) = app.repository.data_root.rglob("snapshot.json")
+            qtbot.waitUntil(lambda: bool(list(frame_export_directory.rglob("snapshot.json"))))
+            (snapshot,) = frame_export_directory.rglob("snapshot.json")
             (saved,) = json.loads(snapshot.read_text("utf8"))["measurements"]
             assert (saved["axis_unit"], saved["unit"]) == (trace.axis_unit, trace.unit)
             with np.load(snapshot.with_name("samples.npz"), allow_pickle=False) as arrays:

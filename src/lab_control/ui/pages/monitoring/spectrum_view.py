@@ -147,7 +147,7 @@ class SpectrumView(TraceView):
             self._fit_data()
             return
         lower, upper = self.panel_y
-        if self.unit_key[-1] == "dBm":
+        if self.unit_key and self.unit_key[-1] == "dBm":
             bottom, top = self.default_dbm
             lower = lower if bottom is None else bottom
             upper = upper if top is None else top

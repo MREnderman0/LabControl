@@ -120,8 +120,8 @@ class AcquisitionRecovery:
         self.manager = manager
         self.serial_route: Callable[[DeviceSession], ConnectionConfig] | None = None
         self.serial_verified: Callable[[DeviceSession, ConnectionConfig, DeviceIdentity], None] | None = None
-        self.network_route = None
-        self.verify_move = None
+        self.network_route: Callable[[DeviceSession], ConnectionConfig] | None = None
+        self.verify_move: Callable[[DeviceSession, ConnectionConfig, DeviceIdentity], None] | None = None
 
     def event(
         self, session: DeviceSession, recovery: Recovery, event: str, recording: Recording | None = None

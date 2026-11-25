@@ -22,6 +22,15 @@ def pytest_configure(config):
 
 
 @pytest.fixture
+def frame_export_directory(tmp_path, monkeypatch):
+    """The folder selected by the operator in desktop frame-export tests."""
+    directory = tmp_path / "手动单帧"
+    directory.mkdir()
+    monkeypatch.setattr("lab_control.ui.controller.choose_frame_destination", lambda parent: directory)
+    return directory
+
+
+@pytest.fixture
 def load_capability_contract():
     """Read versioned model contracts using the original behavior for absent optional fields."""
 

@@ -209,17 +209,9 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
             self.controller.message.emit(str(exc))
 
     def save(self) -> None:
-        if self.plot.displayed_frame is None:
-            return
-        try:
-            self.controller.watch(
-                self.controller.runtime.monitoring.export_displayed_frame(
-                    self.device_id, self.plot.displayed_frame, self.mode
-                ),
-                lambda path: self.controller.message.emit(f"原始数据已保存 · 分析 CSV 已完成：{path}"),
-            )
-        except Exception as exc:
-            self.controller.message.emit(str(exc))
+        frame = self.plot.displayed_frame
+        if frame is not None:
+            self.controller.save_displayed_frame(self, self.device_id, frame, self.mode)
 
     def fit_plot(self) -> None:
         self.plot.fit_current()

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand
 from lab_control.instruments.devices.rs_fspn26.settings import LABELS
@@ -184,9 +185,17 @@ class FspnPanel(QWidget):
             self.status.setText("准备就绪")
         self.update_actions()
 
+    def available(self):
+        state = self.ctrl.states.get(self.key, {})
+        return state.get("connectionState") == "connected" and not any(
+            state.get(flag) for flag in ("controlsLocked", "controlPending", "controlGroup")
+        )
+
+    def current(self, generation):
+        return isValid(self) and generation == self.generation
+
     def update_actions(self, *_):
-        connected = self.ctrl.states.get(self.key, {}).get("connectionState") == "connected"
-        idle = bool(self.key and connected and not self.busy)
+        idle = bool(self.key and self.available() and not self.busy)
         for button in (self.single, self.cont, self.preview, self.read_button):
             button.setEnabled(idle)
         mode_changed = self.att_mode.currentIndex() != int(not self.baseline.get("attenuation_auto", True))
@@ -209,7 +218,7 @@ class FspnPanel(QWidget):
             self.selector.setEnabled(not self.busy)
         if idle and self.isVisible() and not self.snapshot_attempted:
             self.snapshot_attempted = True
-            QTimer.singleShot(0, self.read_settings)
+            QTimer.singleShot(0, self, self.read_settings)
 
     def finish(self, text):
         self.repeat = self.busy = self.collecting = self.stopping = False
@@ -225,7 +234,7 @@ class FspnPanel(QWidget):
         self.finish(str(exc))
 
     def read_settings(self):
-        if self.busy or not self.key:
+        if self.busy or not self.key or not self.available():
             return
         self.busy = True
         generation = self.generation
@@ -236,7 +245,7 @@ class FspnPanel(QWidget):
             )
 
             def received(rows):
-                if generation != self.generation:
+                if not self.current(generation):
                     return
                 reading = rows[0]
                 if not isinstance(reading.value, dict):
@@ -244,9 +253,7 @@ class FspnPanel(QWidget):
                 self.set_settings(reading.value, preserve=True)
                 self.finish("参数已刷新")
 
-            self.ctrl.watch(
-                future, received, lambda e: self.fail(e) if generation == self.generation else None
-            )
+            self.ctrl.watch(future, received, lambda e: self.fail(e) if self.current(generation) else None)
         except Exception as exc:
             self.fail(exc)
 
@@ -277,7 +284,7 @@ class FspnPanel(QWidget):
             field.setModified(False)
 
     def apply_settings(self):
-        if self.busy:
+        if self.busy or not self.available():
             return
         try:
             changes = {n: float(f.text()) for n, f in self.fields.items() if f.isEnabled() and f.isModified()}
@@ -292,7 +299,7 @@ class FspnPanel(QWidget):
             generation = self.generation
 
             def applied(result):
-                if generation != self.generation:
+                if not self.current(generation):
                     return
                 if result.outcome != "success":
                     self.fail(result.error or "仪器未确认参数")
@@ -300,12 +307,17 @@ class FspnPanel(QWidget):
                 self.set_settings(result.readback)
                 self.finish("已应用并读回")
 
-            self.ctrl.apply(self.key, DeviceCommand("phase_noise_settings", changes), applied, self.fail)
+            self.ctrl.apply(
+                self.key,
+                DeviceCommand("phase_noise_settings", changes),
+                applied,
+                lambda exc: self.fail(exc) if self.current(generation) else None,
+            )
         except Exception as exc:
             self.fail(exc)
 
     def start(self, mode):
-        if self.busy or not self.key:
+        if self.busy or not self.key or not self.available():
             return
         self.repeat = mode == "continuous"
         self.rounds = 0
@@ -330,20 +342,24 @@ class FspnPanel(QWidget):
             future = self.ctrl.runtime.sessions.start_acquisition(key, request, mode=self.ctrl.mode)
 
             def captured(paths):
-                if gen != self.generation:
+                if not self.current(gen):
                     return
                 if not paths:
                     self.finish("已停止" if self.stopping else "本轮未取得曲线")
                     return
                 job = self.ctrl.runtime.processing.read_worker.submit(load_round, paths)
-                self.ctrl.watch(job, lambda result: self.published(result, gen), self.fail)
+                self.ctrl.watch(
+                    job,
+                    lambda result: self.published(result, gen),
+                    lambda exc: self.fail(exc) if self.current(gen) else None,
+                )
 
-            self.ctrl.watch(future, captured, lambda exc: self.fail(exc) if gen == self.generation else None)
+            self.ctrl.watch(future, captured, lambda exc: self.fail(exc) if self.current(gen) else None)
         except Exception as exc:
             self.fail(exc)
 
     def published(self, result, generation):
-        if generation != self.generation:
+        if not self.current(generation):
             return
         self.last[self.key] = result
         self.rounds += 1

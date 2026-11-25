@@ -12,7 +12,7 @@ from lab_control.instruments.base import number
 from lab_control.transport.base import block_payload
 
 POINTS = 711
-UNITS = {"DBM": "dBm", "DBMV": "dBmV", "DBUV": "dBuV", "V": "V", "W": "W"}
+UNITS = {"DBM": "dBm", "DBMV": "dBmV", "DBUV": "dBµV", "V": "V", "W": "W"}
 RBW = tuple(float(m * 10**e) for e in range(2, 7) for m in (1, 3) if m * 10**e <= 1e6)
 VBW = tuple(float(m * 10**e) for e in range(1, 7) for m in (1, 3) if m * 10**e <= 1e6)
 

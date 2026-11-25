@@ -34,8 +34,9 @@ def load_ui_font() -> str:
 
 def ui_font(point_size: int = 10) -> QFont:
     """Segoe UI Variable for Latin text and digits (Segoe UI on Windows 10), the CJK font for Chinese."""
-    font = QFont(load_ui_font(), point_size)
-    font.setFamilies(["Segoe UI Variable Text", "Segoe UI", load_ui_font()])
+    cjk = load_ui_font()
+    font = QFont(cjk, point_size)
+    font.setFamilies(["Segoe UI Variable Text", "Segoe UI", cjk])
     return font
 
 
@@ -53,7 +54,10 @@ def main() -> int:
     args = parser.parse_args()
     app = QApplication(sys.argv)
     app.setApplicationName("LabControl")
+    from lab_control.ui.widgets.publication_figure import prepare_publication_font
+
     app.setFont(ui_font())
+    prepare_publication_font()
     app.setStyle("Fusion")
     app.setStyleSheet(load_stylesheet())
     try:

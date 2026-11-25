@@ -4,6 +4,7 @@ from math import isfinite
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -64,20 +65,20 @@ class CaptureControls(Card):
         self.receipt = QLabel()
         self.receipt.setObjectName("inputFeedback")
         self.receipt.setWordWrap(True)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
         self.column = QVBoxLayout(body)
         self.column.setContentsMargins(0, 0, 0, 0)
         self.column.setSpacing(0)
-        self.scroll.setWidget(body)
+        self.scroll_area.setWidget(body)
         if self.scope:
             self.build_scope()
         else:
             self.build_spectrum()
         self.column.addStretch()
-        self.body.addWidget(self.scroll, 1)
+        self.body.addWidget(self.scroll_area, 1)
         foot = self.footer()
         foot.addWidget(self.receipt, 1)
         self.apply_button = button("应用修改", "primary")
@@ -119,9 +120,10 @@ class CaptureControls(Card):
         editor = ParameterEditor(spec or CAPTURE[group][1][key], simplified=True, label=title)
         editor.range_hidden = True
         if editor.spec.kind == "enum":
+            assert isinstance(editor.input, QComboBox)
             for i, token in enumerate(editor.spec.choices):
                 editor.input.setItemText(
-                    i, {"CURRENT": "当前通道", "EXTERNAL": "外部"}.get(token, TOKENS[token])
+                    i, {"CURRENT": "当前通道", "EXTERNAL": "外部"}.get(token, TOKENS.get(token, token))
                 )
         if key == "max_length":
             editor.unit.hide()
@@ -232,9 +234,9 @@ class CaptureControls(Card):
         marker.layout_.setContentsMargins(15, 6, 15, 8)
         self.column.addWidget(marker)
         row = QHBoxLayout()
-        title = QLabel("Marker · 软件标记")
-        title.setObjectName("sectionTitle")
-        row.addWidget(title)
+        marker_title = QLabel("Marker · 软件标记")
+        marker_title.setObjectName("sectionTitle")
+        row.addWidget(marker_title)
         row.addStretch()
         self.add_marker = button("添加标记", "ghost", "plus", "sm")
         self.add_marker.clicked.connect(self.page.add_center_marker)
@@ -261,9 +263,9 @@ class CaptureControls(Card):
         self.readback = QLabel()
         self.readback.setWordWrap(True)
         self.settings = QLabel()
-        for i, label in enumerate((self.readback, self.settings), 4):
-            label.setObjectName("rangeHint")
-            extended.addWidget(label, i, 0, 1, 2)
+        for i, readout in enumerate((self.readback, self.settings), 4):
+            readout.setObjectName("rangeHint")
+            extended.addWidget(readout, i, 0, 1, 2)
 
     def update_rbw(self):
         editors = self.editors["spectrum_rbw"]
@@ -499,7 +501,7 @@ class CaptureControls(Card):
         ticket = self.active = object()
         versions = self.dirty.copy()
         self.buttons()
-        done = []
+        done: list[str] = []
         channel = self.page.channel
 
         def failed(reason):
@@ -511,7 +513,7 @@ class CaptureControls(Card):
         def submit():
             if self.active is not ticket:
                 return
-            live = next(
+            live: dict = next(
                 (
                     s
                     for s in self.page.controller.runtime.sessions.snapshots()

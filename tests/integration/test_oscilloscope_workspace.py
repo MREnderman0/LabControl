@@ -314,7 +314,9 @@ def test_monitor_edit_and_record_drain_lock(scope, qtbot, monkeypatch):
     assert runtime.monitoring.snapshots()[key]["running"]
 
 
-def test_display_save_no_instrument_read_or_normalized_data(scope, qtbot, monkeypatch):
+def test_display_save_no_instrument_read_or_normalized_data(
+    scope, qtbot, monkeypatch, frame_export_directory
+):
     _, page, runtime, key, adapter = scope
     page.start()
     qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
