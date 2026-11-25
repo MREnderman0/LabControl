@@ -27,7 +27,7 @@ class MonitorRecovery:
             task.recovery = Recovery(
                 str(error),
                 getattr(error, "code", "disconnected"),
-                last_valid_at=max((frame.batch.timestamp for frame in task.frames.values()), default=""),
+                last_valid_at=task.last_valid_at,
             )
             try:
                 owner.sessions.recovery.event(

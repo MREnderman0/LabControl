@@ -14,6 +14,7 @@ from lab_control.application.acquisition_pipeline import (
     immutable_batch,
     validate_displayed_batch,
 )
+from lab_control.application.acquisition_recovery import RECOVERABLE_CODES
 from lab_control.application.monitoring_state import MonitorFrame, MonitorTask
 from lab_control.domain.instruments import (
     DeviceError,
@@ -40,13 +41,21 @@ class MonitorScheduler:
         task.pending = None
         record_session, task.pending_record_session = task.pending_record_session, ""
         if pending_revision != task.request_revision:
-            try:
-                future.result()
-            except Exception:
-                pass
             if record_session and task.recorder:
                 task.recorder.cancel_reservation()
             task.next_at = 0
+            # A worker can report a transport fault as an exception or as a measurement quality.
+            try:
+                obsolete_batch = future.result()
+            except Exception as exc:
+                owner.recovery.begin(device_id, task, exc)
+            else:
+                for sample in obsolete_batch.measurements:
+                    code = sample.quality.value
+                    if code in RECOVERABLE_CODES:
+                        error = DeviceError(sample.metadata.get("error", code), code)
+                        owner.recovery.begin(device_id, task, error)
+                        break
             return
         try:
             batch: MeasurementBatch = future.result()
@@ -162,6 +171,7 @@ class MonitorScheduler:
         task.acquisition_seconds = now - task.last_started_at
         task.frame_interval = now - task.last_frame_at if task.last_frame_at else None
         task.last_frame_at = now
+        task.last_valid_at = batch.timestamp
         task.configuration_changes, task.notice = 0, ""
         task.configuration_wait_deadline = 0
         task.sequence += 1

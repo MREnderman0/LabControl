@@ -80,6 +80,7 @@ class MonitorTask:
     last_record_at: float = 0
     next_record_at: float = 0
     last_frame_at: float = 0
+    last_valid_at: str = ""
     frame_interval: float | None = None
     acquisition_seconds: float | None = None
     configuration_changes: int = 0
