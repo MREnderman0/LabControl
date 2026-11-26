@@ -1,6 +1,7 @@
 import csv
 import json
 import threading
+import time
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ from lab_control.storage.layout import raw_folder
 from lab_control.storage.recording import Recording, SegmentWriter, convert_csv, read_frames
 from lab_control.storage.repository import Repository
 
-from .test_monitoring_timing import connected
+from .test_monitoring_timing import connected, wait_for
 
 
 def timed_frame(completed=12.3, stamp="2026-01-01T01:02:03.123456+00:00"):
@@ -156,3 +157,42 @@ def test_legacy_csv_checkpoint_keeps_original_header(tmp_path):
     assert b"host_read_started_at" not in first.splitlines()[0]
     assert convert_csv(tmp_path)["converted"] == 1
     assert first == path.with_suffix(".csv").read_bytes()
+
+
+def test_slow_monitor_records_actual_completion_times_at_short_target_interval(tmp_path):
+    runtime, key = connected(tmp_path)
+    with runtime:
+        adapter = runtime.sessions.sessions[key].adapter
+        acquire = adapter.acquire
+
+        def slow_read(request):
+            time.sleep(0.08)
+            return acquire(request)
+
+        adapter.acquire = slow_read
+        runtime.monitoring.start(
+            key,
+            (AcquisitionRequest("spectrum"),),
+            interval=0.01,
+            cadence="interval",
+            record_interval=None,
+            recording=True,
+        )
+        recorder = runtime.monitoring.tasks[key].recorder
+        wait_for(lambda: recorder.snapshot()["committed"] >= 3)
+        runtime.monitoring.stop(key).result(5)
+        paths = recorder.finished.result(8)
+        frames = list(read_frames(Path(paths[0])))
+        assert len(frames) >= 3
+        times = [datetime.fromisoformat(frame["timestamp"]) for frame in frames]
+        assert all((b - a).total_seconds() >= 0.06 for a, b in zip(times, times[1:]))
+        for frame in frames:
+            assert frame["timestamp"] == frame["timing"]["host_read_completed_at"]
+            assert frame["timing"]["read_duration_seconds"] >= 0.06
+        with (recorder.folder / "帧索引.csv").open(encoding="utf-8-sig", newline="") as file:
+            rows = list(csv.DictReader(file))
+        local_column = next(key for key in rows[0] if key.startswith("本地时间"))
+        assert [r[local_column] for r in rows] == [
+            moment.astimezone(recorder.context.started_at.tzinfo).strftime("%Y-%m-%d %H:%M:%S.%f")
+            for moment in times
+        ]

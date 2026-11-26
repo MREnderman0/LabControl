@@ -77,6 +77,8 @@ class MonitorTask:
     pending_record_session: str = ""
     pending_record_mode: str = GENERAL
     last_started_at: float = 0
+    started_at: float = field(default_factory=time.monotonic)
+    recording_started_at: float = 0.0
     last_record_at: float = 0
     next_record_at: float = 0
     last_frame_at: float = 0
@@ -106,6 +108,12 @@ class MonitorTask:
     record_kinds: set[str] | None = None
     watch_owned: bool = False
     watch_session: str = ""
+
+    def clear_recording_intent(self) -> None:
+        self.recording = False
+        self.recording_started_at = 0.0
+        if self.record_kinds is not None:
+            self.record_kinds.clear()
 
     @property
     def stopping(self) -> bool:

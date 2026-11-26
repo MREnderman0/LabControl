@@ -132,15 +132,15 @@ def test_overview_changes_cadence_only_for_the_explicit_interval_edit(workspace)
         save_monitoring_interval(controller, key, "general", 2, cadence="fastest")
     changed, other = meters[:2]
     dashboard.cards[other].enabled.setChecked(False)
-    assert all(monitoring_options(controller, key, "general")["cadence"] == "fastest" for key in meters)
+    assert all(monitoring_options(controller, key, "general")["interval"] == 0 for key in meters)
     dashboard.cards[changed].interval.setValue(3)
-    assert monitoring_options(controller, changed, "general")["cadence"] == "interval"
-    assert all(monitoring_options(controller, key, "general")["cadence"] == "fastest" for key in meters[1:])
+    assert monitoring_options(controller, changed, "general")["interval"] == 3
+    assert all(monitoring_options(controller, key, "general")["interval"] == 0 for key in meters[1:])
     assert not controller.runtime.monitoring.tasks
 
 
 @pytest.mark.parametrize("view", ["overview", "detail"])
-@pytest.mark.parametrize("draft, expected", [("0", 0.5), ("99", 60), ("-1", 0.5), ("abc", 2), ("", 2)])
+@pytest.mark.parametrize("draft, expected", [("0", 0), ("99", 60), ("-1", 0), ("abc", 2), ("", 2)])
 def test_interval_bounds_and_invalid_text_are_resolved_on_blur(workspace, qtbot, view, draft, expected):
     _, controller, dashboard, timing, meters = workspace
     key = meters[0]

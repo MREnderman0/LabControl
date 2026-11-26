@@ -28,7 +28,7 @@ from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.measurement_layout import MeasurementChart
 from lab_control.ui.pages.monitoring.recording_state import update_recording_frame
 from lab_control.ui.pages.monitoring.spectrum import SpectrumMarkerActions
-from lab_control.ui.pages.monitoring.timing import MonitoringTiming, SpectrumInterval
+from lab_control.ui.pages.monitoring.timing import MonitoringInterval, MonitoringTiming
 from lab_control.ui.widgets.device_selector import DeviceSelector
 
 from .adapter import LABELS
@@ -40,7 +40,7 @@ from .protocol import CHANNELS, FOUR_SLOT_SESSION
 
 class RolePage(SpectrumMarkerActions, QWidget):
     capture: CaptureControls
-    timing: MonitoringTiming | SpectrumInterval
+    timing: MonitoringTiming | MonitoringInterval
     save_action: QAction | None
     marker_list: QListWidget
 

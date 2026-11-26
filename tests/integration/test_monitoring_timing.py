@@ -222,7 +222,10 @@ def test_record_interval_is_separate_and_slow_writer_does_not_stall_display(tmp_
 @pytest.mark.parametrize(
     "cadence,interval,completed,expected",
     [
-        ("interval", 0.5, 11.5, 12.0),
+        ("interval", 0.5, 11.5, 11.5),
+        ("interval", 0.01, 10.5, 10.5),
+        ("interval", 0.0, 10.5, 10.5),
+        ("interval", 60, 10.5, 70),
         ("spectrum_interval", 1.0, 10.3, 11.0),
         ("spectrum_interval", 1.0, 11.2, 11.2),
         ("spectrum_interval", 0.0, 10.3, 10.3),
@@ -249,6 +252,35 @@ def test_next_frame_deadline(tmp_path, monkeypatch, cadence, interval, completed
             runtime.monitoring._finish_batch(key, task)
             assert task.next_at == expected and task.acquisition_seconds == pytest.approx(completed - 10)
             monkeypatch.undo()
+
+
+def test_frame_interval_and_deadline_use_worker_read_times(tmp_path, monkeypatch):
+    runtime, key = connected(tmp_path)
+    with runtime:
+        request = AcquisitionRequest("spectrum")
+        batch = replace(
+            runtime.sessions.sessions[key].adapter.acquire(request),
+            performance={"received_at_monotonic": 12.25},
+            timing={"read_duration_seconds": 0.25},
+        )
+        future = Future()
+        future.set_result(batch)
+        task = MonitorTask(
+            (request,),
+            "electronic",
+            1.0,
+            cadence="interval",
+            pending=future,
+            pending_request=request,
+            last_started_at=11.50,
+            last_frame_at=11.0,
+        )
+        with runtime.monitoring.lock, monkeypatch.context() as patch:
+            patch.setattr("lab_control.application.monitor_scheduler.time.monotonic", lambda: 12.6)
+            runtime.monitoring._finish_batch(key, task)
+            assert task.frame_interval == 1.25
+            assert task.acquisition_seconds == 0.25
+            assert task.next_at == 13.0
 
 
 def test_invalid_quality_is_never_sent_to_writer(tmp_path):

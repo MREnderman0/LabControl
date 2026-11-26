@@ -48,7 +48,7 @@ def test_power_startup_restores_valid_presets_and_shared_values(tmp_path, qtbot,
         key = runtime.add(ConnectionConfig("mock://power-start", "gwinstek.gpd4303s", "mock"))
         pref = f"monitor-timing/general/{key}"
         runtime.repository.save_workspace(pref, old)
-    expected = old["interval"] if old["interval"] in (1, 5, 10, 60) else 1
+    expected = 0 if old["cadence"] == "fastest" else old["interval"]
     for _ in range(2):
         with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
             controller = SimpleNamespace(
@@ -60,7 +60,7 @@ def test_power_startup_restores_valid_presets_and_shared_values(tmp_path, qtbot,
             assert widget.options() == dict(
                 interval=expected, cadence="interval", record_interval=None, csv_interval=5
             )
-            assert widget.cadence.isHidden() and widget.interval.isHidden()
+            assert widget.cadence.isHidden() and not widget.interval.isHidden()
             assert [widget.presets.itemData(i) for i in range(widget.presets.count())] == [1, 5, 10, 60]
             for seconds in (5, 10, 60, 1):
                 widget.presets.setCurrentIndex(widget.presets.findData(seconds))

@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout
 
 from .recording_state import RecordingButton
-from .timing import SpectrumInterval
+from .timing import MonitoringInterval
 
 
 class MeasurementChart(QFrame):
@@ -22,8 +22,8 @@ class MeasurementChart(QFrame):
         self.toolbar.addWidget(self.record)
         self.body.addLayout(self.toolbar)
 
-    def add_interval(self, controller) -> SpectrumInterval:
-        interval = SpectrumInterval(controller, self)
+    def add_interval(self, controller) -> MonitoringInterval:
+        interval = MonitoringInterval(controller, self)
         interval.setFixedWidth(self.record.width())
         self.toolbar.addWidget(interval)
         return interval

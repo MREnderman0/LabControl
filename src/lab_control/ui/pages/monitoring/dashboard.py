@@ -40,7 +40,6 @@ from lab_control.ui.pages.monitoring.recording_state import (
     update_recording_frame,
 )
 from lab_control.ui.pages.monitoring.timing import (
-    POWER_INTERVALS,
     MonitoringIntervalSpinBox,
     monitoring_options,
     save_monitoring_interval,
@@ -148,16 +147,10 @@ class RecordingDeviceCard(QFrame):
         controls.addStretch()
         controls.addWidget(QLabel("采样间隔"))
         self.interval = MonitoringIntervalSpinBox()
-        if spec.get("category") == "spectrum_analyzer":
-            self.interval.setMinimum(0)
         self.interval.setSingleStep(0.5)
         self.interval.setSuffix(" 秒")
         self.interval.valueChanged.connect(lambda _value: self._changed(interval_edited=True))
-        self.interval.setToolTip(
-            "频谱采集间隔，0 秒为最快。"
-            if spec.get("category") == "spectrum_analyzer"
-            else "修改采样间隔会切换为自定义间隔，并按设备保存。"
-        )
+        self.interval.setToolTip("目标间隔 0～60 秒，0 表示上一帧读完即继续。")
         controls.addWidget(self.interval)
         layout.addLayout(controls)
 
@@ -552,19 +545,21 @@ class MonitoringDashboard(QWidget):
         timing_key = f"monitor-timing/{recording_mode}/{device_id}"
         stored_timing = self.controller.runtime.repository.load_workspace(timing_key, None)
         memory_timing = self.controller.runtime.monitoring_preferences.get(timing_key)
-        has_timing = isinstance(stored_timing, dict) and "interval" in stored_timing
-        has_timing = has_timing or isinstance(memory_timing, dict) and "interval" in memory_timing
-        if not has_timing and "interval" in saved:
+        has_timing = any(
+            isinstance(entry, dict) and ("interval" in entry or entry.get("cadence") == "fastest")
+            for entry in (stored_timing, memory_timing)
+        )
+        if not has_timing and ("interval" in saved or saved.get("cadence") == "fastest"):
             try:
                 save_monitoring_interval(
                     self.controller,
                     device_id,
                     recording_mode,
-                    float(saved["interval"]),
+                    0.0 if saved.get("cadence") == "fastest" else float(saved["interval"]),
                     cadence="interval",
                     notify=False,
                 )
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, DeviceError):
                 pass
         try:
             interval = float(monitoring_options(self.controller, device_id, recording_mode)["interval"])
@@ -572,11 +567,6 @@ class MonitoringDashboard(QWidget):
             interval = 1.0
         # Once migrated, device timing is authoritative even when a slot's
         # old overview preference still contains a different interval.
-        interval = min(
-            60.0, max(0.0 if instrument_category(record) == "spectrum_analyzer" else 0.5, interval)
-        )
-        if instrument_category(record) == "power_supply":
-            interval = min(POWER_INTERVALS, key=lambda option: abs(option - interval))
         saved["interval"] = interval
         saved.setdefault("enabled", True)
         identity = record.get("identity") or {}
@@ -609,8 +599,6 @@ class MonitoringDashboard(QWidget):
         if card is None or record is None:
             return
         interval = float(interval)
-        if instrument_category(record) == "power_supply":
-            interval = min(POWER_INTERVALS, key=lambda option: abs(option - interval))
         if not card.interval.hasFocus():
             card.interval.blockSignals(True)
             card.interval.setValue(interval)
@@ -702,22 +690,15 @@ class MonitoringDashboard(QWidget):
                 continue
             key = self._slot_key(self.controller.records[spec["device_id"]])
             interval = card.interval.value()
-            if spec["category"] == "power_supply":
-                interval = min(POWER_INTERVALS, key=lambda option: abs(option - interval))
-                if interval != card.interval.value():
-                    card.interval.blockSignals(True)
-                    card.interval.setValue(interval)
-                    card.interval.blockSignals(False)
-            try:
-                save_monitoring_interval(
-                    self.controller,
-                    spec["device_id"],
-                    spec["recording_mode"],
-                    interval,
-                    cadence="interval" if interval_edited else None,
-                )
-            except Exception as exc:
-                self.controller.message.emit(str(exc))
+            if interval_edited:
+                try:
+                    save_monitoring_interval(
+                        self.controller, spec["device_id"], spec["recording_mode"], interval
+                    )
+                except Exception as exc:
+                    self.controller.message.emit(str(exc))
+                    card.set_spec(spec)
+                    return
             self.preferences[key] = {
                 "enabled": card.enabled.isChecked(),
                 "interval": interval,
@@ -758,7 +739,7 @@ class MonitoringDashboard(QWidget):
                 # the next stop/start cycle.
                 target["interval"] = (
                     0.0
-                    if target["category"] == "spectrum_analyzer" and task.get("cadence") == "fastest"
+                    if task.get("cadence") == "fastest"
                     else float(task["interval"])
                 )
             target.update(
