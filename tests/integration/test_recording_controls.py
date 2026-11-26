@@ -74,26 +74,29 @@ def test_record_button_card_outline_switching_and_real_binary_drain(
     try:
         qtbot.waitUntil(ready, timeout=6000)
         assert not page.record_button.isEnabled()
-        if category == "spectrum_analyzer":
+        if category == "oscilloscope":
+            companion = page.timing
+            assert page.findChild(QToolButton, "curveTools") is None
+        elif category == "spectrum_analyzer":
             companion = page.interval
         else:
             companion = page.findChild(QToolButton, "curveTools")
             assert not any("记录" in action.text() for action in companion.menu().actions())
-            page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
         # Record sits in the page header next to the run controls, at the companion's height.
-        assert page.record_button.parentWidget() is page
+        assert page.record_button.parentWidget() is page.start_button.parentWidget()
+        assert page.record_button.parentWidget().objectName() == "pageHeader"
         assert page.record_button.height() == companion.height() == 30
         page.toggle_monitoring()
         qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
         window.controller.poll()
         assert page.record_button.isEnabled()
-        page.pin()
+        window.dashboard.refresh()
         card = next(iter(window.dashboard.cards.values()))
         page.record_button.click()
         qtbot.waitUntil(entered.is_set)
         window.controller.poll()
         card.refresh()
-        assert page.record_button.text() == "停止记录", runtime.monitoring.snapshots()[key]
+        assert page.record_button.text().startswith("停止记录"), runtime.monitoring.snapshots()[key]
         assert page.chart.property("recordingPhase") == card.property("recordingPhase") == "recording"
         assert "本设备" in card.toolTip()
         page.selector.select(other)

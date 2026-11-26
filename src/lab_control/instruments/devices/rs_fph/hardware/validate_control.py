@@ -443,7 +443,7 @@ def verify(
         paths = {
             "home": home,
             "inventory": home / "inventory.sqlite3",
-            "lock": Path(os.environ["LOCALAPPDATA"]) / "TF-LabControl/hardware.lock",
+            "lock": Path(os.environ["LOCALAPPDATA"]) / "LabControl/hardware.lock",
         }
         report["physical_paths"] = {k: physical_path(p) for k, p in paths.items()}
         if any(Path(report["physical_paths"][k]) != p for k, p in paths.items()) or not folder.is_relative_to(

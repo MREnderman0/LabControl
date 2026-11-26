@@ -7,13 +7,14 @@ from typing import Callable
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QMenu, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from lab_control.ui.styles import tokens as tk
 
 from .frame_destination import choose_frame_destination
+from .popup_surface import WorkspaceMenu
 from .publication_figure import export_figure
 
 
@@ -48,7 +49,7 @@ class PlotExport:
 class PublicationViewBox(pg.ViewBox):
     def raiseContextMenu(self, event):  # noqa: N802
         widget = self.getViewWidget()
-        menu = QMenu(widget)
+        menu = WorkspaceMenu(widget)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         data = widget.export_snapshot()
         image = menu.addAction("保存图像（PNG）")
@@ -63,7 +64,7 @@ class PublicationViewBox(pg.ViewBox):
                 menu.addSeparator()
                 menu.addMenu(controls)
             self.scene().addParentContextMenus(self, menu, event)
-        menu.popup(event.screenPos().toPoint())
+        menu.popup_at(event.screenPos().toPoint())
 
 
 class PublicationPlotWidget(pg.PlotWidget):
@@ -99,3 +100,57 @@ class PublicationPlotWidget(pg.PlotWidget):
                 data.write(filename)
             except (ValueError, OSError) as exc:
                 QMessageBox.warning(self, "保存图像", str(exc))
+
+
+class InstrumentMenuCanvas(PublicationPlotWidget):
+    """Use the same instrument menu on the trace, axes and empty canvas."""
+
+    def __init__(self, *args, restore_view=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.restore_view = restore_view or self.autoRange
+        self.frame_save_provider: Callable[[], Callable[[], None] | None] | None = None
+        self.menu_factory: Callable[[QPoint], WorkspaceMenu] = self.build_menu
+
+    def build_menu(self, position=None):
+        snapshot = self.export_snapshot()
+        save = self.frame_save_provider() if self.frame_save_provider is not None else None
+        return self.view_menu(
+            snapshot,
+            can_restore=bool(snapshot.curves),
+            supports_save=self.frame_save_provider is not None,
+            save_frame=save,
+        )
+
+    def view_menu(self, snapshot, *, can_restore, supports_save, save_frame):
+        menu = WorkspaceMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        menu.addAction("恢复视图", self.restore_view).setEnabled(can_restore)
+        menu.addSeparator()
+        if supports_save:
+            action = menu.addAction("保存当前帧数据")
+            action.setEnabled(save_frame is not None)
+            if save_frame is not None:
+                action.triggered.connect(save_frame)
+        menu.addAction("导出 PNG", lambda: self.save_image(snapshot)).setEnabled(bool(snapshot.curves))
+        return menu
+
+    def open_menu(self, position):
+        self.menu_factory(position).popup_at(self.viewport().mapToGlobal(position))
+
+    def mousePressEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.RightButton:
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.RightButton:
+            self.open_menu(event.position().toPoint())
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event):  # noqa: N802
+        if event.reason() == event.Reason.Keyboard:
+            self.open_menu(self.viewport().rect().center())
+        event.accept()

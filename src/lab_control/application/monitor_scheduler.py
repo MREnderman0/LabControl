@@ -9,7 +9,6 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from lab_control.application.acquisition_pipeline import (
-    SPECTRUM_INTERVAL,
     FrozenDict,
     immutable_batch,
     validate_displayed_batch,
@@ -137,6 +136,12 @@ class MonitorScheduler:
             )
             task.recovery = None
         batch = immutable_batch(batch)
+        now = time.monotonic()
+        completed = batch.performance.get("received_at_monotonic", now)
+        duration = batch.timing.get("read_duration_seconds")
+        if duration is not None:
+            # A worker may have waited in the device queue before starting the read.
+            task.last_started_at = completed - duration
         if record_session and task.recorder:
             batch = replace(
                 batch,
@@ -158,10 +163,9 @@ class MonitorScheduler:
             task.next_record_at = (
                 task.last_record_at + task.record_interval if task.record_interval is not None else 0
             )
-        now = time.monotonic()
-        task.acquisition_seconds = now - task.last_started_at
-        task.frame_interval = now - task.last_frame_at if task.last_frame_at else None
-        task.last_frame_at = now
+        task.acquisition_seconds = completed - task.last_started_at
+        task.frame_interval = completed - task.last_frame_at if task.last_frame_at else None
+        task.last_frame_at = completed
         task.configuration_changes, task.notice = 0, ""
         task.configuration_wait_deadline = 0
         task.sequence += 1
@@ -174,7 +178,7 @@ class MonitorScheduler:
             int(batch.configuration.get("_session_configuration_version", 0)),
             request,
             batch,
-            batch.performance.get("received_at_monotonic", time.perf_counter()),
+            completed,
             session_id,
         )
         if request.kind == "scalar":
@@ -201,13 +205,8 @@ class MonitorScheduler:
                 callback(device_id)
             except Exception as exc:
                 owner.audit.try_record("frame_listener_failed", device_id=device_id, error=str(exc))
-        # Spectrum reads can resume immediately after an overrun; legacy interval
-        # tasks wait a full interval from receipt when their deadline has passed.
         due = task.last_started_at + task.interval
-        if task.cadence == SPECTRUM_INTERVAL:
-            task.next_at = max(now, due)
-        else:
-            task.next_at = 0 if task.cadence == "fastest" else (due if due > now else now + task.interval)
+        task.next_at = 0 if task.cadence == "fastest" else max(now, due)
         if task.once:
             task.running = False
 

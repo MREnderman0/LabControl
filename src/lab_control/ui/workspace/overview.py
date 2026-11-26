@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from PySide6.QtCore import QDateTime, QSize, Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
@@ -12,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSizePolicy,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -21,15 +24,19 @@ from PySide6.QtWidgets import (
 from lab_control.application.bulk_connection import device_label
 from lab_control.application.catalog import instrument_category
 from lab_control.application.controls import CATEGORY_LABELS
+from lab_control.application.settings_sync import SettingsSync
 from lab_control.discovery.addresses import identity_conflict_message
 from lab_control.discovery.presence import is_current, presence_label
+from lab_control.domain.oscilloscope import engineering
+from lab_control.domain.readback import boolean_value, usable_reading
 from lab_control.instruments.registry import DEVICE_DEFINITIONS, requires_manual_connection
 from lab_control.ui.controller import (
     background_read_only,
     display_connection_state,
     display_task,
 )
-from lab_control.ui.kit import ElideLabel, Pill, icons, style_button
+from lab_control.ui.kit import ElideLabel, IconButton, Pill, icons, style_button
+from lab_control.ui.kit.base import set_property
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool, DeviceRowDelegate
@@ -58,7 +65,7 @@ class WorkspaceOverview:
         root = QWidget()
         root.setObjectName("shellRoot")
         layout = QVBoxLayout(root)
-        layout.setContentsMargins(24, 20, 24, 16)
+        layout.setContentsMargins(20, 18, 20, 16)
         layout.setSpacing(16)
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
@@ -70,17 +77,25 @@ class WorkspaceOverview:
         window.summary = ElideLabel()
         window.summary.setObjectName("overviewNote")
         heading_column.addWidget(window.summary)
-        toolbar.addLayout(heading_column, 1)
-        toolbar.addSpacing(18)
-        # At-a-glance counts, as status pills beside the title.
+        toolbar.addLayout(heading_column)
+        toolbar.addSpacing(12)
+        # At-a-glance counts aligned with the heading baseline, matching round1.
         window.overview_pills = {
             "online": Pill("在线 0", "ok", dot=True),
             "offline": Pill("未连接 0", "neutral", dot=True),
-            "errors": Pill("异常 0", "neutral", dot=True),
             "running": Pill("采集中 0", "neutral", dot=True),
         }
-        for pill in window.overview_pills.values():
-            toolbar.addWidget(pill, 0, Qt.AlignmentFlag.AlignTop)
+        self.alert_count = QPushButton("告警 0")
+        self.alert_count.setObjectName("overviewAlertButton")
+        self.alert_count.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.alert_count.setFixedHeight(22)
+        self.alert_count.setIconSize(QSize(13, 13))
+        self.alert_count.setToolTip("查看全局告警")
+        self.alert_count.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.alert_count.clicked.connect(window.chrome._open_alerts)
+        pills = window.overview_pills
+        for badge in (pills["online"], pills["offline"], self.alert_count, pills["running"]):
+            toolbar.addWidget(badge, 0, Qt.AlignmentFlag.AlignBottom)
         toolbar.addStretch(1)
         window.scan_button = QPushButton("扫描设备")
         window.scan_button.setObjectName("primaryButton")
@@ -91,41 +106,40 @@ class WorkspaceOverview:
         window.connect_all_button.clicked.connect(window.connect_all)
         window.stop_connect_button = QPushButton("停止连接")
         window.stop_connect_button.clicked.connect(window.runtime.cancel_connect_all)
-        toolbar.addWidget(window.stop_connect_button)
+        toolbar.addWidget(window.stop_connect_button, 0, Qt.AlignmentFlag.AlignBottom)
         window.connection_results_button = QPushButton("连接结果")
         window.connection_results_button.clicked.connect(window.show_connection_results)
-        toolbar.addWidget(window.connection_results_button)
-        toolbar.addWidget(window.cancel_button)
-        window.address_list_button = QPushButton("地址列表")
-        window.address_list_button.clicked.connect(window.show_static_addresses)
-        toolbar.addWidget(window.address_list_button)
-        window.device_list_button = QPushButton("设备列表")
-        window.device_list_button.clicked.connect(lambda: window.open_category(""))
-        toolbar.addWidget(window.device_list_button)
-        for text, action in (("环境诊断", window.diagnose),):
-            button = QPushButton(text)
-            button.setProperty("buttonSize", "compact")
-            style_button(button, "ghost", "stethoscope")
-            button.clicked.connect(action)
-            toolbar.addWidget(button)
+        toolbar.addWidget(window.connection_results_button, 0, Qt.AlignmentFlag.AlignBottom)
+        toolbar.addWidget(window.cancel_button, 0, Qt.AlignmentFlag.AlignBottom)
+        # Secondary administrative tools live in a quiet menu so the header stays focused.
+        window.more_tools_button = IconButton("more", "设备列表、地址列表与环境诊断", size=30, icon_size=16)
+        window.more_tools_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        window.more_tools_menu = WorkspaceMenu(window.more_tools_button)
+        window.device_list_button = window.more_tools_menu.addAction("设备列表")
+        window.device_list_button.setIcon(icons.icon("list", tk.TEXT_2))
+        window.device_list_button.triggered.connect(lambda: window.open_category(""))
+        window.address_list_button = window.more_tools_menu.addAction("地址列表")
+        window.address_list_button.setIcon(icons.icon("network", tk.TEXT_2))
+        window.address_list_button.triggered.connect(window.show_static_addresses)
+        window.more_tools_menu.addSeparator()
+        diagnose_action = window.more_tools_menu.addAction("环境诊断")
+        diagnose_action.setIcon(icons.icon("stethoscope", tk.TEXT_2))
+        diagnose_action.triggered.connect(window.diagnose)
+        window.more_tools_button.setMenu(window.more_tools_menu)
+        toolbar.addWidget(window.more_tools_button, 0, Qt.AlignmentFlag.AlignBottom)
         for button in (
             window.stop_connect_button,
             window.connection_results_button,
             window.cancel_button,
-            window.address_list_button,
-            window.device_list_button,
+            window.connect_all_button,
         ):
             button.setProperty("buttonSize", "compact")
-        window.connect_all_button.setProperty("buttonSize", "compact")
         style_button(window.connect_all_button, "", "plug")
-        style_button(window.device_list_button, "ghost", "list")
-        style_button(window.address_list_button, "ghost", "network")
-        # Order: quiet tools first, then connect, then the primary scan action.
-        toolbar.addWidget(window.connect_all_button)
+        toolbar.addWidget(window.connect_all_button, 0, Qt.AlignmentFlag.AlignBottom)
         window.scan_button.setProperty("buttonSize", "compact")
         window.scan_button.setIcon(icons.icon("scan", tk.ACCENT_INK, disabled=tk.TEXT_3))
         window.scan_button.setIconSize(QSize(15, 15))
-        toolbar.addWidget(window.scan_button)
+        toolbar.addWidget(window.scan_button, 0, Qt.AlignmentFlag.AlignBottom)
         layout.addLayout(toolbar)
         window.connection_summary = QLabel()
         window.connection_summary.setWordWrap(True)
@@ -310,36 +324,200 @@ class WorkspaceOverview:
         layout.addWidget(window.message)
         window.setCentralWidget(root)
 
-    def _card_devices(self, records: list[dict[str, Any]]) -> list[tuple[str, str, str, str]]:
+    @staticmethod
+    def _extract_number(raw: Any) -> float | None:
+        if isinstance(raw, dict):
+            raw = raw.get("value")
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool) and math.isfinite(float(raw)):
+            return float(raw)
+        return None
+
+    def _device_readout(
+        self,
+        record: dict[str, Any],
+        connection: str,
+        task: dict[str, Any],
+        watch_alarms: list[dict[str, str]],
+    ) -> tuple[str, str, bool]:
+        """Summarize live cached telemetry or readback without issuing any device I/O."""
+        device_id = record["id"]
+        if connection in {"degraded", "error"}:
+            return "error", "异常", True
+        if connection == "disconnected":
+            return "disconnected", "未连接", False
+        if connection in {"connecting", "recovering"}:
+            return connection, "连接中" if connection == "connecting" else "重连中", False
+
+        alarm_for_dev = [a for a in watch_alarms if a.get("device_id") == device_id]
+        if alarm_for_dev:
+            return "error", alarm_for_dev[0]["value"] or f"{len(alarm_for_dev)} 路超限", True
+
+        category = instrument_category(record)
+        recording = bool(task.get("recording"))
+        running = bool(task.get("running"))
+
+        # 1) Latest cached monitoring frame (zero I/O).
+        service = self.window.runtime.monitoring
+        latest_frame = None
+        with service.lock:
+            task_obj = service.tasks.get(device_id)
+            if task_obj and task_obj.frames:
+                latest_frame = max(task_obj.frames.values(), key=lambda f: f.received_at)
+
+        if recording and category in {"spectrum_analyzer", "oscilloscope", "optical_spectrometer"}:
+            return "recording", "记录中", False
+
+        state = self.window.controller.states.get(device_id, {})
+        if (
+            latest_frame is not None
+            and latest_frame.session_id == state.get("sessionId")
+            and latest_frame.configuration_version == state.get("configurationVersion")
+            and latest_frame.batch.measurements
+            and category != "signal_generator"
+        ):
+            measurements = latest_frame.batch.measurements
+            status_key = "recording" if recording else "monitoring" if running else "connected"
+            if category == "spectrum_analyzer":
+                arr = np.asarray(measurements[0].values, dtype=float)
+                finite = arr[np.isfinite(arr)]
+                if finite.size:
+                    unit = measurements[0].unit
+                    return status_key, f"{float(finite.max()):.8g} {unit}".strip().replace("-", "−"), False
+            elif category == "oscilloscope":
+                cfg = latest_frame.batch.configuration
+                interval = cfg.get("sample_interval_s")
+                if isinstance(interval, (int, float)) and interval > 0:
+                    return status_key, engineering(1.0 / interval, "Sa/s"), False
+                first = measurements[0]
+                disp = first.metadata.get("scope_display") or {}
+                if isinstance(disp.get("seconds_per_div"), (int, float)) and disp["seconds_per_div"] > 0:
+                    return status_key, engineering(float(disp["seconds_per_div"]), "s") + "/格", False
+                return status_key, f"{np.asarray(first.values).size} 点", False
+            elif category == "power_supply":
+                channel = measurements[0].channel
+                actuals = {
+                    m.quantity: m for m in measurements if m.channel == channel and np.asarray(m.values).size
+                }
+                volts, amps = actuals.get("voltage"), actuals.get("current")
+                parts = []
+                if volts is not None:
+                    v_arr = np.real(np.asarray(volts.values)).astype(float, copy=False).ravel()
+                    if v_arr.size and math.isfinite(float(v_arr[-1])):
+                        parts.append(f"{float(v_arr[-1]):.3f} {volts.unit or 'V'}")
+                if amps is not None:
+                    a_arr = np.real(np.asarray(amps.values)).astype(float, copy=False).ravel()
+                    if a_arr.size and math.isfinite(float(a_arr[-1])):
+                        parts.append(f"{float(a_arr[-1]):.3f} {amps.unit or 'A'}")
+                if parts:
+                    return status_key, f"CH{channel} 实测 " + " · ".join(parts).replace("-", "−"), False
+            else:
+                first = measurements[0]
+                arr = np.real(np.asarray(first.values)).astype(float, copy=False).ravel()
+                finite = arr[np.isfinite(arr)]
+                if finite.size:
+                    val = float(finite[-1])
+                    unit = "°C" if first.unit == "degC" else (first.unit or "")
+                    if unit == "W" and val > 0:
+                        dbm = 10.0 * math.log10(val * 1000.0)
+                        return status_key, f"{dbm:.2f} dBm".replace("-", "−"), False
+                    if unit in {"Hz", "V", "A", "s", "W"}:
+                        return status_key, engineering(val, unit), False
+                    return status_key, f"{val:.2f} {unit}".replace("-", "−").strip(), False
+
+        if recording:
+            return "recording", "记录中", False
+        if running:
+            return "monitoring", "监测中", False
+
+        # 2) Cached settings readback from the session (zero I/O).
+        readbacks = self.window.runtime.sessions.readback_frames(device_id)
+        if readbacks:
+            vals = {
+                op: frame.reading.value
+                for (ch, op), frame in readbacks.items()
+                if ch == 1 and SettingsSync.current(frame, state) and usable_reading(frame.reading, {})
+            }
+            if category == "signal_generator":
+                freq = self._extract_number(vals.get("frequency"))
+                out = boolean_value(vals.get("output"))
+                parts = []
+                if freq is not None:
+                    parts.append(engineering(freq, "Hz"))
+                if out is not None:
+                    parts.append("输出开" if out else "输出关")
+                if parts:
+                    return "connected", "CH1 · " + " · ".join(parts), False
+            elif category == "power_supply":
+                v = self._extract_number(vals.get("voltage"))
+                i = self._extract_number(vals.get("current"))
+                parts = []
+                if v is not None:
+                    parts.append(f"设定 {v:.3f} V")
+                if i is not None:
+                    parts.append(f"限流 {i:.3f} A")
+                if parts:
+                    return "connected", "CH1 · " + " · ".join(parts), False
+            elif category == "temperature_controller":
+                temp = self._extract_number(vals.get("temperature") or vals.get("target_temperature"))
+                if temp is not None:
+                    return "connected", f"{temp:.2f} °C".replace("-", "−"), False
+            elif category == "electronic_load":
+                curr = self._extract_number(vals.get("current"))
+                if curr is not None:
+                    return "connected", f"{curr:.3f} A", False
+
+        if category in {
+            "spectrum_analyzer",
+            "oscilloscope",
+            "optical_power_meter",
+            "optical_spectrometer",
+            "frequency_counter",
+            "accelerometer",
+            "phase_noise_analyzer",
+            "network_analyzer",
+            "multimeter",
+        }:
+            return "connected", "待开始", False
+        return "connected", "已连接", False
+
+    def _card_devices(
+        self,
+        records: list[dict[str, Any]],
+        tasks: dict[str, dict[str, Any]],
+        watch_alarms: list[dict[str, str]],
+    ) -> list[tuple[str, str, str, str, bool]]:
         window = self.window
-        order = {"busy": 0, "connected": 1, "degraded": 2, "error": 2, "recovering": 3, "connecting": 3}
+        order = {
+            "error": 0,
+            "recording": 1,
+            "monitoring": 2,
+            "busy": 2,
+            "connected": 3,
+            "connecting": 4,
+            "recovering": 4,
+            "disconnected": 5,
+        }
         rows = []
         for record in records:
             state = window.states.get(record["id"], {})
             connection = display_connection_state(state)
+            task = tasks.get(record["id"], {})
             slot = window.runtime.repository.function_slots.label(
                 record.get("slots", {}).get(window.controller.mode, ""), window.controller.mode
             )
-            model = (
+            raw_model = (
                 record["identity"].get("model")
-                or record.get("displayName")
+                or (record.get("displayName") if "://" not in (record.get("displayName") or "") else "")
                 or record["adapterId"]
                 or "未识别设备"
             )
-            detail = (
-                slot
-                if slot and slot != "未绑定"
-                else record.get("displayName") or record["config"]["resource"]
-            )
-            text = {
-                "connected": "已连接",
-                "busy": "采集中" if display_task(state) else "忙碌",
-                "connecting": "连接中",
-                "recovering": "重连中",
-                "degraded": "异常",
-                "error": "异常",
-            }.get(connection, "未连接")
-            rows.append((order.get(connection, 9), connection, model, detail, text))
+            if "_" in raw_model and raw_model.islower():
+                model = CATEGORY_LABELS.get(instrument_category(record), raw_model)
+            else:
+                model = raw_model
+            detail = slot if slot and slot != "未绑定" else "未绑定"
+            status_key, readout, is_alert = self._device_readout(record, connection, task, watch_alarms)
+            rows.append((order.get(status_key, 9), status_key, model, detail, readout, is_alert))
         rows.sort(key=lambda row: row[0])
         return [row[1:] for row in rows]
 
@@ -435,23 +613,41 @@ class WorkspaceOverview:
             or window.states.get(item["id"], {}).get("connectionState") in {"error", "degraded"}
             for item in current_records.values()
         )
-        window.summary.setText(
-            ("真实设备" if window.runtime.hardware else "模拟演示")
-            + f" · 发现 {len(current_records)} 台 · 在线 {connected} 台 · 异常 {errors} 台 · 已识别 {identified} 台"
-            + f" · 历史与已配置 {len(window.records) - len(current_records)} 台"
+        finished_at = progress.get("finishedAt") or ""
+        scan_clock = ""
+        if finished_at:
+            parsed = QDateTime.fromString(finished_at, Qt.DateFormat.ISODateWithMs)
+            if not parsed.isValid():
+                parsed = QDateTime.fromString(finished_at, Qt.DateFormat.ISODate)
+            if parsed.isValid():
+                scan_clock = parsed.toLocalTime().toString("HH:mm")
+        prefix = (
+            f"上次扫描 {scan_clock}"
+            if scan_clock
+            else ("真实设备" if window.runtime.hardware else "模拟演示")
         )
+        window.summary.setText(f"{prefix} · 发现 {len(current_records)} 台设备")
         tasks = window.runtime.monitoring.snapshots()
         acquiring = sum(bool(task.get("running")) for task in tasks.values())
+        watch_alarms = window.chrome.watchlist_alarms() if hasattr(window, "chrome") else []
+        total_alarms = errors + len(watch_alarms)
         pills = window.overview_pills
         pills["online"].set(f"在线 {connected}", "ok" if connected else "neutral")
         pills["offline"].set(f"未连接 {max(0, len(current_records) - connected)}", "neutral")
-        pills["errors"].set(f"异常 {errors}", "err" if errors else "neutral")
+        alarm_text = f"告警 {total_alarms}"
+        if self.alert_count.text() != alarm_text or self.alert_count.icon().isNull():
+            self.alert_count.setText(alarm_text)
+            set_property(self.alert_count, "alert", bool(total_alarms))
+            self.alert_count.setIcon(icons.icon("alert", tk.ERR if total_alarms else tk.TEXT_2))
+            self.alert_count.setMinimumWidth(self.alert_count.sizeHint().width())
         pills["running"].set(
             f"采集中 {acquiring}", "accent" if acquiring else "neutral", live=bool(acquiring)
         )
-        window.overview_side.refresh(window.chrome._problems() if hasattr(window, "chrome") else [], tasks)
+        window.overview_side.refresh(tasks)
         window.summary.setToolTip(
-            f"最近扫描：{progress.get('finishedAt', '尚未扫描')}；本次结果 {len(progress.get('items', []))}"
+            f"发现 {len(current_records)} 台 · 在线 {connected} 台 · 异常 {errors} 台 · 已识别 {identified} 台"
+            f" · 历史与已配置 {len(window.records) - len(current_records)} 台"
+            f"\n最近扫描：{finished_at or '尚未扫描'}（本次结果 {len(progress.get('items', []))}）"
         )
         current_filter = window.filter.currentData()
         presence_scope = window.presence_filter.currentData()
@@ -487,7 +683,7 @@ class WorkspaceOverview:
             if window.category_filter.itemData(index, Qt.ItemDataRole.ToolTipRole) != tooltip:
                 window.category_filter.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
             window.cards[category].update_counts(len(records), live, abnormal, bound)
-            window.cards[category].set_devices(self._card_devices(records))
+            window.cards[category].set_devices(self._card_devices(records, tasks, watch_alarms))
             if records:
                 visible_cards.append(window.cards[category])
         window.card_grid.set_cards(tuple(visible_cards))

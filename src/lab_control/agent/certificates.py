@@ -27,7 +27,7 @@ def prepare_certificate(folder: Path, address: str) -> tuple[Path, Path]:
             check.load_cert_chain(certificate, private_key)
             return certificate, private_key
     key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "TF LabControl " + address)])
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "LabControl " + address)])
     now = datetime.now(timezone.utc)
     cert = (
         x509.CertificateBuilder()

@@ -84,8 +84,9 @@ def test_real_overview_incremental_mode_and_scan(qtbot, tmp_path, monkeypatch):
         assert window.category_filter.count() == len(CATEGORIES) + 1
         assert tuple(card.category for card in window.card_grid.cards) == ("signal_generator",)
         card = window.cards["signal_generator"]
-        assert card.online_count.text() == "01"
-        assert card.visible_count.text() == "可见 1 台"
+        assert card.total_count.text() == "1"
+        assert card.counts["online"] == 1
+        assert card.counts["visible"] == 1
         for category in PRIMARY_ENTRY_CATEGORIES[1:]:
             assert window.cards[category].isHidden()
         assert window.device_pool.isHidden()
@@ -132,8 +133,9 @@ def test_optical_card_groups_spectrometer_and_power_meter(qtbot, tmp_path):
         assert report["state"] == "complete"
         window.refresh()
         card = window.cards["optical_power_meter"]
-        assert card.discovered_count.text() == "发现 2 台"
-        assert card.visible_count.text() == "可见 2 台"
+        assert card.total_count.text() == "2"
+        assert card.counts["discovered"] == 2
+        assert card.counts["visible"] == 2
     finally:
         window.timer.stop()
         window.controller.close()
@@ -189,15 +191,16 @@ def test_overview_hides_empty_categories_and_counts_only_current_records(qtbot, 
         assert not window.card_grid.cards
         assert "发现 0 台" in window.summary.text()
         for card in window.card_grid.cards:
-            assert card.visible_count.text() == "可见 0 台"
-            assert card.online_count.text() == "00"
-            assert all(value.text() == "0" for value in card.metrics.values())
+            assert card.total_count.text() == "0"
+            assert card.counts["visible"] == 0
+            assert card.counts["online"] == 0
+            assert all(value == 0 for value in card.counts.values())
         assert window.cards["optical_power_meter"].isHidden()
         runtime.connect(device_id).result()
         window.refresh()
         assert tuple(card.category for card in window.card_grid.cards) == ("signal_generator",)
-        assert window.cards["signal_generator"].visible_count.text() == "可见 1 台"
-        assert window.cards["signal_generator"].online_count.text() == "01"
+        assert window.cards["signal_generator"].total_count.text() == "1"
+        assert window.cards["signal_generator"].counts["online"] == 1
         assert window.cards["optical_power_meter"].isHidden()
         assert "发现 1 台" in window.summary.text()
         runtime.connect(optical_id).result()
@@ -206,8 +209,8 @@ def test_overview_hides_empty_categories_and_counts_only_current_records(qtbot, 
             "signal_generator",
             "optical_power_meter",
         )
-        assert window.cards["optical_power_meter"].visible_count.text() == "可见 1 台"
-        assert window.cards["optical_power_meter"].online_count.text() == "01"
+        assert window.cards["optical_power_meter"].total_count.text() == "1"
+        assert window.cards["optical_power_meter"].counts["online"] == 1
         assert "发现 2 台" in window.summary.text()
     finally:
         window.timer.stop()

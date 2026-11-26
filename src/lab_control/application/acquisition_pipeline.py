@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Any
+
 from lab_control.domain.frames import (
     FrozenDict as FrozenDict,
 )
@@ -17,7 +20,7 @@ from lab_control.domain.frames import (
 from lab_control.domain.frames import (
     validate_recorded_batch as validate_recorded_batch,
 )
-from lab_control.domain.instruments import ValidationError
+from lab_control.domain.instruments import MeasurementBatch, ValidationError
 
 SPECTRUM_INTERVAL = "spectrum_interval"
 
@@ -32,6 +35,36 @@ def validate_cadence(
         return
     if cadence not in {None, "fastest", "interval"}:
         raise ValidationError("Unknown acquisition cadence")
-    lower = minimum if cadence is None else 0.5
+    lower = minimum if cadence is None else 0.5 if cadence == "fastest" else 0.0
     if isinstance(interval, bool) or not isinstance(interval, (int, float)) or not lower <= interval <= 60:
         raise ValidationError(f"Acquisition interval must be {lower}..60 s")
+
+
+def stamp_host_read(
+    batch: MeasurementBatch,
+    started: float,
+    started_utc: str,
+    completed: float,
+    completed_utc: str,
+    performance: dict[str, Any] | None = None,
+) -> MeasurementBatch:
+    """Attach the actual worker read boundaries without changing instrument sample axes."""
+    return replace(
+        batch,
+        timestamp=completed_utc,
+        time_basis="host_utc_at_read_completed; waveform axes from instrument",
+        timing={
+            **batch.timing,
+            "version": 1,
+            "host_read_started_at": started_utc,
+            "host_read_completed_at": completed_utc,
+            "read_duration_seconds": completed - started,
+            "clock_source": "host_utc; durations=monotonic",
+        },
+        performance={
+            **batch.performance,
+            **(performance or {}),
+            "acquisition_seconds": completed - started,
+            "received_at_monotonic": completed,
+        },
+    )

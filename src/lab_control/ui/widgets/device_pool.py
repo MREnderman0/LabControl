@@ -269,9 +269,16 @@ class DeviceRowDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         painter.setBrush(QColor(tk.ACCENT_SOFT if selected else tk.HOVER if hovered else tk.SURFACE_2))
-        painter.setPen(QColor("#6a4a2a" if selected else tk.BORDER))
+        if selected:
+            border = QColor(tk.ACCENT)
+            border.setAlpha(140)
+            painter.setPen(border)
+        else:
+            painter.setPen(QColor(tk.BORDER))
         painter.drawRoundedRect(rect, 7, 7)
         name, _, model = str(index.data() or "").partition("\n")
+        if " / " in name and "://" in name:
+            name = name.split(" / ", 1)[0]
         font = option.font
         font.setBold(True)
         painter.setFont(font)

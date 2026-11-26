@@ -21,6 +21,12 @@ from lab_control.application.config import ConnectionConfig
 def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = None) -> dict:
     if runtime.hardware or runtime.inventory.all():
         raise ValueError("Agent verification requires a new isolated Mock runtime")
+    from PySide6.QtWidgets import QApplication
+
+    from lab_control.ui.widgets.publication_figure import prepare_publication_font
+
+    _app = QApplication.instance() or QApplication(["LabControl MCP verification"])
+    prepare_publication_font()
     config = ConnectionConfig("mock://agent-acceptance/scope", "rs.rtm3004", "mock")
     device = runtime.add(config)
     runtime.connect(device, configure_acquisition=False).result(10)
@@ -49,19 +55,13 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
     full_grant, granted, skipped = service.grant_all_devices()
     assert (granted, skipped) == (1, 0)
     runtime.sessions.disconnect(device)
-    ports = []
-    for _ in range(2):
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", 0))
-            ports.append(sock.getsockname()[1])
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
     service.server = AgentServer(service)
-    # Exercise real TLS on loopback without opening a LAN listener or firewall.
-    service.server.settings.update(
-        enabled=True, local_port=ports[0], lan_enabled=True, lan_address="127.0.0.1", lan_port=ports[1]
-    )
-    service.server.start()
+    service.server.configure({"enabled": True, "local_port": port})
     connection = runtime.repository.root / "connector.json"
-    service.server.export_connection(connection, lan=True)
+    service.server.export_connection(connection)
     folder = runtime.repository.root / "连接器 本机导出"
     settings = json.loads(connection.read_text(encoding="utf-8"))
     settings["export_root"] = str(folder)
@@ -110,6 +110,7 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
             scope = {"grant_id": grant, "device_id": device}
             await settled(await call("connect_device", **scope, request_id="sdk-connect"))
             await call("get_capabilities", **scope)
+            assert await call("read_parameters", **scope, operations=["timebase"], channel=1)
             frame = await call(
                 "save_frame",
                 **scope,
@@ -215,7 +216,7 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
         "passed": True,
         "hardware_accessed": False,
         "stdio": True,
-        "tls": True,
+        "loopback_http": True,
         "legacy_protocol": True,
         "tokenless": True,
         "tools": 28,

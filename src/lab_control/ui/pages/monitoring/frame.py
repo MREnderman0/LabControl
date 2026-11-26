@@ -7,6 +7,8 @@ card and run controls, and chart cards with a header, a padded body and a status
 
 from __future__ import annotations
 
+from functools import partial
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -21,10 +23,29 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from lab_control.ui.kit import Dot, style_button
+from lab_control.ui.kit import Dot, Pill, style_button
 
 PAGE_MARGINS = (20, 16, 20, 16)
 PAGE_SPACING = 14
+
+
+def displayed_frame_saver(page, device_id: str, mode: str):
+    """Bind the displayed frame and its device before a later UI update can replace either."""
+    frame = page.plot.displayed_frame
+    if frame is None or not page.save_button.isEnabled():
+        return None
+    return partial(page.controller.save_displayed_frame, page, device_id, frame, mode)
+
+
+def show_sync_health(pill: Pill, status: str) -> None:
+    """Translate only confirmed readback success to the green synchronized state."""
+    if status == "正常":
+        pill.set("已同步", "ok", icon="", dot=True)
+    elif status == "同步异常":
+        pill.set(status, "err", icon="alert", dot=False)
+    else:
+        pending = status in {"同步中", "待同步"}
+        pill.set(status, "warn" if pending else "neutral", icon="", dot=True, live=pending)
 
 
 def page_layout(layout: QBoxLayout) -> None:
@@ -36,23 +57,6 @@ def run_button(button: QAbstractButton, running: bool = False) -> None:
     """Start/pause button in the page header (30 px, play / pause icon)."""
     button.setProperty("buttonSize", "compact")
     style_button(button, "", "pause" if running else "play")
-
-
-def header_row(
-    header: QHBoxLayout,
-    *,
-    connection: QLabel | None = None,
-    actions: tuple[QWidget, ...] = (),
-) -> None:
-    """Hide the text connection state (the device card shows it) and append actions on the right."""
-    header.setSpacing(8)
-    if connection is not None:
-        connection.hide()
-    for widget in actions:
-        parent = widget.parentWidget()
-        if parent is not None and (layout := parent.layout()) is not None:
-            _remove(layout, widget)
-        header.addWidget(widget)
 
 
 def empty_label(label: QLabel) -> None:
@@ -165,4 +169,4 @@ def show_state(dot: Dot, task: dict, connected: bool) -> None:
     )
 
 
-__all__ = ["chart_card", "empty_label", "header_row", "page_layout", "run_button", "show_state"]
+__all__ = ["chart_card", "empty_label", "page_layout", "run_button", "show_state"]

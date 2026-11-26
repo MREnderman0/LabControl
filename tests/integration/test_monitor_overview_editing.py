@@ -10,7 +10,7 @@ from lab_control.domain.instruments import AcquisitionRequest
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.pages.monitoring.dashboard import MonitoringDashboard
 from lab_control.ui.pages.monitoring.timing import (
-    MonitoringTiming,
+    MonitoringInterval,
     monitoring_options,
     save_monitoring_interval,
 )
@@ -33,8 +33,7 @@ def workspace(qtbot, tmp_path):
         runtime.monitoring.enable_settings_sync(False)
         layout = QVBoxLayout(window)
         dashboard = MonitoringDashboard(controller)
-        timing = MonitoringTiming(controller)
-        timing.set_fixed_interval()
+        timing = MonitoringInterval(controller)
         timing.bind(meters[0], "general")
         layout.addWidget(timing)
         layout.addWidget(dashboard)
@@ -59,7 +58,7 @@ def test_interval_draft_survives_refresh_and_only_commits_after_editing(
     monkeypatch.setattr(
         runtime.sessions.sessions[key].adapter, "apply", lambda command: writes.append(command)
     )
-    editor = dashboard.cards[key].interval if view == "overview" else timing.interval
+    editor = dashboard.cards[key].interval if view == "overview" else timing
     editor.setValue(2)
     if running:
         runtime.monitoring.start(key, (AcquisitionRequest("scalar", quantity="power"),), interval=2)
@@ -90,7 +89,7 @@ def test_interval_draft_survives_refresh_and_only_commits_after_editing(
     else:
         qtbot.keyClick(editor, Qt.Key.Key_Return)
     qtbot.waitUntil(lambda: monitoring_options(controller, key, "general")["interval"] == 0.5)
-    assert editor.value() == timing.interval.value() == dashboard.cards[key].interval.value() == 0.5
+    assert editor.value() == timing.value() == dashboard.cards[key].interval.value() == 0.5
     assert runtime.repository.load_workspace(f"monitor-timing/general/{key}")["interval"] == 0.5
     assert [change for change in changes if change[0] == key] == [(key, 0.5)]
     assert not writes
@@ -132,19 +131,19 @@ def test_overview_changes_cadence_only_for_the_explicit_interval_edit(workspace)
         save_monitoring_interval(controller, key, "general", 2, cadence="fastest")
     changed, other = meters[:2]
     dashboard.cards[other].enabled.setChecked(False)
-    assert all(monitoring_options(controller, key, "general")["cadence"] == "fastest" for key in meters)
+    assert all(monitoring_options(controller, key, "general")["interval"] == 0 for key in meters)
     dashboard.cards[changed].interval.setValue(3)
-    assert monitoring_options(controller, changed, "general")["cadence"] == "interval"
-    assert all(monitoring_options(controller, key, "general")["cadence"] == "fastest" for key in meters[1:])
+    assert monitoring_options(controller, changed, "general")["interval"] == 3
+    assert all(monitoring_options(controller, key, "general")["interval"] == 0 for key in meters[1:])
     assert not controller.runtime.monitoring.tasks
 
 
 @pytest.mark.parametrize("view", ["overview", "detail"])
-@pytest.mark.parametrize("draft, expected", [("0", 0.5), ("99", 60), ("-1", 0.5), ("abc", 2), ("", 2)])
+@pytest.mark.parametrize("draft, expected", [("0", 0), ("99", 60), ("-1", 0), ("abc", 2), ("", 2)])
 def test_interval_bounds_and_invalid_text_are_resolved_on_blur(workspace, qtbot, view, draft, expected):
     _, controller, dashboard, timing, meters = workspace
     key = meters[0]
-    editor = dashboard.cards[key].interval if view == "overview" else timing.interval
+    editor = dashboard.cards[key].interval if view == "overview" else timing
     editor.setValue(2)
     editor.setFocus()
     qtbot.waitUntil(editor.hasFocus)

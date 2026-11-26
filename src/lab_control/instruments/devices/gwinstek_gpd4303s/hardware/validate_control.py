@@ -322,7 +322,7 @@ def verify(
     try:
         if config.adapter != "gwinstek.gpd4303s" or not config.expected_serial or config.transport != "visa":
             raise ValueError("Use one explicit GPD-4303S VISA config with its full expected serial")
-        lock = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TF-LabControl/hardware.lock"
+        lock = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "LabControl/hardware.lock"
         if (
             lock.resolve() != lock
             or application_home().resolve() != application_home()

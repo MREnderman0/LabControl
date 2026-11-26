@@ -34,11 +34,11 @@
 
 run.bat、Python 模块入口、lab-control 与安装版 EXE 统一调用 launcher.main；先分发 Agent 连接器、CSV worker、部署自检及 CLI，GUI 分支才进入 app.main 创建真实 ApplicationRuntime 和 RealWindow。内部测试和预览注入隔离 Mock ApplicationRuntime 并显示同一窗口；lab-control-cli 调用同一会话服务。配置文件只描述资源/适配器/驱动，不允许混入厂家命令。
 
-真实进程使用每用户固定位置的独占进程锁（即使更换 LAB_CONTROL_HOME 仍互斥），固定为 `%LOCALAPPDATA%/TF-LabControl/hardware.lock`，并解析该锁目录的物理路径；库存路径重定向不改变锁根目录，阻止本软件 GUI/CLI/Python 实测进程同时占用仪器。兼容旧运行根目录时，Python 与 PowerShell 维护入口均按物理文件身份去重；同一锁的路径别名只加锁一次，不同文件继续分别加锁，失败时释放本次已取得的锁。锁被占用时启动边界报告持有进程的 PID 和启动时间；这些信息写入临时的 `hardware.lock.owner.json`，正常退出时清理，操作系统锁本身仍是唯一的占用依据。不关闭其他厂商软件，其他程序占用会产生可解释错误。模拟 CLI 和单元测试不获取硬件进程锁，存储隔离在 simulation。
+真实进程使用每用户固定位置的独占进程锁（即使更换 LAB_CONTROL_HOME 仍互斥），固定为 `%LOCALAPPDATA%/LabControl/hardware.lock`，并解析该锁目录的物理路径；库存路径重定向不改变锁根目录，阻止本软件 GUI/CLI/Python 实测进程同时占用仪器。兼容旧运行根目录时，Python 与 PowerShell 维护入口均按物理文件身份去重；同一锁的路径别名只加锁一次，不同文件继续分别加锁，失败时释放本次已取得的锁。锁被占用时启动边界报告持有进程的 PID 和启动时间；这些信息写入临时的 `hardware.lock.owner.json`，正常退出时清理，操作系统锁本身仍是唯一的占用依据。不关闭其他厂商软件，其他程序占用会产生可解释错误。模拟 CLI 和单元测试不获取硬件进程锁，存储隔离在 simulation。
 
 ## 数据流
 
-[Agent 协作实验](../guides/agent-collaboration.md)从系统设置启用，使用独立 asyncio 网络循环调用同一 Runtime 的 Qt 无关门面。按实验范围授权、设备 worker 内重新校验配置版本，GUI 与多个 Agent 共用原会话。授权管理仅在本机界面；连接器不创建硬件 Runtime。任务/请求键持久保存，重启标记未知结果且不恢复执行权限。
+[MCP 接入](../guides/agent-collaboration.md)从系统设置启用，使用独立 asyncio 网络循环调用同一 Runtime 的 Qt 无关门面。按实验范围授权、设备 worker 内重新校验配置版本，GUI 与多个 Agent 共用原会话。桌面为已核验的设备签发自动全授权；连接器不创建硬件 Runtime。任务/请求键持久保存，重启标记未知结果且不恢复执行权限。
 
     UI / CLI / Python
       -> ApplicationRuntime
@@ -68,7 +68,7 @@ run.bat、Python 模块入口、lab-control 与安装版 EXE 统一调用 launch
 
 ## 存储和依赖
 
-根目录默认 %LOCALAPPDATA%/TF-LabControl，可用 LAB_CONTROL_HOME 指定。当前使用通用工作区；实验数据按设备、日期、采集开始时间分层，旧 electronic/optical 数据保持原样。单帧导出保留 NPZ/CSV，连续记录保存版本化 SQLite/BLOB 并异步转换 CSV；实际格式见[数据模型](../data/data-model.md)。HDF5、完整实验索引和高级分析算法尚未接入。
+根目录默认 %LOCALAPPDATA%/LabControl，可用 LAB_CONTROL_HOME 指定。当前使用通用工作区；实验数据按设备、日期、采集开始时间分层，旧 electronic/optical 数据保持原样。单帧导出保留 NPZ/CSV，连续记录保存版本化 SQLite/BLOB 并异步转换 CSV；实际格式见[数据模型](../data/data-model.md)。HDF5、完整实验索引和高级分析算法尚未接入。
 
 离线工作台由 RecordingCatalog、ProcessingService 和 ResultReader 分别负责目录发现、串行处理/文件操作与随机读取。运行时延迟创建服务，处理入口不构建设备适配器；型号包在目录注册中声明 ProcessingProfile。Qt 页面只提交任务和读取快照，后台通过单个处理 worker 与有界读取请求工作。处理结果按完整代际发布；跨盘文件操作记录可恢复日志，重启只恢复索引，不重放删除。App 中使用 pyqtgraph 交互图表，导出通过 Qt 独立绘制白底论文图，不修改唯一主题或新增依赖。
 

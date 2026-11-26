@@ -6,8 +6,18 @@ from PySide6.QtCore import QSettings, QStandardPaths
 from PySide6.QtWidgets import QFileDialog, QWidget
 
 
+def frame_export_settings() -> QSettings:
+    settings = QSettings("LabControl", "LabControl")
+    key = "exports/lastFrameDirectory"
+    if not settings.contains(key):
+        legacy = QSettings("TF-LabControl", "LabControl")
+        if legacy.contains(key):
+            settings.setValue(key, legacy.value(key))
+    return settings
+
+
 def choose_frame_destination(parent: QWidget, *, png: bool = False) -> Path | None:
-    settings = QSettings("TF-LabControl", "LabControl")
+    settings = frame_export_settings()
     key = "exports/lastFrameDirectory"
     last = settings.value(key, "")
     initial = (

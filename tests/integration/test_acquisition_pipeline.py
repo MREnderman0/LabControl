@@ -96,7 +96,7 @@ def test_buffer_pause_keeps_monitoring_and_releases_lock_after_binary_drain(tmp_
         )
 
 
-@pytest.mark.parametrize("cadence,interval", [("bad", 1), ("interval", 0.1), ("fastest", 0)])
+@pytest.mark.parametrize("cadence,interval", [("bad", 1), ("interval", -0.1), ("fastest", 0)])
 def test_explicit_cadence_validates_before_io(tmp_path, cadence, interval):
     runtime, key = connected(tmp_path)
     with runtime:

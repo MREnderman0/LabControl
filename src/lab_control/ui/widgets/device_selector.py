@@ -9,7 +9,7 @@ from lab_control.application.catalog import instrument_categories, instrument_ca
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.domain.workspace import channel_label
 from lab_control.ui.controller import WorkspaceController, display_connection_state, state_label
-from lab_control.ui.kit import DeviceChips, icons, paint_device_card, style_button
+from lab_control.ui.kit import icons, paint_device_card, style_button
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 STATE_KIND = {
@@ -91,7 +91,6 @@ class DeviceSelector(QWidget):
         self.controller, self.category, self.surface = controller, category, surface
         self.bound_device = bound_device
         self.device_id = bound_device
-        self._chip_count = 0
         self._names_key: tuple | None = None
         self.signature: tuple[tuple[str, str], ...] | None = None
         layout = QVBoxLayout(self)
@@ -105,10 +104,6 @@ class DeviceSelector(QWidget):
             lambda: self.channel_changed.emit(self.channel.currentData() or 1)
         )
         row.addWidget(self.combo, 1)
-        self.chips = DeviceChips(self)
-        self.chips.changed.connect(self._chip_chosen)
-        self.chips.hide()
-        row.addWidget(self.chips, 0, Qt.AlignmentFlag.AlignVCenter)
         self.channel_label = channel_label_widget = QLabel("通道")
         channel_label_widget.setObjectName("mutedText")
         row.addWidget(channel_label_widget)
@@ -143,7 +138,6 @@ class DeviceSelector(QWidget):
     def refresh(self) -> None:
         records = sorted(self._records(), key=lambda r: len(instrument_categories(r)))
         entries = []
-        chips = []
         slots = self.controller.runtime.repository.function_slots
         for entry in records:
             label = device_label(entry)
@@ -152,15 +146,6 @@ class DeviceSelector(QWidget):
             suffix = " · " + state_label(connection) if connection != "connected" else ""
             slot_name = slots.label(slot, self.controller.mode)
             entries.append(((slot_name + " · " if slot else "") + label + suffix, entry["id"]))
-            model = entry["identity"].get("model") or entry.get("adapterId", "")
-            chips.append(
-                (
-                    slot_name if slot else model,
-                    entry["id"],
-                    STATE_KIND.get(connection, "idle"),
-                    entries[-1][0],
-                )
-            )
         signature = tuple(entries)
         if signature != self.signature:
             initial = (
@@ -178,13 +163,9 @@ class DeviceSelector(QWidget):
                 with QSignalBlocker(self.combo):
                     self.combo.setCurrentIndex(index)
         self.combo.setPlaceholderText("选择已连接设备" if entries else "暂无已连接设备")
-        self._chip_count = len(chips)
-        if 1 < len(chips) <= 6:
-            self.chips.set_devices(chips, self.device_id)
         record = self.controller.records.get(self.device_id)
         self.connect_button.setVisible(not bool(self.device_id))
         self.channel.setEnabled(bool(self.device_id))
-        self._fit_chips()
         if record:
             key = (self.device_id, record.get("slots", {}).get(self.controller.mode), slots.names_revision)
             if key != self._names_key:
@@ -201,7 +182,12 @@ class DeviceSelector(QWidget):
                 if record["config"].get("expected_serial")
                 else "序列号"
             )
-            model = identity.get("model") or record["adapterId"]
+            raw_model = identity.get("model") or record["adapterId"]
+            model = (
+                CATEGORY_LABELS.get(self.category, raw_model)
+                if "_" in raw_model and raw_model.islower()
+                else raw_model
+            )
             self.info.setText(
                 f"{model}  ·  {record['config']['resource']}\n"
                 f"{serial_label}：{serial}  ·  "
@@ -221,12 +207,13 @@ class DeviceSelector(QWidget):
                 )
                 if value
             )
-            busy = state.get("activeTask") == "continuous_acquisition"
+            card_state = "已连接" if connection in {"connected", "busy"} else state_label(connection)
+            card_kind = "ok" if connection in {"connected", "busy"} else STATE_KIND.get(connection, "neutral")
             self.combo.set_card(
                 model,
                 subtitle,
-                "采集中" if busy and connection == "connected" else state_label(connection),
-                "accent" if busy else STATE_KIND.get(connection, "neutral"),
+                card_state,
+                card_kind,
             )
             self.combo.setToolTip(self.info.text())
         else:
@@ -238,27 +225,6 @@ class DeviceSelector(QWidget):
                 "",
                 "neutral",
             )
-
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        self._fit_chips()
-
-    def _fit_chips(self) -> None:
-        width = self.chips.sizeHint().width()
-        reserved = 190 + sum(
-            w.sizeHint().width() + 10
-            for w in (self.channel_label, self.channel, self.connect_button)
-            if not w.isHidden()
-        )
-        visible = 1 < self._chip_count <= 6 and 0 < width <= self.width() - reserved
-        self.chips.setMaximumWidth(width if visible else 0)
-        self.chips.setVisible(visible)
-
-    def _chip_chosen(self, device_id) -> None:
-        if device_id and device_id != self.device_id:
-            index = self.combo.findData(device_id)
-            if index >= 0:
-                self.combo.setCurrentIndex(index)
 
     def _selected(self) -> None:
         device_id = self.combo.currentData() or ""

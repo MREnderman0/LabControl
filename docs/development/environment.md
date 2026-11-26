@@ -34,7 +34,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-dev.ps1 -Offli
 启动不更新已有 Python 依赖；首次 GUI 运行提供可跳过的设备组件准备页，只有用户选择并点击准备才下载。缺少环境或必要 Python 依赖时，批处理提示并调用上述国内镜像安装脚本。刷新项目安装前正常关闭本项目软件，避免 Windows 锁住旧可执行文件。安装脚本同步注册信息，并清理旧 `lab-control-demo.exe`。仅刷新本地项目且已有构建缓存时，可离线执行：
 
 ```powershell
-.venv-dev\Scripts\uv.exe pip install --offline --no-deps --no-build-isolation --python .venv-dev\Scripts\python.exe --reinstall-package tf-labcontrol-shell -e .
+.venv-dev\Scripts\uv.exe pip install --offline --no-deps --no-build-isolation --python .venv-dev\Scripts\python.exe --reinstall-package labcontrol -e .
 ```
 
 检查可直接调用 `.venv-dev\Scripts\ruff.exe`、`mypy.exe`、`pytest.exe` 和 `python.exe`。如使用 uv，调用 `.venv-dev\Scripts\uv.exe`，并设置 `UV_PROJECT_ENVIRONMENT=.venv-dev`。下载政策同样适用于构建工具。
@@ -106,7 +106,7 @@ PicoScope 6404E 使用 PicoSDK，53100A 使用 TSERVE；不能把厂商私有协
 
 ## 原生组件
 
-`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/download-vendors.ps1` 是公共组件 CLI 的兼容入口，支持 `-Vendor Visa`、`Pico`、`Thorlabs` 或 `-Component`；仅下载/验证，禁止代理，不启动安装器。新材料默认写入 `%LOCALAPPDATA%\TF-LabControl\maintenance\packages`，旧项目/发行/ProgramData 缓存校验后仍可复用。下载写临时文件，失败/取消清理后可重试；已有材料按大小、哈希和适用签名校验后复用。来源由 `deployment/components.json` 统一维护，下载后核对锁定 SHA256、厂商签名并保存来源 JSON；`-VerifyOnly` 仅验证已有离线材料。GUI 通过明确点击打开厂商向导，活动设备期间禁止安装；自动安装执行器仍待实现。脚本不会自动安装、切换 USB 驱动或重启系统。
+`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/download-vendors.ps1` 是公共组件 CLI 的兼容入口，支持 `-Vendor Visa`、`Pico`、`Thorlabs` 或 `-Component`；仅下载/验证，禁止代理，不启动安装器。新材料默认写入 `%LOCALAPPDATA%\LabControl\maintenance\packages`，旧项目/发行/ProgramData 缓存校验后仍可复用。下载写临时文件，失败/取消清理后可重试；已有材料按大小、哈希和适用签名校验后复用。来源由 `deployment/components.json` 统一维护，下载后核对锁定 SHA256、厂商签名并保存来源 JSON；`-VerifyOnly` 仅验证已有离线材料。GUI 通过明确点击打开厂商向导，活动设备期间禁止安装；自动安装执行器仍待实现。脚本不会自动安装、切换 USB 驱动或重启系统。
 
 项目内 `deployment/packages` 仅跟踪清单、恢复说明和许可，载荷保留为被忽略的旧缓存，不需要 Git LFS。`setup-dev.ps1` 检测完整缓存后离线同步；缺失、损坏或 LFS 指针按国内镜像准备。`-Offline` 强制无网络并在缺项时报错；新缓存可由 `scripts/prepare_dev_cache.py` 独立导出。详见[恢复说明](../../deployment/packages/README.md)和[下载资源](../generated/download-resources.md)。
 
@@ -124,4 +124,4 @@ PicoScope 6404E 使用 PicoSDK，53100A 使用 TSERVE；不能把厂商私有协
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\ensure_vc_runtime.ps1
 ```
 
-脚本记录在运行目录的 `maintenance/vc-runtime/results.json`，运行目录遵循 `LAB_CONTROL_HOME`，未指定时为 `%LOCALAPPDATA%\TF-LabControl`；可用 `-OutputRoot` 指定记录位置。旧记录自动保存在同目录 `history`；UAC 取消、安装退出码和需重启状态均保留。已有兼容版本时无需本地安装包，也不请求提权；确需安装时在整个维护期间持有公共硬件进程锁。脚本不删除运行库、不回退版本、不自动重启。此门禁用于避免重复运行旧厂商安装程序造成 VC++ 运行库降级。版本选择依据 [Microsoft 最新支持的 Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)。
+脚本记录在运行目录的 `maintenance/vc-runtime/results.json`，运行目录遵循 `LAB_CONTROL_HOME`，未指定时为 `%LOCALAPPDATA%\LabControl`；可用 `-OutputRoot` 指定记录位置。旧记录自动保存在同目录 `history`；UAC 取消、安装退出码和需重启状态均保留。已有兼容版本时无需本地安装包，也不请求提权；确需安装时在整个维护期间持有公共硬件进程锁。脚本不删除运行库、不回退版本、不自动重启。此门禁用于避免重复运行旧厂商安装程序造成 VC++ 运行库降级。版本选择依据 [Microsoft 最新支持的 Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)。

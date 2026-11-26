@@ -98,7 +98,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(18, 22, 18, 18)
         layout.setSpacing(8)
 
-        brand = QLabel("TF LABCONTROL")
+        brand = QLabel("LabControl")
         brand.setObjectName("brand")
         version = QLabel("LABORATORY CONTROL / DESIGN")
         version.setObjectName("brandSubline")

@@ -7,8 +7,8 @@ from lab_control.storage import runtime
 
 
 def test_runtime_home_uses_the_inventory_final_parent(monkeypatch, tmp_path):
-    logical = tmp_path / "logical" / "TF-LabControl"
-    physical = tmp_path / "physical" / "TF-LabControl"
+    logical = tmp_path / "logical" / "LabControl"
+    physical = tmp_path / "physical" / "LabControl"
     logical.mkdir(parents=True)
     physical.mkdir(parents=True)
     marker = logical / "inventory.sqlite3"
@@ -20,7 +20,7 @@ def test_runtime_home_uses_the_inventory_final_parent(monkeypatch, tmp_path):
 
 
 def test_runtime_home_keeps_explicit_path_when_inventory_is_unavailable(monkeypatch, tmp_path):
-    logical = tmp_path / "TF-LabControl"
+    logical = tmp_path / "LabControl"
     logical.mkdir()
     monkeypatch.setenv("LAB_CONTROL_HOME", str(logical))
     monkeypatch.setattr(runtime, "physical_path", lambda path: (_ for _ in ()).throw(OSError("unavailable")))
@@ -29,7 +29,7 @@ def test_runtime_home_keeps_explicit_path_when_inventory_is_unavailable(monkeypa
 
 
 def test_default_packaged_copy_is_rejected_before_repository_creation(monkeypatch, tmp_path):
-    logical = tmp_path / "TF-LabControl"
+    logical = tmp_path / "LabControl"
     logical.mkdir()
     (logical / "inventory.sqlite3").touch()
     private = tmp_path / "Packages" / "Example.App" / "LocalCache" / "Local" / logical.name
@@ -45,7 +45,7 @@ def test_default_packaged_copy_is_rejected_before_repository_creation(monkeypatc
 
 
 def test_explicit_runtime_still_rejects_unexpected_packaged_redirection(monkeypatch, tmp_path):
-    logical = tmp_path / "TF-LabControl"
+    logical = tmp_path / "LabControl"
     logical.mkdir()
     (logical / "inventory.sqlite3").touch()
     private = tmp_path / "Packages" / "Example.App" / "LocalCache" / "Local" / logical.name
@@ -57,11 +57,11 @@ def test_explicit_runtime_still_rejects_unexpected_packaged_redirection(monkeypa
 
 
 def test_packaged_redirect_detection_preserves_normal_runtime_paths():
-    logical = Path("C:/Users/Example/AppData/Local/TF-LabControl")
-    private = Path("C:/Users/Example/AppData/Local/Packages/App/LocalCache/Local/TF-LabControl")
+    logical = Path("C:/Users/Example/AppData/Local/LabControl")
+    private = Path("C:/Users/Example/AppData/Local/Packages/App/LocalCache/Local/LabControl")
     assert runtime._packaged_redirect(logical, private)
     assert not runtime._packaged_redirect(logical, logical)
-    assert not runtime._packaged_redirect(logical, Path("D:/LabData/TF-LabControl"))
+    assert not runtime._packaged_redirect(logical, Path("D:/LabData/LabControl"))
 
 
 @pytest.mark.skipif(runtime.os.name != "nt", reason="Windows handle path normalization")

@@ -12,7 +12,7 @@ from lab_control.transport.sdk import VendorLibrary
 @pytest.mark.parametrize("wrong_identity", [False, True])
 def test_readonly_uses_real_session_contract_with_offline_sdk(tmp_path, monkeypatch, wrong_identity):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setenv("LAB_CONTROL_HOME", str(tmp_path / "TF-LabControl"))
+    monkeypatch.setenv("LAB_CONTROL_HOME", str(tmp_path / "LabControl"))
     monkeypatch.setattr(readonly, "find_sdk", lambda kind: "offline-library")
     calls = []
 

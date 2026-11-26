@@ -1,4 +1,4 @@
-"""Local-only authority administration inside the approved card workspace."""
+"""Workspace settings for the local MCP endpoint."""
 
 from __future__ import annotations
 
@@ -7,537 +7,245 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QDialog,
-    QDialogButtonBox,
-    QFileDialog,
-    QFormLayout,
-    QGridLayout,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QSizePolicy,
-    QSpinBox,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtCore import QSignalBlocker, Qt, QTimer, Signal
+from PySide6.QtWidgets import QApplication, QFileDialog, QHBoxLayout, QLabel, QSpinBox, QVBoxLayout, QWidget
 
-from lab_control.agent.server import saved_settings
-from lab_control.application.agents.policy import COMMAND_CLIENT, INTERNAL_CLIENT
-from lab_control.application.config import config_from_record
-from lab_control.application.controls import OPERATION_LABELS
-from lab_control.instruments.registry import describe
-from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox, choose_item
-
-ACTION_LABELS = {
-    "view": "查看设备与任务",
-    "connect": "连接设备",
-    "disconnect": "断开空闲设备",
-    "read_parameters": "读取设备参数",
-    "apply": "修改选定参数",
-    "acquire": "单次采集并保存",
-    "monitor": "持续监测",
-    "record": "连续记录",
-    "stop": "停止共享任务",
-    "results": "获取实验文件",
-    "process": "计算指标及运行采数处理流程",
-    "acquisition_setup": "允许采集格式初始化",
-    "output_trigger": "允许输出、触发及深存储动作",
-}
-STATE_LABELS = {
-    "accepted": "已接受",
-    "running": "运行中",
-    "stopping": "停止并收尾",
-    "binary_saved": "原始数据已保存",
-    "converting": "CSV 转换中",
-    "completed": "完成",
-    "partial": "部分完成",
-    "failed": "失败",
-    "cancelled": "已取消",
-    "interrupted": "中断，需核对",
-}
+from lab_control.agent.server import AgentServer
+from lab_control.ui.kit import ElideLabel, Pill, Switch, button
+from lab_control.ui.pages.mcp_labels import ACTION_LABELS, STATE_LABELS
+from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 
-class GrantDialog(QDialog):
-    def __init__(self, service, parent=None, template=None):
-        super().__init__(parent)
-        self.service = service
-        self.grant_id = ""
-        self.setWindowTitle("实验范围授权")
-        self.resize(860, 680)
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-        self.device = WorkspaceComboBox()
-        for record in service.runtime.inventory.all():
-            identity = record.get("identity", {})
-            label = record.get("displayName") or identity.get("model") or record.get("adapterId") or "未识别"
-            self.device.addItem(f"{label} · {identity.get('serial') or '序列号待核对'}", record["id"])
-        form.addRow("设备", self.device)
-        self.channels = QLineEdit("1")
-        form.addRow("允许通道（逗号分隔）", self.channels)
-        layout.addLayout(form)
-        grid = QGridLayout()
-        self.action_checks = {}
-        for index, (key, label) in enumerate(ACTION_LABELS.items()):
-            check = QCheckBox(label)
-            check.setChecked(
-                key
-                in {"view", "connect", "read_parameters", "acquire", "monitor", "record", "stop", "results"}
-            )
-            self.action_checks[key] = check
-            grid.addWidget(check, index // 3, index % 3)
-        layout.addLayout(grid)
-        note = QLabel("按参数能力授权，同一能力的字段一起选择。可收窄数值范围；留空边界沿用型号范围。")
-        note.setWordWrap(True)
-        layout.addWidget(note)
-        self.parameters = QTableWidget(0, 6)
-        self.parameters.setHorizontalHeaderLabels(["允许写入", "参数", "字段", "单位", "下限", "上限"])
-        self.parameters.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.parameters, 1)
-        self.asset = QCheckBox("已在本机核对设备铭牌与连接映射（无可读序列号时必选）")
-        layout.addWidget(self.asset)
-        output_note = QLabel("授权无时间限制。撤销授权会停止对应采集并完成保存；设备输出须另行控制。")
-        output_note.setWordWrap(True)
-        layout.addWidget(output_note)
-        self.error = QLabel()
-        self.error.setWordWrap(True)
-        layout.addWidget(self.error)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("授予实验权限")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
-        buttons.accepted.connect(self.save)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        self.device.currentIndexChanged.connect(self.load_parameters)
-        self.rows: list[tuple[str, str, bool]] = []
-        self.load_parameters()
-        self.parameters.itemChanged.connect(self.select_operation)
-        if template:
-            self.device.setCurrentIndex(self.device.findData(next(iter(template["devices"]))))
-            self.channels.setText(",".join(map(str, template["channels"])))
-            for key, check in self.action_checks.items():
-                check.setChecked(key in template["actions"])
-            for row, (operation, parameter, _numeric) in enumerate(self.rows):
-                if operation in template["operations"]:
-                    item = self.parameters.item(row, 0)
-                    assert item is not None
-                    item.setCheckState(Qt.CheckState.Checked)
-                    bounds = template["limits"].get(operation, {}).get(parameter)
-                    if bounds:
-                        for column, value in zip((4, 5), bounds):
-                            item = self.parameters.item(row, column)
-                            assert item is not None
-                            item.setText(str(value))
-            # Asset confirmation is deliberately renewed against the current device.
-
-    def select_operation(self, item):
-        if item.column() != 0 or item.row() >= len(self.rows):
-            return
-        operation = self.rows[item.row()][0]
-        self.parameters.blockSignals(True)
-        try:
-            for row, (name, _field, _numeric) in enumerate(self.rows):
-                if name == operation:
-                    selected = self.parameters.item(row, 0)
-                    assert selected is not None
-                    selected.setCheckState(item.checkState())
-        finally:
-            self.parameters.blockSignals(False)
-
-    def load_parameters(self):
-        self.rows = []
-        self.parameters.setRowCount(0)
-        device = self.device.currentData()
-        record = next((r for r in self.service.runtime.inventory.all() if r["id"] == device), None)
-        if not record:
-            return
-        snapshot = self.service.runtime.sessions.capability_snapshot(device)
-        try:
-            schemas = list(snapshot.channels.values()) if snapshot else [describe(config_from_record(record))]
-            capabilities = {
-                cap.name: cap
-                for schema in schemas
-                for cap in schema.operations
-                if cap.writable and cap.available
-            }
-            for operation, cap in capabilities.items():
-                for name, parameter in cap.parameters.items() or [("", None)]:
-                    row = self.parameters.rowCount()
-                    self.parameters.insertRow(row)
-                    allowed = QTableWidgetItem("")
-                    allowed.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-                    allowed.setCheckState(Qt.CheckState.Unchecked)
-                    self.parameters.setItem(row, 0, allowed)
-                    for col, text in (
-                        (1, OPERATION_LABELS.get(operation, operation)),
-                        (2, name),
-                        (3, parameter.unit if parameter else ""),
-                    ):
-                        item = QTableWidgetItem(text)
-                        item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                        self.parameters.setItem(row, col, item)
-                    numeric = parameter is not None and parameter.kind in {"number", "integer", "array"}
-                    for col in (4, 5):
-                        value = (parameter.minimum if col == 4 else parameter.maximum) if numeric else None
-                        item = QTableWidgetItem(str(value) if value is not None else "")
-                        if not numeric:
-                            item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                        self.parameters.setItem(row, col, item)
-                    self.rows.append((operation, name, numeric))
-            self.error.clear()
-        except Exception as exc:
-            self.error.setText(str(exc))
-
-    def save(self):
-        try:
-            operations: set[str] = set()
-            limits: dict[str, dict[str, list[float]]] = {}
-            for row, (operation, parameter, numeric) in enumerate(self.rows):
-                selected = self.parameters.item(row, 0)
-                assert selected is not None
-                if selected.checkState() != Qt.CheckState.Checked:
-                    continue
-                operations.add(operation)
-                low_item, high_item = self.parameters.item(row, 4), self.parameters.item(row, 5)
-                assert low_item is not None and high_item is not None
-                low, high = low_item.text().strip(), high_item.text().strip()
-                if numeric and (low or high):
-                    if not low or not high:
-                        raise ValueError("自定义范围请同时填写上下限；也可同时留空沿用型号范围")
-                    limits.setdefault(operation, {})[parameter] = [float(low), float(high)]
-            self.grant_id = self.service.policy.create_grant(
-                INTERNAL_CLIENT,
-                [self.device.currentData()],
-                [key for key, check in self.action_checks.items() if check.isChecked()],
-                channels=[int(value.strip()) for value in self.channels.text().replace("，", ",").split(",")],
-                operations=sorted(operations),
-                limits=limits,
-                asset_confirmed=self.asset.isChecked(),
-            )
-            self.accept()
-        except Exception as exc:
-            self.error.setText(str(exc))
+def export_codex_bundle(server, destination: Path):
+    connection = destination.with_suffix(".connection.json")
+    if getattr(sys, "frozen", False):
+        command = str(Path(sys.executable).with_name("LabControl-Agent.exe"))
+        args = ["--agent-connector"]
+    else:
+        command = sys.executable
+        args = ["-m", "lab_control", "--agent-connector"]
+    args += ["--connection", str(connection.resolve())]
+    snippet = (
+        "[mcp_servers.lab_control]\n"
+        + "command = "
+        + json.dumps(command, ensure_ascii=False)
+        + "\n"
+        + "args = "
+        + json.dumps(args, ensure_ascii=False)
+        + "\n"
+        + "startup_timeout_sec = 30\ntool_timeout_sec = 90\n"
+    )
+    server.export_connection(connection)
+    try:
+        stream = destination.open("x", encoding="utf-8")
+    except Exception:
+        connection.unlink()
+        raise
+    try:
+        with stream:
+            stream.write(snippet)
+    except Exception:
+        destination.unlink()
+        connection.unlink()
+        raise
 
 
 class AgentCollaborationPanel(QWidget):
-    completed = Signal(str, object)
+    completed = Signal(object)
 
     def __init__(self, runtime, parent=None):
         super().__init__(parent)
         self.runtime, self.service = runtime, runtime.agent
         self.service.desktop_grant_enabled = True
-        self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-settings")
-        self.job = None
-        self._signature = None
-        layout = QVBoxLayout(self)
-        heading = QLabel("Agent 协作实验")
-        heading.setObjectName("panelTitle")
-        layout.addWidget(heading)
-        description = QLabel("内部 Agent 免令牌接入，共用桌面签发的实验授权。设备操作按会话串行执行。")
-        description.setObjectName("pageDescription")
-        description.setWordWrap(True)
-        layout.addWidget(description)
-        saved = saved_settings(runtime.repository)
-        row = QHBoxLayout()
-        self.enabled = QCheckBox("启用 Agent 接入")
-        self.enabled.setChecked(saved.get("enabled", False))
-        row.addWidget(self.enabled)
-        row.addWidget(QLabel("本机端口"))
-        self.local_port = QSpinBox()
-        self.local_port.setRange(1024, 65535)
-        self.local_port.setValue(saved.get("local_port", 8765))
-        row.addWidget(self.local_port)
-        row.addStretch(1)
-        apply = QPushButton("应用接入设置")
-        apply.clicked.connect(self.configure)
-        row.addWidget(apply)
-        layout.addLayout(row)
-        row = QHBoxLayout()
-        self.lan_enabled = QCheckBox("开放可信实验网 HTTPS（共享授权）")
-        self.lan_enabled.setChecked(saved.get("lan_enabled", False))
-        row.addWidget(self.lan_enabled)
-        self.lan_address = QLineEdit(saved.get("lan_address", ""))
-        self.lan_address.setPlaceholderText("实验网卡的本机 IPv4 地址")
-        row.addWidget(self.lan_address, 1)
-        self.lan_port = QSpinBox()
-        self.lan_port.setRange(1024, 65535)
-        self.lan_port.setValue(saved.get("lan_port", 8766))
-        row.addWidget(self.lan_port)
-        layout.addLayout(row)
-        self.local_commands = QCheckBox("启用临时命令处理（本机及实验网，退出后关闭）")
-        self.local_commands.setToolTip("允许所有可访问 MCP 的客户端运行处理命令，无需实验授权。")
-        layout.addWidget(self.local_commands)
-        self.network_status = QLabel()
-        self.network_status.setWordWrap(True)
-        layout.addWidget(self.network_status)
-        buttons = QGridLayout()
-        for index, (label, callback) in enumerate(
-            (
-                ("授予实验范围", self.add_grant),
-                ("一键全部授权", self.add_full_grant),
-                ("导出连接配置", self.export_connection),
-                ("导出 Codex 配置", self.export_codex),
-            )
-        ):
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            buttons.addWidget(button, index // 3, index % 3)
-        layout.addLayout(buttons)
-        self.grants = WorkspaceComboBox()
-        self.grants.setPlaceholderText("选择实验授权")
-        # Long grant labels must not set the settings page width; the popup shows them in full.
-        self.grants.setMinimumWidth(0)
-        self.grants.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        row = QHBoxLayout()
-        row.addWidget(self.grants, 1)
-        revoke = QPushButton("撤销所选实验授权")
-        revoke.clicked.connect(self.revoke_grant)
-        row.addWidget(revoke)
-        renew = QPushButton("按所选范围重新授权")
-        renew.clicked.connect(self.renew_grant)
-        row.addWidget(renew)
-        firewall = QPushButton("实验网防火墙…")
-        firewall.clicked.connect(self.firewall)
-        row.addWidget(firewall)
-        layout.addLayout(row)
-        self.tasks = QTableWidget(0, 5)
-        self.tasks.setHorizontalHeaderLabels(["时间", "来源", "设备", "操作", "状态 / 结果"])
-        self.tasks.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tasks.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.tasks.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.tasks.setMinimumHeight(170)
-        self.tasks.setMaximumHeight(260)
-        layout.addWidget(self.tasks)
-        stop = QPushButton("停止所选 Agent 任务并完成保存")
-        stop.clicked.connect(self.stop_selected)
-        layout.addWidget(stop)
-        self.status = QLabel("能访问接口的程序可使用共享授权。一键全部授权包含参数写入、输出和触发。")
-        self.status.setWordWrap(True)
-        self.status.setWordWrap(True)
-        layout.addWidget(self.status)
-        self.completed.connect(self._completed)
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh)
-        self.timer.start(1000)
-        self.refresh()
-        if self.enabled.isChecked():
-            QTimer.singleShot(0, self.configure)
-
-    def _server(self):
         if self.service.server is None:
-            from lab_control.agent.server import AgentServer
-
             self.service.server = AgentServer(self.service)
-        return self.service.server
+        self.server = self.service.server
+        self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mcp-settings")
+        self.busy = False
+        self.task_rows: dict[str, tuple] = {}
 
-    def _run(self, label, callback):
-        if self.job and not self.job.done():
-            self.status.setText("正在处理上一项设置，请稍候")
-            return
-        self.status.setText(label + "…")
-        self.job = self.worker.submit(callback)
+        layout = QVBoxLayout(self)
+        header = QHBoxLayout()
+        heading = QLabel("MCP 接入")
+        heading.setObjectName("panelTitle")
+        header.addWidget(heading)
+        self.state = Pill("已停止", "neutral", dot=True)
+        header.addWidget(self.state)
+        self.authority = QLabel()
+        self.authority.setObjectName("pageDescription")
+        header.addWidget(self.authority)
+        header.addStretch()
+        self.enabled = Switch("启用服务")
+        self.enabled.setAccessibleName("启用本机 MCP 服务")
+        header.addWidget(self.enabled)
+        layout.addLayout(header)
 
-        def finish(future):
-            try:
-                value = future.result()
-            except Exception as exc:
-                value = exc
-            self.completed.emit(label, value)
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("本机端口"))
+        self.local_port = QSpinBox()
+        self.local_port.setAccessibleName("本机端口")
+        self.local_port.setRange(1024, 65535)
+        self.local_port.setValue(self.server.settings["local_port"])
+        controls.addWidget(self.local_port)
+        self.apply = button("应用", size="sm")
+        controls.addWidget(self.apply)
+        controls.addSpacing(8)
+        self.address = ElideLabel()
+        self.address.setObjectName("pageDescription")
+        controls.addWidget(self.address, 1)
+        self.copy = button("复制地址", size="sm")
+        self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.server.url))
+        controls.addWidget(self.copy)
+        self.export = button("导出配置", size="sm")
+        self.export.setObjectName("mcpExportMenu")
+        menu = WorkspaceMenu(self.export)
+        menu.addAction("连接 JSON", lambda: self.export_config(False))
+        menu.addAction("Codex 配置", lambda: self.export_config(True))
+        self.export.setMenu(menu)
+        controls.addWidget(self.export)
+        layout.addLayout(controls)
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        self.status.setObjectName("pageDescription")
+        self.status.hide()
+        layout.addWidget(self.status)
+        self.tasks = QWidget()
+        self.rows_layout = QVBoxLayout(self.tasks)
+        self.rows_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.tasks)
 
-        self.job.add_done_callback(finish)
-
-    def _completed(self, label, value):
-        if self.runtime.closed:
-            return
-        self.status.setText(str(value) if isinstance(value, Exception) else label + "完成")
+        self.completed.connect(self._completed)
+        self.enabled.toggled.connect(self.configure)
+        self.local_port.valueChanged.connect(self.update_apply)
+        self.local_port.lineEdit().returnPressed.connect(self.apply_port)
+        self.apply.clicked.connect(self.apply_port)
+        self.timer = QTimer(self, interval=1000)
+        self.timer.timeout.connect(self.refresh)
         self.refresh()
+        if self.server.settings["enabled"] and not self.server.snapshot()["running"]:
+            self.configure(True)
 
-    def configure(self):
+    def update_apply(self):
+        self.apply.setEnabled(not self.busy and self.local_port.value() != self.server.settings["local_port"])
+
+    def apply_port(self):
+        if self.apply.isEnabled():
+            self.configure(self.enabled.isChecked())
+
+    def configure(self, enabled):
+        if self.busy or self.runtime.closed or self.service.closing:
+            return
+        self.busy = True
+        self.enabled.setEnabled(False)
+        self.local_port.setEnabled(False)
+        self.export.setEnabled(False)
+        self.copy.setEnabled(False)
+        self.update_apply()
+        self.status.hide()
+        settings = {"enabled": enabled, "local_port": self.local_port.value()}
+        future = self.worker.submit(self.server.configure, settings)
+        future.add_done_callback(lambda f: self.completed.emit(f.exception()))
+
+    def _completed(self, error):
+        self.busy = False
         if self.runtime.closed or self.service.closing:
             return
-        settings = {
-            "enabled": self.enabled.isChecked(),
-            "local_port": self.local_port.value(),
-            "lan_enabled": self.lan_enabled.isChecked(),
-            "lan_address": self.lan_address.text().strip(),
-            "lan_port": self.lan_port.value(),
-            "local_commands": self.local_commands.isChecked(),
-        }
-        self._run("应用接入设置", lambda: self._server().configure(settings))
-
-    def add_grant(self):
-        dialog = GrantDialog(self.service, self)
-        dialog.exec()
-        dialog.deleteLater()
+        self.enabled.setEnabled(True)
+        self.local_port.setEnabled(True)
+        self.copy.setEnabled(True)
+        self.export.setEnabled(True)
+        if error:
+            self.message(str(error))
         self.refresh()
 
-    def add_full_grant(self, *, template=None):
-        try:
-            grant_id, granted, skipped = self.service.grant_all_devices(template)
-        except Exception as exc:
-            self.status.setText(str(exc))
-            return
-        self.refresh()
-        self.grants.setCurrentIndex(self.grants.findData(grant_id))
-        message = f"已全部授权 {granted} 台设备，有效至手动撤销或软件退出"
-        if skipped:
-            message += f"。跳过 {skipped} 台身份待核对、已变化或型号不受支持的设备"
-        self.status.setText(message)
+    def message(self, text):
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
+        self.status.setText(text)
+        self.status.setVisible(bool(text))
 
-    def renew_grant(self):
-        template = self.service.policy.grants.get(self.grants.currentData())
-        if template:
-            if template.get("full_device_access"):
-                self.add_full_grant(template=template)
-                return
-            dialog = GrantDialog(self.service, self, template=template)
-            dialog.exec()
-            dialog.deleteLater()
-            self.refresh()
-
-    def revoke_grant(self):
-        if self.grants.currentData():
-            try:
-                self.service.policy.revoke_grant(self.grants.currentData())
-            except Exception as exc:
-                self.status.setText("已在本次运行中撤销；持久保存失败：" + str(exc))
-            finally:
-                self.service.wake.set()
-                self.refresh()
-
-    def export_connection(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "保存连接配置", "lab-control-connection.json", "JSON (*.json)"
+    def export_config(self, codex):
+        name, file_filter = (
+            ("lab-control-codex.toml", "TOML (*.toml)")
+            if codex
+            else ("lab-control-connection.json", "JSON (*.json)")
         )
+        path, _ = QFileDialog.getSaveFileName(self, "导出配置", name, file_filter)
         if path:
             try:
-                self._server().export_connection(Path(path), lan=self.lan_enabled.isChecked())
-                self.status.setText("已导出连接配置；局域网使用时一并复制连接器目录")
-            except Exception as exc:
-                self.status.setText(str(exc))
-
-    def export_codex(self):
-        connection, _ = QFileDialog.getOpenFileName(self, "选择已导出的连接配置", "", "JSON (*.json)")
-        if not connection:
-            return
-        destination, _ = QFileDialog.getSaveFileName(
-            self, "保存 Codex 配置片段", "lab-control-codex.toml", "TOML (*.toml)"
-        )
-        if not destination:
-            return
-        if getattr(sys, "frozen", False):
-            command = str(Path(sys.executable).with_name("LabControl-Agent.exe"))
-            args = ["--agent-connector", "--connection", connection]
-        else:
-            command = sys.executable
-            args = ["-m", "lab_control", "--agent-connector", "--connection", connection]
-        text = (
-            "[mcp_servers.lab_control]\n"
-            + "command = "
-            + json.dumps(command)
-            + "\n"
-            + "args = "
-            + json.dumps(args)
-            + "\n"
-            + "startup_timeout_sec = 30\ntool_timeout_sec = 90\n"
-        )
-        try:
-            with Path(destination).open("x", encoding="utf-8") as stream:
-                stream.write(text)
-            self.status.setText("已导出配置片段；远程电脑须按其连接器及配置文件位置调整路径")
-        except Exception as exc:
-            self.status.setText(str(exc))
-
-    def firewall(self):
-        from lab_control.agent.firewall import launch_firewall
-
-        choice, accepted = choose_item(
-            self,
-            "实验网防火墙",
-            "仅管理本软件指定网卡、端口和程序的规则",
-            ["添加允许规则", "撤销本软件规则"],
-        )
-        if accepted:
-            settings = dict(self._server().settings)
-            self._run(
-                "维护防火墙",
-                lambda: launch_firewall(self.runtime, settings, remove=choice.startswith("撤销")),
-            )
-
-    def stop_selected(self):
-        row = self.tasks.currentRow()
-        item = self.tasks.item(row, 0) if row >= 0 else None
-        if item is not None:
-            try:
-                self.service.stop_local(item.data(Qt.ItemDataRole.UserRole))
-                self.status.setText("已请求停止；等待记录收尾，设备输出不自动改变")
-            except Exception as exc:
-                self.status.setText(str(exc))
+                if codex:
+                    export_codex_bundle(self.server, Path(path))
+                else:
+                    self.server.export_connection(Path(path))
+                self.message("已导出 Codex 配置和连接 JSON" if codex else "已导出连接 JSON")
+            except OSError as exc:
+                self.message(f"导出失败：{exc}")
 
     def refresh(self):
         if self.runtime.closed or self.service.closing:
             return
-        snapshot = self.service.snapshot()
+        snapshot = self.service.snapshot(active_only=True)
         server = snapshot["server"]
-        settings = server.get("settings", {})
-        self.network_status.setText(
-            (
-                f"正在监听：127.0.0.1:{settings.get('local_port')} /mcp"
-                + (
-                    f" · HTTPS {settings['lan_address']}:{settings['lan_port']} /mcp"
-                    if settings.get("lan_enabled")
-                    else ""
+        running = server["running"]
+        if not self.busy:
+            with QSignalBlocker(self.enabled):
+                self.enabled.setChecked(running)
+        self.state.set("运行中" if running else "已停止", "ok" if running else "neutral")
+        self.address.setText(self.server.url)
+        self.update_apply()
+        grant: dict = next((g for g in snapshot["grants"] if g["enabled"] and g.get("desktop_automatic")), {})
+        self.authority.setText(f"已自动授权 {len(grant.get('devices', {}))} 台设备")
+        active = snapshot["tasks"]
+        active_ids = {t["id"] for t in active}
+        for key in self.task_rows.keys() - active_ids:
+            row, *_ = self.task_rows.pop(key)
+            self.rows_layout.removeWidget(row)
+            row.hide()
+            row.deleteLater()
+        self.tasks.setVisible(bool(active))
+        for task in active:
+            key = task["id"]
+            if key not in self.task_rows:
+                row = QWidget()
+                line = QHBoxLayout(row)
+                line.setContentsMargins(0, 2, 0, 2)
+                name = ElideLabel()
+                record: dict = next(
+                    (r for r in self.runtime.inventory.all() if r["id"] == task["device_id"]), {}
                 )
-                + (" · 临时命令处理已启用" if server.get("local_commands") else "")
-            )
-            if server["running"]
-            else "接入未运行" + ("：" + server["error"] if server.get("error") else "")
-        )
-        grants = snapshot["grants"]
-        signature = tuple(
-            (g["id"], g["enabled"], g.get("full_device_access", False), g.get("desktop_automatic", False))
-            for g in grants
-        )
-        if signature != self._signature:
-            selected_grant = self.grants.currentData()
-            self.grants.clear()
-            for grant_id, active, full, automatic in signature:
-                scope = "启动自动全授权" if automatic else "全部设备授权" if full else "范围授权"
-                state = "有效" if active else "已失效"
-                self.grants.addItem(f"{scope} · {state} · {grant_id[:8]}", grant_id)
-            self.grants.setCurrentIndex(max(0, self.grants.findData(selected_grant)))
-            self._signature = signature
-        selected = self.tasks.item(self.tasks.currentRow(), 0)
-        selected_id = selected.data(Qt.ItemDataRole.UserRole) if selected else ""
-        tasks = snapshot["tasks"][:32]
-        records = {r["id"]: r for r in self.runtime.inventory.all()}
-        sources = {INTERNAL_CLIENT: "内部 MCP", COMMAND_CLIENT: "MCP 临时命令"}
-        self.tasks.setRowCount(len(tasks))
-        for row, task in enumerate(tasks):
-            record = records.get(task["device_id"], {})
-            values = (
-                task.get("created_at", ""),
-                sources.get(task["client_id"], task["client_id"][:8]),
-                record.get("displayName") or record.get("identity", {}).get("model", task["device_id"][:8]),
-                ACTION_LABELS.get(task["action"], task["action"]),
-                STATE_LABELS.get(task["state"], task["state"])
-                + ("：" + task["error"] if task["error"] else ""),
-            )
-            for col, text in enumerate(values):
-                item = QTableWidgetItem(text)
-                item.setToolTip(text)
-                item.setData(Qt.ItemDataRole.UserRole, task["id"])
-                self.tasks.setItem(row, col, item)
-            if task["id"] == selected_id:
-                self.tasks.selectRow(row)
+                model = (
+                    (record.get("identity") or {}).get("model")
+                    or record.get("displayName")
+                    or task["device_id"]
+                )
+                name.setText(f"{model} · {ACTION_LABELS.get(task['action'], task['action'])}")
+                line.addWidget(name, 1)
+                progress = QLabel()
+                line.addWidget(progress)
+                stop = button("停止并保存", size="sm")
+                stop.clicked.connect(lambda _=False, task_id=key: self.service.stop_local(task_id))
+                line.addWidget(stop)
+                self.rows_layout.addWidget(row)
+                self.task_rows[key] = row, progress, stop
+            _, progress, stop = self.task_rows[key]
+            state = task["state"]
+            text = STATE_LABELS.get(state, state)
+            counts = task.get("progress") or {}
+            if "total" in counts:
+                text += f" · {counts['done']}/{counts['total']}"
+            elif "recorded_frames" in task:
+                text += f" · 已保存 {task['recorded_frames']} 帧"
+            progress.setText(text)
+            stop.setEnabled(state in {"accepted", "running"} and task["action"] != "stop")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.refresh()
+        self.timer.start()
+
+    def hideEvent(self, event):
+        self.timer.stop()
+        super().hideEvent(event)
 
     def shutdown(self):
+        self.timer.stop()
         self.worker.shutdown(wait=True)

@@ -18,9 +18,10 @@ from PySide6.QtWidgets import (
 from lab_control.application.settings_sync import SettingsSync
 from lab_control.domain.instruments import DeviceError
 from lab_control.domain.readback import usable_reading
-from lab_control.ui.kit import style_button
+from lab_control.ui.kit import Dot, Pill, style_button
 from lab_control.ui.pages.device_control.power_supply import PowerOutput
 from lab_control.ui.pages.device_control.signal_source import ParameterGroup, newer_token
+from lab_control.ui.pages.monitoring.frame import show_sync_health
 from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS
 
 
@@ -46,8 +47,9 @@ class PowerMonitorChannel(ParameterGroup):
         layout.setSpacing(5)
         title = QLabel(f"CH {channel}")
         title.setObjectName("powerChannelTitle")
-        title.setStyleSheet(f"color: {CHANNEL_COLORS[(channel - 1) % 4]};")
         heading = QHBoxLayout()
+        heading.setSpacing(6)
+        heading.addWidget(Dot(CHANNEL_COLORS[(channel - 1) % 4], 7, box=10))
         heading.addWidget(title)
         heading.addStretch()
         self.footer_layout.removeWidget(self.count)
@@ -86,10 +88,10 @@ class PowerMonitorChannel(ParameterGroup):
             field.unit.fit_contents(54)
             field.unit.setFixedWidth(54)
         layout.insertLayout(1, actual)
-        self.apply_button.setText("应用修改")
+        self.apply_button.setText("应用")
         self.apply_button.setVisible(bool(self.editors))
-        self.apply_button.setProperty("buttonSize", "compact")
-        self.apply_button.setFixedWidth(88)
+        self.apply_button.setProperty("kitSize", "sm")
+        self.apply_button.setFixedWidth(64)
         self.fields.setSpacing(8)
         self.output = None
         if not owner.master and any(c.name == "output" for c in schema.operations):
@@ -191,9 +193,13 @@ class PowerControls(QWidget):
         head.setFixedHeight(52)
         header = QHBoxLayout(head)
         header.setContentsMargins(16, 0, 10, 0)
+        header.setSpacing(8)
         title = QLabel("通道设置")
         title.setObjectName("cardTitle")
-        header.addWidget(title, 1)
+        header.addWidget(title)
+        self.health = Pill("待同步", "warn", dot=True)
+        header.addWidget(self.health)
+        header.addStretch(1)
         self.refresh_button = QPushButton("刷新参数")
         style_button(self.refresh_button, "ghost", "refresh", "sm")
         self.refresh_button.clicked.connect(lambda: self.read_parameters())
@@ -257,9 +263,24 @@ class PowerControls(QWidget):
 
     def refresh(self) -> None:
         state = self.controller.states.get(self.device_id, {})
+        locked = bool(state.get("controlsLocked"))
+        dirty = any(e.dirty and e.cap.writable for p in self.panels.values() for e in p.editors.values())
+        keys = tuple(key for panel in self.panels.values() for key in panel.sync_keys())
+        health, reason = self.controller.runtime.monitoring.settings_status(self.device_id, keys)
+        self.health.setToolTip(reason)
+        if health == "同步异常":
+            show_sync_health(self.health, health)
+        elif locked:
+            self.health.set("采集中 · 参数已锁定", "warn", icon="lock", dot=False)
+        elif self.running:
+            self.health.set("正在读取…", "warn", icon="", dot=True, live=True)
+        elif dirty:
+            self.health.set("待应用", "accent", icon="", dot=True)
+        else:
+            show_sync_health(self.health, health)
         self.refresh_button.setEnabled(
             state.get("connectionState") in {"connected", "busy"}
-            and not state.get("controlsLocked")
+            and not locked
             and not state.get("controlPending")
             and self.device_id not in self.controller.group_devices
         )

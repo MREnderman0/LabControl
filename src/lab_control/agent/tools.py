@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 from concurrent.futures import Future
 from typing import Annotated, Any, Literal
@@ -23,10 +22,6 @@ class Empty(BaseModel):
 
 class Grant(Empty):
     grant_id: str = Field(min_length=1, max_length=128)
-
-
-class CommandGrant(Empty):
-    grant_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class Device(Grant):
@@ -101,7 +96,7 @@ class Monitor(Capture):
     interval: float = Field(default=0.5, ge=0.05, le=60)
 
 
-class Task(CommandGrant):
+class Task(Grant):
     task_id: str
 
 
@@ -135,14 +130,13 @@ class Process(Request):
     force: bool = False
 
 
-class Experiment(CommandGrant):
+class Experiment(Grant):
     device_id: str = Field(min_length=1, max_length=128)
     request_id: str = Field(min_length=1, max_length=128)
     profile_id: str = Field(min_length=1, max_length=64)
     capture_parameters: dict[str, Any] = Field(default_factory=dict)
     parameters: dict[str, Any] = Field(default_factory=dict)
     recording_ids: ExperimentRecordingIds | None = None
-    command: str | None = Field(default=None, min_length=1, max_length=4096)
 
 
 class ProcessingResults(Recordings):
@@ -150,11 +144,11 @@ class ProcessingResults(Recordings):
     profile_id: str = ""
 
 
-class ProcessingCapabilities(CommandGrant):
+class ProcessingCapabilities(Grant):
     device_id: str = Field(min_length=1, max_length=128)
 
 
-class ProcessingResult(CommandGrant):
+class ProcessingResult(Grant):
     result_id: str = Field(min_length=1, max_length=128)
 
 
@@ -187,7 +181,7 @@ TOOLS = (
     ("stop_task", Stop, "请求停止指定任务并排空记录；已接受命令不能撤回，输出不自动改变。", False),
     ("list_artifacts", Artifacts, "列出授权范围内的实验文件引用；无任意目录浏览能力。", True),
     ("get_artifact", Artifact, "获取产物元数据与下载路径；下载时再次检查实验授权。", True),
-    ("get_processing_capabilities", ProcessingCapabilities, "查看型号指标与临时命令处理能力。", True),
+    ("get_processing_capabilities", ProcessingCapabilities, "查看已授权型号支持的指标处理能力。", True),
     ("list_recordings", Recordings, "列出授权范围内的规范记录 ID、实际通道及可用性。", True),
     ("start_processing", Process, "提交离线指标任务；同输入默认复用结果，force 显式重新计算。", False),
     ("start_experiment", Experiment, "从 recording_ids 指定的记录计算，或按型号声明有限采数后计算。", False),
@@ -196,7 +190,7 @@ TOOLS = (
 )
 
 
-def create_mcp_server(service, *, local_commands=None) -> Server:
+def create_mcp_server(service) -> Server:
     schemas = {name: model for name, model, _description, _read in TOOLS}
 
     async def list_tools(_context, _params):
@@ -223,18 +217,16 @@ def create_mcp_server(service, *, local_commands=None) -> Server:
             model = schemas.get(params.name)
             if model is None:
                 raise DeviceError("工具不存在", "unsupported")
-            arguments = model.model_validate(params.arguments or {}).model_dump(exclude_unset=True)
-            options = {}
-            if issubclass(model, CommandGrant):
-                arguments["grant_id"] = arguments.get("grant_id") or ""
-                options["local_commands"] = local_commands() if local_commands is not None else False
-            result = await asyncio.to_thread(getattr(service, params.name), client, **arguments, **options)
+            supplied = params.arguments or {}
+            if params.name == "start_experiment" and (
+                "command" in supplied or supplied.get("profile_id") == "local.command"
+            ):
+                raise DeviceError("临时命令处理已移除，请使用型号提供的指标。", "processing_unsupported")
+            arguments = model.model_validate(supplied).model_dump(exclude_unset=True)
+            result = await asyncio.to_thread(getattr(service, params.name), client, **arguments)
             if isinstance(result, Future):
                 result = await asyncio.shield(asyncio.wrap_future(result))
             payload = {"ok": True, "data": jsonable(result)}
-            command = arguments.pop("command", None)
-            if command is not None:
-                arguments["command_sha256"] = hashlib.sha256(command.encode()).hexdigest()
             service.repository.audit_sink.try_record(
                 "agent_tool_completed", client_id=client, tool=params.name, arguments=arguments
             )

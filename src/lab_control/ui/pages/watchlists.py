@@ -28,10 +28,10 @@ from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 
 class WatchlistsPage(QWidget):
-    def __init__(self, controller, parent=None):
+    def __init__(self, hub: WatchRuntime, parent=None):
         super().__init__(parent)
-        self.hub = WatchRuntime(controller, self)
-        self.windows = {}
+        self.hub = hub
+        self.windows: dict[str, QDialog] = {}
         layout = QHBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -66,6 +66,12 @@ class WatchlistsPage(QWidget):
         self.presets_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.presets_empty.setWordWrap(True)
         left.addWidget(self.presets_empty, 1)
+        self.pin_button = QPushButton("置顶到首页")
+        self.pin_button.setEnabled(False)
+        self.pin_button.setProperty("buttonSize", "compact")
+        self.pin_button.setIcon(icons.icon("pin", tk.TEXT_2))
+        self.pin_button.clicked.connect(self.toggle_pin)
+        left.addWidget(self.pin_button)
         hint = QLabel("双击打开独立窗口 · 拖动调整顺序")
         hint.setObjectName("watchHint")
         left.addWidget(hint)
@@ -90,16 +96,20 @@ class WatchlistsPage(QWidget):
 
     def reload(self, selected=""):
         current = selected or self.key(self.list.currentItem())
-        items = self.hub.presets.items
-        expected = [(p.id, p.name) for p in items]
-        if expected != [
-            (self.key(self.list.item(i)), self.list.item(i).text()) for i in range(self.list.count())
-        ]:
+        items = sorted(self.hub.presets.items, key=lambda p: not p.pinned)
+        expected = [(p.id, p.name, p.pinned) for p in items]
+        shown = [self.list.item(i) for i in range(self.list.count())]
+        if expected != [(self.key(item), item.text(), not item.icon().isNull()) for item in shown]:
             self.list.blockSignals(True)
             self.list.clear()
-            for key, name in expected:
+            for key, name, pinned in expected:
                 item = QListWidgetItem(name, self.list)
                 item.setData(Qt.ItemDataRole.UserRole, key)
+                if pinned:
+                    item.setIcon(icons.icon("pin", tk.ACCENT))
+                    item.setToolTip("已置顶到首页")
+                    item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, "已置顶到首页")
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
             self.list.setCurrentRow(
                 next((i for i, p in enumerate(items) if p.id == current), 0) if items else -1
             )
@@ -115,7 +125,17 @@ class WatchlistsPage(QWidget):
                 dialog.close()
 
     def select(self, item, _old=None):
-        self.table.bind(self.key(item))
+        key = self.key(item)
+        preset = self.hub.presets.get(key)
+        self.pin_button.setEnabled(preset is not None)
+        self.pin_button.setText("取消置顶" if preset and preset.pinned else "置顶到首页")
+        self.table.bind(key)
+
+    def toggle_pin(self):
+        preset = self.hub.presets.get(self.key(self.list.currentItem()))
+        if preset:
+            self.hub.presets.pin("" if preset.pinned else preset.id)
+            self.hub.changed.emit()
 
     def select_id(self, key):
         for i in range(self.list.count()):
@@ -132,7 +152,9 @@ class WatchlistsPage(QWidget):
 
     def reordered(self, *_):
         order = [self.key(self.list.item(i)) for i in range(self.list.count())]
-        self.hub.save(self.hub.presets.get(k) for k in order)
+        presets = self.hub.presets
+        unpinned = iter(p for key in order if (p := presets.get(key)) and not p.pinned)
+        self.hub.save(p if p.pinned else next(unpinned) for p in presets.items)
 
     def menu(self, pos):
         item = self.list.itemAt(pos)
@@ -194,4 +216,3 @@ class WatchlistsPage(QWidget):
     def shutdown(self):
         for dialog in list(self.windows.values()):
             dialog.close()
-        self.hub.close()

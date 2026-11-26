@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController
+from lab_control.ui.kit import EmptyState, icons
 from lab_control.ui.pages.device_control.form import ControlForm
 from lab_control.ui.widgets.device_selector import DeviceSelector
 
@@ -16,13 +17,22 @@ class DeviceControlPage(QWidget):
         layout.setSpacing(14)
         heading = QLabel(CATEGORY_LABELS[category])
         heading.setObjectName("pageTitle")
+        heading.hide()  # Header breadcrumb names the page.
         layout.addWidget(heading)
-        self.selector = DeviceSelector(controller, category, surface="management")
+        self.selector = DeviceSelector(controller, category, self, compact=True, surface="management")
         layout.addWidget(self.selector)
-        self.form = ControlForm(controller)
         self.note = QLabel()
+        self.note.setObjectName("mutedText")
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
+        self.empty = EmptyState(
+            f"未选择{CATEGORY_LABELS[category]}",
+            f"请先在首页连接{CATEGORY_LABELS[category]}，再从上方选择设备。",
+            icons.CATEGORY_ICONS.get(category, "sliders"),
+            self,
+        )
+        layout.addWidget(self.empty, 1)
+        self.form = ControlForm(controller)
         layout.addWidget(self.form, 1)
         self.selector.selected.connect(self.select_device)
         self.selector.channel_changed.connect(lambda channel: self.select_device(self.selector.device_id))
@@ -31,6 +41,8 @@ class DeviceControlPage(QWidget):
 
     def select_device(self, device_id: str) -> None:
         self.form.setVisible(bool(device_id))
+        self.empty.setVisible(not device_id)
+        self.note.setVisible(bool(device_id))
         self.form.set_device(device_id, self.selector.channel.currentData() or 1)
         if device_id:
             caps = self.controller.capabilities(device_id)

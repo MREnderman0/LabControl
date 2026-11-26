@@ -1,6 +1,6 @@
 # 连接配置模板
 
-复制所需 TOML 到 `%LOCALAPPDATA%\TF-LabControl\config`（或自己的 `LAB_CONTROL_HOME\config`），再填写真实资源、型号 ID 和序列号。模板地址使用文档保留网段，不代表已存在的设备。
+复制所需 TOML 到 `%LOCALAPPDATA%\LabControl\config`（或自己的 `LAB_CONTROL_HOME\config`），再填写真实资源、型号 ID 和序列号。模板地址使用文档保留网段，不代表已存在的设备。
 
 | 模板 | 路线 | 修改项 |
 | --- | --- | --- |

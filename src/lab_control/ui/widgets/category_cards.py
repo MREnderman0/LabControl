@@ -1,4 +1,4 @@
-"""Overview category cards: counts, a status bar and the first connected devices."""
+"""Overview category cards: counts, a status bar and live summaries for up to three devices."""
 
 from __future__ import annotations
 
@@ -22,11 +22,14 @@ from lab_control.ui.styles import tokens as tk
 DEVICE_ROWS = 3
 STATUS_DOT = {
     "connected": "ok",
+    "recording": "err",
+    "monitoring": "ok",
     "busy": "accent",
     "connecting": "warn",
     "recovering": "warn",
     "degraded": "err",
     "error": "err",
+    "disconnected": "idle",
 }
 
 
@@ -87,7 +90,7 @@ class CategoryCard(QFrame):
         super().__init__(parent)
         self.category = category
         self.setObjectName("categoryCard")
-        self.setFixedHeight(204)
+        self.setFixedHeight(216)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName(title)
@@ -107,18 +110,18 @@ class CategoryCard(QFrame):
         description_label.setObjectName("cardDescription")
         names.addWidget(description_label)
         header.addLayout(names, 1)
-        count = QVBoxLayout()
-        count.setSpacing(0)
-        self.online_count = QLabel()
-        self.online_count.setObjectName("cardValue")
-        self.online_count.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.online_count.setToolTip("在线设备")
-        self.visible_count = QLabel()
-        self.visible_count.setObjectName("cardVisibility")
-        self.visible_count.setAlignment(Qt.AlignmentFlag.AlignRight)
-        count.addWidget(self.online_count)
-        count.addWidget(self.visible_count)
-        header.addLayout(count)
+        count_row = QHBoxLayout()
+        count_row.setSpacing(3)
+        count_row.setContentsMargins(0, 0, 0, 2)
+        self.total_count = QLabel("0")
+        self.total_count.setObjectName("cardValue")
+        self.total_count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        unit = QLabel("台")
+        unit.setObjectName("cardVisibility")
+        unit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
+        count_row.addWidget(self.total_count, 0, Qt.AlignmentFlag.AlignBottom)
+        count_row.addWidget(unit, 0, Qt.AlignmentFlag.AlignBottom)
+        header.addLayout(count_row)
         layout.addLayout(header)
 
         self.status_bar = StatusBar()
@@ -127,12 +130,14 @@ class CategoryCard(QFrame):
         self.device_grid = QGridLayout()
         self.device_grid.setHorizontalSpacing(8)
         self.device_grid.setVerticalSpacing(0)
-        self.device_grid.setColumnStretch(1, 1)
+        self.device_grid.setColumnMinimumWidth(1, 84)
+        self.device_grid.setColumnStretch(2, 1)
         self.device_rows: list[tuple[Dot, ElideLabel, ElideLabel, QLabel]] = []
         for row in range(DEVICE_ROWS):
             dot = Dot("idle", 7, box=12)
             name = ElideLabel()
             name.setObjectName("cardDeviceName")
+            name.setMaximumWidth(124)
             detail = ElideLabel()
             detail.setObjectName("cardDeviceDetail")
             state = QLabel()
@@ -140,55 +145,63 @@ class CategoryCard(QFrame):
             state.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             for column, widget in enumerate((dot, name, detail, state)):
                 self.device_grid.addWidget(widget, row, column)
-            self.device_grid.setRowMinimumHeight(row, 24)
-            self.device_grid.setColumnStretch(2, 1)
+            self.device_grid.setRowMinimumHeight(row, 26)
             self.device_rows.append((dot, name, detail, state))
         layout.addLayout(self.device_grid)
         layout.addStretch(1)
 
-        metrics = QHBoxLayout()
-        metrics.setSpacing(14)
-        self.discovered_count = QLabel()
-        self.discovered_count.setObjectName("cardMeta")
-        metrics.addWidget(self.discovered_count)
-        self.metrics: dict[str, QLabel] = {}
-        for key, caption_text in (("disconnected", "未连接"), ("errors", "异常"), ("bound", "已绑定")):
-            caption = QLabel(caption_text)
-            caption.setObjectName("metricCaption")
-            number = QLabel()
-            number.setObjectName("metricValue")
-            self.metrics[key] = number
-            cell = QHBoxLayout()
-            cell.setSpacing(4)
-            cell.addWidget(caption)
-            cell.addWidget(number)
-            metrics.addLayout(cell)
-        metrics.addStretch()
+        footer = QHBoxLayout()
+        footer.setSpacing(10)
+        self.footer_summary = QLabel()
+        self.footer_summary.setObjectName("cardMeta")
+        footer.addWidget(self.footer_summary)
+        footer.addStretch(1)
         link = QLabel("打开设备池 →")
         link.setObjectName("cardLinkText")
-        metrics.addWidget(link)
-        layout.addLayout(metrics)
-        for label in self.findChildren(QWidget):
-            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        footer.addWidget(link)
+        layout.addLayout(footer)
+
+        # Kept in sync for diagnostics and non-visual assertions without cluttering the footer.
+        self.counts: dict[str, int] = {
+            "discovered": 0,
+            "visible": 0,
+            "online": 0,
+            "disconnected": 0,
+            "errors": 0,
+            "bound": 0,
+        }
+        self._discovered = 0
+        self._online = 0
+        for child in self.findChildren(QWidget):
+            child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.update_counts(0, 0, 0, 0)
         self.set_devices(())
 
     def update_counts(self, discovered: int, online: int, errors: int, bound: int) -> None:
-        self.visible_count.setText(f"可见 {discovered} 台")
-        self.discovered_count.setText(f"发现 {discovered} 台")
-        self.online_count.setText(f"{online:02d}")
-        for key, value in {"disconnected": discovered - online, "errors": errors, "bound": bound}.items():
-            label = self.metrics[key]
-            label.setText(str(value))
-            alert = key == "errors" and value > 0
-            if label.property("alert") != alert:
-                label.setProperty("alert", alert)
-                label.style().unpolish(label)
-                label.style().polish(label)
-        self.status_bar.set_counts(errors, max(online - errors, 0), max(discovered - online, 0))
+        self._discovered = discovered
+        self._online = online
+        disconnected = max(0, discovered - online)
+        self.counts = {
+            "discovered": discovered,
+            "visible": discovered,
+            "online": online,
+            "disconnected": disconnected,
+            "errors": errors,
+            "bound": bound,
+        }
+        self.total_count.setText(str(discovered))
+        more = max(0, discovered - DEVICE_ROWS)
+        if more:
+            self.footer_summary.setText(f"另有 {more} 台 · {online} 台在线")
+        else:
+            self.footer_summary.setText(f"{online} 台在线")
+        self.setToolTip(
+            f"发现 {discovered} 台 · 在线 {online} 台 · 未连接 {disconnected} 台 · 异常 {errors} 台 · 已绑定 {bound} 台"
+        )
+        self.status_bar.set_counts(errors, max(online - errors, 0), disconnected)
 
     def set_devices(self, devices) -> None:
-        """devices: (connection, name, detail, state text) for at most three devices."""
+        """devices: (status_key, name, detail, readout_text[, alert]) for at most three devices."""
         devices = tuple(devices)[:DEVICE_ROWS]
         for index, (dot, name, detail, state) in enumerate(self.device_rows):
             visible = index < len(devices)
@@ -196,15 +209,18 @@ class CategoryCard(QFrame):
                 widget.setVisible(visible)
             if not visible:
                 continue
-            connection, title, info, state_text = devices[index]
-            dot.set_status(STATUS_DOT.get(connection, "idle"), live=connection == "busy")
+            row = devices[index]
+            status_key, title, info, state_text = row[:4]
+            is_alert = bool(row[4]) if len(row) > 4 else status_key in {"error", "degraded"}
+            live = status_key in {"recording", "monitoring", "busy"}
+            dot.set_status(STATUS_DOT.get(status_key, "idle"), live=live)
             if name.text() != title:
                 name.setText(title)
             if detail.text() != info:
                 detail.setText(info)
             if state.text() != state_text:
                 state.setText(state_text)
-            set_property(state, "alert", connection in {"error", "degraded"})
+            set_property(state, "alert", is_alert)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
@@ -248,7 +264,7 @@ class CategoryCardGrid(QScrollArea):
         self.reflow()
 
     def reflow(self) -> None:
-        columns = max(1, min(3, (self.viewport().width() + 14) // 330))
+        columns = max(1, min(3, (self.viewport().width() + 14) // 360))
         if columns == self.columns:
             return
         for card in self.cards:

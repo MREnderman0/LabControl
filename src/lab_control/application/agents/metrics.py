@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import math
 import threading
 import time
@@ -11,12 +10,6 @@ from copy import deepcopy
 from dataclasses import asdict, replace
 from uuid import uuid4
 
-from lab_control.application.agents.command_processing import (
-    LOCAL_COMMAND_PROFILE,
-    LocalCommand,
-    command_capability,
-)
-from lab_control.application.agents.policy import COMMAND_CLIENT
 from lab_control.domain.instruments import DeviceError, readable_serial, utc_now
 from lab_control.domain.metrics import (
     MAX_EXPERIMENT_RECORDINGS,
@@ -45,13 +38,8 @@ class MetricTasks:
         definition = DEVICE_DEFINITIONS.get(self.service.identity(device)["adapter"])
         return definition.metric_profiles if definition else ()
 
-    def capabilities(self, client, grant, device, *, local_commands=False):
-        profiles: tuple[MetricProfile, ...]
-        if local_commands and not grant:
-            self.service._check(COMMAND_CLIENT, "", device, "view")
-            profiles = ()
-        else:
-            profiles = self.profiles(client, grant, device)
+    def capabilities(self, client, grant, device):
+        profiles = self.profiles(client, grant, device)
         advertised = [
             {
                 "id": p.id,
@@ -69,8 +57,6 @@ class MetricTasks:
             }
             for p in profiles
         ]
-        if local_commands:
-            advertised.append(command_capability())
         return {"supported": bool(advertised), "profiles": advertised}
 
     def profile(self, client, grant, device, profile_id):
@@ -171,15 +157,9 @@ class MetricTasks:
                     )
         return values
 
-    def get_result(self, client, grant, result_id, *, local_commands=False):
-        command_access = local_commands and not grant
-        if not command_access:
-            self.service.policy.require_grant(client, grant)
+    def get_result(self, client, grant, result_id):
+        self.service.policy.require_grant(client, grant)
         record, result = self.store.get(result_id)
-        if command_access:
-            if result["profile_id"] != LOCAL_COMMAND_PROFILE:
-                raise DeviceError("普通指标结果需要 grant_id", "grant_expired")
-            client = COMMAND_CLIENT
         self.authorize(client, grant, record, channels=result["channels"])
         return result
 
@@ -197,7 +177,6 @@ class MetricTasks:
         capture_parameters=None,
         allow_partial=False,
         force=False,
-        command=None,
     ):
         service = self.service
         if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
@@ -212,7 +191,6 @@ class MetricTasks:
         ):
             raise DeviceError("recording_ids 必须是非空、无重复的记录 ID 列表", "invalid_parameter")
         scope = service._check(client, grant, device, "process")
-        force = force or command is not None
         payload = {
             "profile_id": profile_id,
             "parameters": parameters,
@@ -223,8 +201,6 @@ class MetricTasks:
         }
         if recording_ids is not None:
             payload["recording_ids"] = recording_ids
-        if command is not None:
-            payload["command_sha256"] = hashlib.sha256(command.encode()).hexdigest()
         request_fingerprint = service.ledger.fingerprint([grant, device, "process", payload])
         # Replay lookup precedes changing sources or updated/removed model capabilities.
         with service.lock:
@@ -232,13 +208,9 @@ class MetricTasks:
             if previous:
                 service._check_task_view(client, grant, previous)
                 return previous
-        if command is None:
-            profile = self.profile(client, grant, device, profile_id)
-            params = profile.parameters.model_validate(parameters)
-            effective = params.model_dump(mode="json")
-        else:
-            profile = LocalCommand.parse(command, service.repository.root)
-            params = effective = parameters
+        profile = self.profile(client, grant, device, profile_id)
+        params = profile.parameters.model_validate(parameters)
+        effective = params.model_dump(mode="json")
         if allow_partial and not profile.supports_partial:
             raise DeviceError("此处理项不支持不完整记录", "partial_unsupported")
         records: tuple[MetricRecord, ...] = ()
@@ -477,8 +449,7 @@ class MetricTasks:
         complete = all(info["complete"] for info in infos)
         if not complete and not allow_partial:
             raise DeviceError("记录不完整，未开始处理", "incomplete_recording")
-        is_command = isinstance(profile, LocalCommand)
-        definitions = () if is_command else profile.result_metrics(channels)
+        definitions = profile.result_metrics(channels)
         fingerprint = (
             infos[0]["fingerprint"]
             if len(records) == 1
@@ -486,8 +457,6 @@ class MetricTasks:
         )
         quality = "simulated" if any(info["quality"] == "simulated" for info in infos) else "good"
         cache_identity = [anchor.id, fingerprint, profile.id, profile.version, effective, allow_partial]
-        if is_command:
-            cache_identity.append(profile.argv)
         key = digest(cache_identity)
         self.check(ctx)
         if not force:
@@ -528,10 +497,7 @@ class MetricTasks:
             progress,
             recording_ids=recording_ids,
         )
-        if is_command:
-            metrics = profile.process(source, params)
-        else:
-            metrics = self._declared_metrics(profile.process(source, params), definitions)
+        metrics = self._declared_metrics(profile.process(source, params), definitions)
         if quality == "simulated":
             for metric in metrics.values():
                 if metric["value"] is not None:

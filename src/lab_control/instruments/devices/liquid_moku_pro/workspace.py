@@ -22,12 +22,13 @@ from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand
 from lab_control.domain.oscilloscope import engineering
 from lab_control.domain.spectrum import SpectrumMarker
 from lab_control.ui.controller import display_connection_state, state_label
-from lab_control.ui.kit import Card, Dot, ReadoutStrip, style_button
+from lab_control.ui.kit import Card, Dot, IconButton, ReadoutStrip, style_button
 from lab_control.ui.pages.monitoring.frame import page_layout, show_state
 from lab_control.ui.pages.monitoring.recording_state import recording_phase, update_recording_frame
 from lab_control.ui.pages.monitoring.spectrum import SpectrumMarkerActions
-from lab_control.ui.pages.monitoring.timing import SpectrumInterval
+from lab_control.ui.pages.monitoring.timing import MonitoringInterval
 from lab_control.ui.widgets.device_selector import DeviceSelector
+from lab_control.ui.widgets.plot_export import PlotExport
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 from .adapter import LABELS
@@ -133,6 +134,9 @@ class RolePage(SpectrumMarkerActions, QWidget):
             )
 
     def _build_monitor(self, layout, header):
+        self.timing = MonitoringInterval(self.controller)
+        self.timing.bind(self.device_id, self.controller.mode)
+        header.addWidget(self.timing)
         self.monitor_button = self._button(header, "开始监测", lambda: self.start(False), icon="play")
         self.stop_button = self._button(header, "停止本面板", self.stop, icon="stop")
         self.record_button = self._button(header, "逐帧记录", self.toggle_recording, icon="record")
@@ -153,19 +157,25 @@ class RolePage(SpectrumMarkerActions, QWidget):
             {**readout_labels, "samples": "帧点数"}, highlight=("trigger", "marker"), embedded=True
         )
         toolbar.addWidget(self.readouts, 1)
-        self.export_button = self._button(toolbar, "导出当前帧", self.export, icon="download")
-        self.plot = MokuScopePlot() if self.kind == "waveform" else MokuSpectrumPlot()
+        self.plot: MokuScopePlot | MokuSpectrumPlot
+        if self.kind == "waveform":
+            self.plot = MokuScopePlot()
+            self.fit_button = IconButton("updown", "恢复视图（按当前时基、通道档位和偏移显示）")
+            self.fit_button.clicked.connect(self.plot.fit_current)
+            toolbar.addWidget(self.fit_button)
+            self.export_button = IconButton("download", "保存当前帧")
+            self.export_button.clicked.connect(lambda: self.export())
+            toolbar.addWidget(self.export_button)
+            self.plot.plot.snapshot_provider = self.scope_snapshot
+        else:
+            self.plot = MokuSpectrumPlot()
+            self.export_button = self._button(toolbar, "导出当前帧", self.export, icon="download")
         chart.body.addWidget(self.plot, 1)
         footer = chart.footer()
         self.dot = Dot("idle", 7)
         footer.addWidget(self.dot)
         self.status.setObjectName("chartStatus")
         footer.addWidget(self.status, 1)
-        self.timing = SpectrumInterval(self.controller)
-        self.timing.setMinimum(0.5)
-        self.timing.setToolTip("同一台 Moku 的两个测量面板共享采集间隔（0.5 至 60 秒）。")
-        self.timing.bind(self.device_id, self.controller.mode)
-        footer.addWidget(self.timing)
         self.actual = QLabel("实际 — s/帧")
         self.actual.setObjectName("rangeHint")
         footer.addWidget(self.actual)
@@ -457,7 +467,10 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.export_button.setEnabled(self.last is not None and not snap.get("display_saving"))
         actual = snap.get("frame_interval")
         self.actual.setText(f"整机实际 {actual:.2f} s/帧" if actual is not None else "实际 — s/帧")
-        if self.kind == "spectrum":
+        if self.kind == "waveform":
+            self.fit_button.setEnabled(self.last is not None)
+            self.plot.save_enabled = self.export_button.isEnabled()
+        else:
             self.marker_plot.save_enabled = self.export_button.isEnabled()
         if self.last is not None and self.service.latest(self.device_id, self.kind) is None:
             self.clear_curve()
@@ -473,6 +486,8 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.settings.setText("等待首帧")
         self.last = None
         self.export_button.setEnabled(False)
+        if self.kind == "waveform":
+            self.fit_button.setEnabled(False)
         self.capture.bind(self.state.get("sessionId"), self.channel)
         if self.kind == "spectrum":
             self.marker_key = f"spectrum-markers/{self.controller.mode}/{self.device_id}/ch{self.channel}"
@@ -539,13 +554,32 @@ class RolePage(SpectrumMarkerActions, QWidget):
         self.capture.sync(frame.batch.configuration["settings"])
         self.last = frame
         self.service.displayed(self.device_id, frame)
-        self.export_button.setEnabled(True)
+        self.export_button.setEnabled(
+            not self.service.snapshots().get(self.device_id, {}).get("display_saving")
+        )
+        if self.kind == "waveform":
+            self.fit_button.setEnabled(True)
+            self.plot.save_enabled = self.export_button.isEnabled()
 
     def showEvent(self, event):
         super().showEvent(event)
         if self.kind:
             self.refresh_plot(self.device_id)
         self.refresh_status()
+
+    def scope_snapshot(self):
+        assert isinstance(self.plot, MokuScopePlot)
+        frame = self.last
+        curves = (
+            []
+            if frame is None
+            else [
+                (f"CH{m.channel}", m.axis, m.values)
+                for m in frame.batch.measurements
+                if m.channel == self.channel and m.channel not in self.plot.hidden_channels
+            ]
+        )
+        return PlotExport(curves, "时间 (s)", "电压 (V)", save_raw=lambda: self.export(frame))
 
     def export(self, frame=None):
         frame = self.last if frame is None else frame

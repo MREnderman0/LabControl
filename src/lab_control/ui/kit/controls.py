@@ -215,6 +215,7 @@ class FieldBox(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("fieldBox")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.row = QHBoxLayout(self)
         self.row.setContentsMargins(0, 0, 0, 0)
         self.row.setSpacing(0)
@@ -254,6 +255,7 @@ class SearchBox(QFrame):
         row.addWidget(self.edit, 1)
         self.hint = QLabel(shortcut.replace("+", " "), self)
         self.hint.setObjectName("kbd")
+        self.hint.setVisible(bool(shortcut))
         row.addWidget(self.hint)
         if shortcut:
             target = parent.window() if parent is not None else self

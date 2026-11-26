@@ -8,7 +8,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from lab_control.application.monitoring_state import MonitorFrame
 from lab_control.application.watch_measurements import compute_metric, scalar, select_sample
@@ -40,6 +40,9 @@ class WatchRuntime(QObject):
         self.metric_cache = {}
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="watch-metrics")
         self.closed = False
+        # A page switch hides the old view and shows its replacement in the same event turn.
+        self.subscription_timer = QTimer(self, singleShot=True, interval=0)
+        self.subscription_timer.timeout.connect(self.tick)
         self.learned = {}
         self.retry_at = {}
         self.slot_cache = {}
@@ -60,15 +63,18 @@ class WatchRuntime(QObject):
         self.changed.emit()
 
     def subscribe(self, view, preset):
-        if self.views.get(view, "") == preset:
+        if self.closed or self.views.get(view, "") == preset:
             return
         if preset:
             self.views[view] = preset
         else:
             self.views.pop(view, None)
-        self.tick()
+        self.subscription_timer.start()
 
     def close(self):
+        if self.closed:
+            return
+        self.subscription_timer.stop()
         self.views.clear()
         self.tick()
         self.closed = True

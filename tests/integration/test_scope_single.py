@@ -47,6 +47,7 @@ def test_split_button_does_not_arm_until_selected(qtbot, tmp_path, model, monkey
             qtbot.waitUntil(lambda: page.plot.displayed_frame is not None, timeout=10000)
             assert len(armed) == 1
             assert page.plot.displayed_frame.batch.performance["single_completed"]
+            qtbot.waitUntil(lambda: page.status.text() == "单次采集完成")
             assert button.text() == "开始监测"
         finally:
             window.timer.stop()
@@ -78,8 +79,21 @@ def test_manual_monitor_preserves_single_until_first_trigger(qtbot, tmp_path, mo
             page.single_action.trigger()
             qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
             frozen = page.plot.displayed_frame
+
+            @contextmanager
+            def wait_for_cancel(job, request):
+                job.wait(lambda: False, 1, 1)
+                yield 1, False
+
+            monkeypatch.setattr(adapter, "single_acquisition", wait_for_cancel)
+            page.single_action.trigger()
+            qtbot.waitUntil(lambda: "等待触发" in page.status.text())
+            page.cancel_action.trigger()
+            qtbot.waitUntil(lambda: page.single_job is None and "已取消" in page.status.text())
+            assert page.plot.displayed_frame is frozen and "等待触发" not in page.status.text()
             page.start_button.click()
             qtbot.waitUntil(lambda: rt.monitoring.snapshots()[key]["notice"] == "等待触发")
+            qtbot.waitUntil(lambda: "等待触发" in page.status.text())
             assert page.plot.displayed_frame is frozen and starts == [1]
             gate.set()
             qtbot.waitUntil(lambda: page.plot.displayed_frame is not frozen)

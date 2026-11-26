@@ -31,7 +31,6 @@ def test_scan_metadata_reaches_channel_selector_plot_and_recording_request(qtbot
         app.connect(device).result()
         controller = WorkspaceController(app, owner)
         page = MonitoringPage(controller, "multimeter", lambda *_: None, owner)
-        qtbot.addWidget(page)
         page.resize(1400, 900)
         page.setStyleSheet(
             (Path(__file__).parents[4] / "ui/styles/card_workspace.qss").read_text(encoding="utf-8")
@@ -42,7 +41,6 @@ def test_scan_metadata_reaches_channel_selector_plot_and_recording_request(qtbot
         assert page.selector.channel.currentData() == 428
         assert page.channels() == (428,) and not page.channel_checks
         dashboard = MonitoringDashboard(controller, owner)
-        qtbot.addWidget(dashboard)
         grouped = dashboard._requests()
         assert grouped[0][1][0].channels == (428,)
         assert grouped[0][1][0].confirmed

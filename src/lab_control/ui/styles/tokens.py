@@ -11,6 +11,7 @@ from __future__ import annotations
 BG = "#0f1012"
 SIDE = "#0b0c0e"
 SURFACE = "#16171a"
+SURFACE_HOVER = "#18191d"
 SURFACE_2 = "#1c1d21"
 HOVER = "#222428"
 PRESSED = "#2a2c31"

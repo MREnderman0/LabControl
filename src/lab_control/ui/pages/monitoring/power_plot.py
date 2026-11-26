@@ -2,6 +2,7 @@
 
 from collections import defaultdict, deque
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -12,7 +13,7 @@ from lab_control.application.acquisition_pipeline import validate_displayed_batc
 from lab_control.application.monitoring import MonitorFrame
 from lab_control.domain.instruments import DeviceError
 from lab_control.ui.styles import tokens as tk
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget
+from lab_control.ui.widgets.plot_export import InstrumentMenuCanvas
 
 CHANNEL_COLORS = tk.CHANNEL_COLORS
 
@@ -34,7 +35,9 @@ class PowerPlot(QWidget):
         layout.setSpacing(8)
         self.plots: dict[str, Any] = {}
         for quantity, title, unit in (("voltage", "电压", "V"), ("current", "电流", "A")):
-            plot = PublicationPlotWidget(background=tk.CHART_BG, axisItems={"bottom": _TimeAxis()})
+            plot = InstrumentMenuCanvas(
+                background=tk.CHART_BG, axisItems={"bottom": _TimeAxis()}, restore_view=self.fit_current
+            )
             plot.setMinimumSize(180, 130)
             plot.showGrid(x=True, y=True, alpha=0.16)
             plot.setLabel("left", title, units=unit)
@@ -54,6 +57,7 @@ class PowerPlot(QWidget):
         self.session_id = ""
         self.channels: tuple[int, ...] = ()
         self.last_token: tuple | None = None
+        self.last_frame_clock = ""
         self.latest_time = 0.0
         self.time_origin: float | None = None
         self.follow_range = (0.0, 600.0)
@@ -68,6 +72,7 @@ class PowerPlot(QWidget):
         self.fitted.clear()
         self.displayed_frame = None
         self.last_token = None
+        self.last_frame_clock = ""
         self.session_id = ""
         self.latest_time = 0
         self.time_origin = None
@@ -116,8 +121,9 @@ class PowerPlot(QWidget):
         # Follow the last ten minutes only while the user has not zoomed/panned.
         # The origin remains the first valid frame, including after a pause.
         plot = self.plots["voltage"]
-        if np.allclose(plot.viewRange()[0], self.follow_range, rtol=0, atol=1e-6):
-            self.follow_range = (max(0.0, elapsed - 600), max(600.0, elapsed))
+        following = np.allclose(plot.viewRange()[0], self.follow_range, rtol=0, atol=1e-6)
+        self.follow_range = (max(0.0, elapsed - 600), max(600.0, elapsed))
+        if following:
             plot.setXRange(*self.follow_range, padding=0)
         self.set_channels(channels)
         for measurement in wanted:
@@ -145,6 +151,10 @@ class PowerPlot(QWidget):
                 self.curves[key].setData([], [])
             self.curves[key].setVisible(key[0] in channels)
         self._fit_y(expand_only=True)
+        try:
+            self.last_frame_clock = f"{datetime.fromisoformat(frame.batch.timestamp).astimezone():%H:%M:%S}"
+        except ValueError:
+            self.last_frame_clock = ""
         self.displayed_frame = candidate
         return True
 
@@ -178,4 +188,5 @@ class PowerPlot(QWidget):
             self.fitted.add(quantity)
 
     def fit_current(self) -> None:
+        self.plots["voltage"].setXRange(*self.follow_range, padding=0)
         self._fit_y(expand_only=False)

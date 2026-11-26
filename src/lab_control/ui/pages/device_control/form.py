@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from datetime import datetime
 from typing import Any, Callable
 
 import shiboken6
@@ -31,7 +32,18 @@ from lab_control.domain.instruments import Capability, DeviceCommand, ParameterR
 from lab_control.domain.readback import normalized_value, usable_reading
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController
+from lab_control.ui.kit import style_button
 from lab_control.ui.pages.device_control.editors import ArrayEditor, FeedbackLabel, ParameterEditor
+
+
+def _short_clock(timestamp: str) -> str:
+    if not timestamp:
+        return ""
+    try:
+        return f"{datetime.fromisoformat(timestamp).astimezone():%H:%M:%S}"
+    except ValueError:
+        return timestamp.replace("T", " ").split("+", 1)[0]
+
 
 DATA_OPERATIONS = {"block", "streaming", "phase_noise", "am_noise", "stability", "data_stream", "power"}
 SOURCE_LABELS = {
@@ -184,18 +196,26 @@ class OperationEditor(QFrame):
         self.range_note.setWordWrap(True)
         layout.addWidget(self.range_note)
         actions_row = QHBoxLayout()
+        actions_row.setSpacing(8)
         self.status = FeedbackLabel(self)
         self.status.setText("" if cap.available else cap.reason)
         self.status.setWordWrap(True)
         self.status.setObjectName("operationStatus")
         actions_row.addWidget(self.status, 1)
+        actions_row.addStretch(1)
         self.read_button = QPushButton("读取", self)
+        self.read_button.setProperty("buttonSize", "compact")
+        self.read_button.setMinimumWidth(68)
+        self.read_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.read_button.setVisible(not self.data_only and (cap.readable or bool(fields)))
         self.read_button.clicked.connect(self.read)
         self.apply_button = QPushButton("应用" if cap.parameters else "执行", self)
         if self.log_result:
             self.apply_button.setText(OPERATION_LABELS.get(cap.name, cap.name))
         self.apply_button.setObjectName("primaryButton")
+        self.apply_button.setProperty("buttonSize", "compact")
+        self.apply_button.setMinimumWidth(76)
+        self.apply_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.apply_button.clicked.connect(self.apply)
         self.apply_button.setVisible(cap.writable)
         if compact:
@@ -386,10 +406,10 @@ class OperationEditor(QFrame):
                                 isinstance(field.input, QComboBox)
                                 and not field.unit_selected
                                 and factor == 1
-                                and field.input.findData(value) < 0
+                                and (abs(float(value)) >= 1e3 or field.input.findData(value) < 0)
                             )
                         ):
-                            factor = next((f for f in (1e9, 1e6, 1e3) if abs(value) >= f), 1)
+                            factor = next((f for f in (1e9, 1e6, 1e3) if abs(float(value)) >= f), 1)
                         field.restore({"value": f"{value / factor:.12g}", "factor": factor}, readback=True)
                     else:
                         field.set_value(value)
@@ -477,9 +497,10 @@ class OperationEditor(QFrame):
         if self.status_only and reading.source == "session_cache" and isinstance(reading.value, str):
             self.readback.setText(display)
         else:
+            clock = _short_clock(reading.timestamp)
             self.readback.setText(
                 f"{SOURCE_LABELS.get(reading.source, reading.source)}：{display}"
-                + ("" if self.compact else "\n" + reading.timestamp)
+                + ("" if self.compact or not clock else f" · {clock}")
             )
         self.readback.setToolTip(reading.timestamp)
         self.readback.setVisible(not self.compact or reading.source != "simulated")
@@ -623,13 +644,20 @@ class ControlForm(QWidget):
         self.editors: dict[str, OperationEditor] = {}
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.refresh_button = refresh = QPushButton("刷新实机范围与选件")
-        refresh.clicked.connect(self.refresh_capabilities)
-        layout.addWidget(refresh)
+        layout.setSpacing(8)
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(2, 0, 2, 0)
+        top_row.setSpacing(8)
         self.snapshot_status = QLabel()
         self.snapshot_status.setObjectName("rangeHint")
         self.snapshot_status.setWordWrap(True)
-        layout.addWidget(self.snapshot_status)
+        top_row.addWidget(self.snapshot_status, 1)
+        self.refresh_button = refresh = QPushButton("刷新范围")
+        style_button(refresh, "ghost", "refresh", "sm")
+        refresh.setToolTip("刷新实机范围与选件")
+        refresh.clicked.connect(self.refresh_capabilities)
+        top_row.addWidget(refresh)
+        layout.addLayout(top_row)
         controller.refreshed.connect(self.show_snapshot_status)
         self.tabs = QTabWidget()
         self.tabs.currentChanged.connect(self.read_visible)
@@ -666,11 +694,13 @@ class ControlForm(QWidget):
         )
         snapshot = self.controller.runtime.sessions.capability_snapshot(self.device_id)
         self.snapshot_status.setText(
-            f"范围快照 v{snapshot.version} · {snapshot.timestamp} · "
+            f"范围快照 v{snapshot.version} · {_short_clock(snapshot.timestamp)} · "
             + ("已过期：" + snapshot.error if snapshot.stale else "已更新")
             if snapshot
             else "尚未连接 · 使用型号文档范围，实机动态范围未确认"
         )
+        if snapshot:
+            self.snapshot_status.setToolTip(f"范围快照 v{snapshot.version} · {snapshot.timestamp}")
 
     def refresh_capabilities(self) -> None:
         if not self.device_id:

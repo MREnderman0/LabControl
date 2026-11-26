@@ -1,9 +1,10 @@
-"""TF LabControl component kit (graphite theme).
+"""LabControl component kit (graphite theme).
 
 Every page builds from these pieces instead of styling widgets locally:
 
-- ``base``: status ``Dot`` and ``Pill``, ``IconButton``, ``IconTile``, ``ElideLabel``, ``Separator``,
-  sidebar ``NavButton`` / ``SubNavButton``, ``repolish`` / ``set_property``.
+- ``base``: status ``Dot`` (semantic or channel color) and ``Pill`` (optional dot or leading icon),
+  ``IconButton``, ``IconTile``, ``ElideLabel``, ``Separator``, ``label`` (including ``value``/``mono``
+  numeric roles), sidebar ``NavButton`` / ``SubNavButton``, ``repolish`` / ``set_property``.
 - ``controls``: ``button`` / ``style_button`` variants (primary, danger, ghost, link; sizes sm/lg),
   ``Switch`` (a QCheckBox), ``Segmented``, ``FieldBox`` (value + unit in one frame), ``SearchBox``.
 - ``layout``: ``Card`` (header / body / footer), ``Section``, ``EmptyState``, ``Hint``.

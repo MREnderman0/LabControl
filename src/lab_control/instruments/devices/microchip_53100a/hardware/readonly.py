@@ -167,7 +167,7 @@ def run(config: ConnectionConfig, *, control: bool = False) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{1,127}", config.expected_serial):
         raise ValueError("Invalid expected serial")
     root = application_home()
-    lock_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TF-LabControl"
+    lock_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "LabControl"
     paths = verify_runtime_paths(root, lock_root)
     asset = "53100A-" + re.sub(r"[^A-Za-z0-9._-]", "_", config.expected_serial)
     folder = root / "hardware-tests" / asset / (datetime.now().strftime("%Y-%m-%d-%H%M%S-%f") + "-usb-tserve")

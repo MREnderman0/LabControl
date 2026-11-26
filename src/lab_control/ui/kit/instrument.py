@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from PySide6.QtCore import QPointF, QRect, QRectF, Qt
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
-from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
+from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QLayout, QSizePolicy, QWidget
 
 from lab_control.ui.kit import icons
 from lab_control.ui.kit.controls import Segmented
@@ -32,7 +32,7 @@ def paint_device_card(
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     frame = QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5)
     painter.setPen(QColor(tk.ACCENT if open_ else tk.BORDER_STRONG if hovered else tk.BORDER))
-    painter.setBrush(QColor("#18191d" if hovered else tk.SURFACE))
+    painter.setBrush(QColor(tk.SURFACE_HOVER if hovered else tk.SURFACE))
     painter.drawRoundedRect(frame, tk.RADIUS, tk.RADIUS)
     if not enabled:
         painter.setOpacity(0.55)
@@ -137,12 +137,13 @@ class DeviceChips(Segmented):
 
 
 class PageHeader(QWidget):
-    """Top row of an instrument page: device switch and chips left, run controls right."""
+    """Keep acquisition controls together when the device card needs a separate row."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("pageHeader")
         self.row = QHBoxLayout(self)
+        self.row.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         self.row.setContentsMargins(0, 0, 0, 0)
         self.row.setSpacing(8)
         self.left = QHBoxLayout()
@@ -151,6 +152,27 @@ class PageHeader(QWidget):
         self.right.setSpacing(8)
         self.row.addLayout(self.left, 1)
         self.row.addLayout(self.right)
+        self.right.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        # A horizontal layout's default minimum would prevent the first wrap.
+        return QSize(
+            max(self.left.minimumSize().width(), self.right.minimumSize().width()),
+            self.row.minimumSize().height(),
+        )
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        needed = self.left.sizeHint().width() + self.right.sizeHint().width() + self.row.spacing()
+        direction = (
+            QBoxLayout.Direction.TopToBottom
+            if event.size().width() < needed
+            else QBoxLayout.Direction.LeftToRight
+        )
+        if direction != self.row.direction():
+            self.row.setDirection(direction)
+            self.updateGeometry()
 
     def add_left(self, widget: QWidget, stretch: int = 0) -> None:
         self.left.addWidget(widget, stretch)

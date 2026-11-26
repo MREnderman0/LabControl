@@ -295,7 +295,7 @@ class ProcessLease(FileLease):
             return
         logical_root = Path(
             os.environ.get("LAB_CONTROL_HOME")
-            or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TF-LabControl"
+            or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "LabControl"
         )
         logical_lock = logical_root / "hardware.lock"
         logical_metadata = logical_lock.with_suffix(logical_lock.suffix + ".owner.json")

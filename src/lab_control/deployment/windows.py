@@ -88,7 +88,7 @@ try { $result.services=@(Get-CimInstance Win32_Service | Where-Object {
 } | Select-Object Name,State,StartMode,PathName) }
 catch { $result.services_error=$_.Exception.Message }
 try { $result.firewall_profiles=@(Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction)
-    $result.firewall_rules=@(Get-NetFirewallRule | Where-Object {$_.Group -eq 'TF-LabControl'} |
+    $result.firewall_rules=@(Get-NetFirewallRule | Where-Object {$_.Group -in @('LabControl','LabControl-Agent','TF-LabControl','TF-LabControl-Agent')} |
         Select-Object Name,Enabled,Direction,Action,Profile)
 } catch { $result.firewall_error=$_.Exception.Message }
 try { $result.vc_runtime=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' |

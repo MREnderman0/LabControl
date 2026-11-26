@@ -33,6 +33,7 @@ class WindowShutdown:
         watchlists = window.page_map.get(("监视列表", ""))
         if isinstance(watchlists, WatchlistsPage):
             watchlists.shutdown()
+        window.watch_hub.close()
         window.controller.close()
         window.message.setText("正在停止扫描和采集并释放本软件会话…")
         central = window.centralWidget()

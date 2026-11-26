@@ -172,7 +172,7 @@ def run(
         if control and compare_queries:
             raise DeviceError("Query comparison is read-only and cannot combine with control", "unsupported")
         home = application_home()
-        lock = Path(os.environ["LOCALAPPDATA"]) / "TF-LabControl/hardware.lock"
+        lock = Path(os.environ["LOCALAPPDATA"]) / "LabControl/hardware.lock"
         if any(p.resolve() != p for p in (home, home / "inventory.sqlite3", lock, folder)):
             raise DeviceError("Native formal runtime paths required", "path_redirected")
         if not folder.is_relative_to(home / "hardware-tests"):

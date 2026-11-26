@@ -92,7 +92,7 @@ class AccelerationMonitoringPage(OpticalPowerMonitoringPage):
     plot_type = AccelerationPlot
     card_type = AccelerationCard
 
-    def __init__(self, controller, add_card, parent=None):
+    def __init__(self, controller, add_card=None, parent=None):
         super().__init__(controller, add_card, parent)
         self.channel_bar.hide()
         self.splitter.setSizes([800, 280])

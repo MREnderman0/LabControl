@@ -1,8 +1,8 @@
 """Shared popup chrome for choices and action menus, in logical pixels."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QMenu
+from PySide6.QtWidgets import QMenu, QToolButton
 
 from lab_control.ui.styles import tokens as tk
 
@@ -35,6 +35,25 @@ class WorkspaceMenu(QMenu):
         self.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_NoMouseReplay)
+
+    def popup_at(self, point: QPoint) -> None:
+        self.popup(point - QPoint(SHADOW_MARGIN, SHADOW_MARGIN))
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        button = self.parentWidget()
+        if not isinstance(button, QToolButton) or button.menu() is not self:
+            return
+        bounds = button.screen().availableGeometry()
+        origin = button.mapToGlobal(QPoint(0, 0))
+        x = origin.x() - SHADOW_MARGIN
+        y = origin.y() + button.height() + 2 - SHADOW_MARGIN
+        if y + self.height() > bounds.bottom() + 1:
+            y = origin.y() - self.height() - 2 + SHADOW_MARGIN
+        self.move(
+            max(bounds.left(), min(x, bounds.right() + 1 - self.width())),
+            max(bounds.top(), min(y, bounds.bottom() + 1 - self.height())),
+        )
 
     def paintEvent(self, event) -> None:  # noqa: N802
         paint_popup_surface(self)

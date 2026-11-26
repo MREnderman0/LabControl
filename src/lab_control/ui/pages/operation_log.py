@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.ui.kit import icons
 from lab_control.ui.kit.base import plain_tooltip
+from lab_control.ui.pages.mcp_labels import ACTION_LABELS, STATE_LABELS
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -67,11 +68,13 @@ EVENT_LABELS = {
     "frame_listener_failed": "帧监听失败",
     "listener_error": "监听异常",
     "cleanup_failed": "清理失败",
-    "agent_grant_created": "Agent 授权",
-    "agent_grant_revoked": "撤销 Agent 授权",
-    "agent_acquisition_started": "Agent 采集",
-    "agent_task_finished": "Agent 任务完成",
-    "agent_tracking_failed": "Agent 跟踪失败",
+    "agent_grant_created": "MCP 设备授权",
+    "agent_grant_revoked": "撤销 MCP 授权",
+    "agent_acquisition_started": "MCP 采集",
+    "agent_task_finished": "MCP 任务结束",
+    "agent_request_accepted": "MCP 已接受请求",
+    "agent_desktop_grant_updated": "MCP 设备授权更新",
+    "agent_tracking_failed": "MCP 任务跟踪失败",
     "agent_firewall_requested": "申请防火墙规则",
     "agent_firewall_completed": "防火墙规则完成",
 }
@@ -80,7 +83,7 @@ CATEGORIES = (
     ("device", "设备与连接"),
     ("operation", "参数操作"),
     ("acquisition", "采集与数据"),
-    ("agent", "Agent 与网络"),
+    ("agent", "MCP 与网络"),
     ("problem", "异常"),
 )
 DEVICE_EVENTS = (
@@ -121,6 +124,11 @@ class LogEntry:
         return {}
 
     @cached_property
+    def mcp_task(self) -> dict:
+        task = self.details.get("task")
+        return task if self.event == "agent_task_finished" and isinstance(task, dict) else {}
+
+    @cached_property
     def problem(self) -> bool:
         text = self.event.lower()
         status = str(self.details.get("status", "")).lower()
@@ -131,6 +139,7 @@ class LogEntry:
             or str(self.apply_result.get("outcome", "")) in APPLY_PROBLEMS
             or bool(self.apply_result.get("error"))
             or status in {"failed", "error", "rejected"}
+            or self.mcp_task.get("state") in {"failed", "partial", "interrupted"}
         )
 
     @cached_property
@@ -147,6 +156,8 @@ class LogEntry:
 
     @cached_property
     def device(self) -> str:
+        if self.mcp_task.get("device_id"):
+            return str(self.mcp_task["device_id"])
         for key in ("device_id", "device", "label", "slot", "source", "scan_id", "task_id"):
             value = self.details.get(key)
             if isinstance(value, str) and value:
@@ -155,6 +166,15 @@ class LogEntry:
 
     @cached_property
     def summary(self) -> str:
+        if task := self.mcp_task:
+            action, state = task.get("action", ""), task.get("state", "")
+            fields = (
+                ACTION_LABELS.get(action, action),
+                STATE_LABELS.get(state, state),
+                task.get("error"),
+                task.get("id"),
+            )
+            return " · ".join(str(item) for item in fields if item)
         result = self.apply_result
         if result.get("error"):
             return " · ".join(str(item) for item in (result.get("operation"), result["error"]) if item)
@@ -412,7 +432,7 @@ class OperationLogPage(QWidget):
         self.empty.setText(
             "当天没有符合条件的记录"
             if self.entries
-            else "还没有操作日志\n扫描、连接、换槽、采集和 Agent 操作会按日记录在这里"
+            else "还没有操作日志\n扫描、连接、换槽、采集和 MCP 操作会按日记录在这里"
         )
         self.empty.setGeometry(self.table.viewport().rect())
         self.empty.setVisible(not shown)

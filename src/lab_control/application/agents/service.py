@@ -14,8 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from lab_control.application.agents import frame_image, single_frame
-from lab_control.application.agents.command_processing import LOCAL_COMMAND_PROFILE
-from lab_control.application.agents.policy import COMMAND_CLIENT, AgentPolicy, fail
+from lab_control.application.agents.policy import AgentPolicy, fail
 from lab_control.domain.instruments import (
     AcquisitionRequest,
     DeviceCommand,
@@ -147,8 +146,8 @@ class AgentService:
                 identities, _ = self._grant_identities()
                 self.policy.sync_desktop_grant(identities)
 
-    def get_processing_capabilities(self, client, grant_id, device_id, *, local_commands=False):
-        return self.metrics.capabilities(client, grant_id, device_id, local_commands=local_commands)
+    def get_processing_capabilities(self, client, grant_id, device_id):
+        return self.metrics.capabilities(client, grant_id, device_id)
 
     def list_recordings(self, client, grant_id, device_id=""):
         return self.metrics.list_recordings(client, grant_id, device_id)
@@ -187,18 +186,7 @@ class AgentService:
         capture_parameters=None,
         parameters=None,
         recording_ids=None,
-        command=None,
-        *,
-        local_commands=False,
     ):
-        if profile_id == LOCAL_COMMAND_PROFILE:
-            if not local_commands:
-                fail("请在服务端桌面启用临时命令处理", "local_command_disabled")
-            if command is None or recording_ids is None:
-                raise ValidationError("local.command 需要 command 和 recording_ids")
-            client, grant_id = COMMAND_CLIENT, ""
-        elif command is not None:
-            raise ValidationError("command 仅用于 local.command")
         if recording_ids is not None and capture_parameters is not None:
             raise ValidationError("recording_ids 与 capture_parameters 只能选一种")
         return self.metrics.start(
@@ -210,14 +198,13 @@ class AgentService:
             parameters or {},
             capture_parameters=(capture_parameters or {}) if recording_ids is None else None,
             recording_ids=recording_ids,
-            command=command,
         )
 
     def list_processing_results(self, client, grant_id, device_id="", recording_id="", profile_id=""):
         return self.metrics.list_results(client, grant_id, device_id, recording_id, profile_id)
 
-    def get_processing_result(self, client, grant_id, result_id, *, local_commands=False):
-        return self.metrics.get_result(client, grant_id, result_id, local_commands=local_commands)
+    def get_processing_result(self, client, grant_id, result_id):
+        return self.metrics.get_result(client, grant_id, result_id)
 
     def list_devices(self, client: str, grant_id: str) -> list[dict]:
         grant = self.policy.grants.get(grant_id, {})
@@ -1062,19 +1049,8 @@ class AgentService:
             require_full_scope=task.get("require_full_scope", False),
         )
 
-    @staticmethod
-    def _task_client(client, grant_id, task, local_commands):
-        if (
-            local_commands
-            and not grant_id
-            and (task.get("client_id") == COMMAND_CLIENT or task.get("profile_id") == LOCAL_COMMAND_PROFILE)
-        ):
-            return COMMAND_CLIENT
-        return client
-
-    def get_task_status(self, client, grant_id, task_id, *, local_commands=False):
+    def get_task_status(self, client, grant_id, task_id):
         task = self._lookup_task(task_id)
-        client = self._task_client(client, grant_id, task, local_commands)
         self._check_task_view(client, grant_id, task)
         with self.lock:
             ctx = self.active.get(task_id)
@@ -1126,16 +1102,15 @@ class AgentService:
             fail("本地任务已结束或被替换", "task_not_found")
         return self.ledger.get(task_id)
 
-    def stop_task(self, client, grant_id, task_id, request_id, *, local_commands=False):
+    def stop_task(self, client, grant_id, task_id, request_id):
         target = self._lookup_task(task_id)
-        client = self._task_client(client, grant_id, target, local_commands)
         device = target["device_id"]
 
         def start(ctx):
             with self.lock:
                 original = self.active.get(task_id)
                 if original:
-                    self._stop(original)
+                    self._stop(original, requested=True)
                     ctx["target"] = task_id
                 else:
                     with self.runtime.monitoring.lock:
@@ -1153,7 +1128,9 @@ class AgentService:
 
         return self._task(client, grant_id, device, "stop", request_id, {"task_id": task_id}, start)
 
-    def _stop(self, ctx):
+    def _stop(self, ctx, *, requested=False):
+        if requested:
+            ctx["stop_requested"] = True
         task = ctx["task"]
         if task["state"] == "stopping":
             return
@@ -1201,10 +1178,17 @@ class AgentService:
                 if isinstance(exc, OSError) and ctx.get("frame_export")
                 else str(exc)
             )
+            stopped_before_recording = (
+                ctx.get("stop_requested") and getattr(exc, "code", "") == "recording_cancelled"
+            )
             task.update(state="failed", error=message, code=getattr(exc, "code", "operation_failed"))
             from lab_control.storage.processing import ProcessingCancelled
 
-            if isinstance(exc, ProcessingCancelled) or getattr(exc, "code", "") == "cancelled":
+            if (
+                stopped_before_recording
+                or isinstance(exc, ProcessingCancelled)
+                or getattr(exc, "code", "") == "cancelled"
+            ):
                 task.update(state="cancelled", code="cancelled")
             if hasattr(exc, "outcome"):
                 task.update(state="partial", result=jsonable(exc.outcome))
@@ -1368,11 +1352,25 @@ class AgentService:
             except Exception as exc:
                 self.repository.audit_sink.try_record("agent_tracking_failed", error=str(exc))
 
-    def snapshot(self):
+    def snapshot(self, *, active_only=False):
         self.refresh_desktop_grant()
+        if active_only:
+            with self.lock:
+                tasks = []
+                for ctx in self.active.values():
+                    task = deepcopy(ctx["task"])
+                    if task["state"] not in ACTIVE:
+                        continue
+                    monitor = ctx.get("monitor")
+                    recorder = monitor.recorder if monitor else None
+                    if recorder:
+                        task["recorded_frames"] = recorder.snapshot()["committed"]
+                    tasks.append(task)
+        else:
+            tasks = self.ledger.tasks()
         return {
             **self.policy.snapshot(),
-            "tasks": self.ledger.tasks(),
+            "tasks": tasks,
             "server": self.server.snapshot() if self.server else {"running": False},
         }
 
@@ -1381,7 +1379,7 @@ class AgentService:
         with self.lock:
             ctx = self.active.get(task_id)
             if ctx:
-                self._stop(ctx)
+                self._stop(ctx, requested=True)
         self.wake.set()
 
     def close(self):

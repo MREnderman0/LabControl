@@ -87,7 +87,7 @@ def _storage(root: Path) -> tuple[str, str]:
         return "missing", "数据目录不存在；请检查目录设置"
     free = shutil.disk_usage(root).free
     with tempfile.TemporaryFile(dir=root) as stream:
-        stream.write(b"TF-LabControl storage check")
+        stream.write(b"LabControl storage check")
         stream.flush()
         os.fsync(stream.fileno())
     if free < 1024**3:

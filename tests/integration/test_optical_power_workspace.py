@@ -76,7 +76,7 @@ def test_jw8105_all_channel_monitoring_records_and_filters(qapp, qtbot, tmp_path
         assert all(check.isChecked() for check in page.channel_checks.values())
         assert page.start_button.isEnabled()
 
-        page.timing.interval.setValue(0.5)
+        page.timing.setValue(0.5)
         page.start()
         qtbot.waitUntil(lambda: page.plot.displayed_frame is not None, timeout=8000)
         task = runtime.monitoring.tasks[device]
@@ -157,10 +157,10 @@ def test_jw8105_all_channel_monitoring_records_and_filters(qapp, qtbot, tmp_path
             lambda: runtime.monitoring.tasks[device].recorder.snapshot()["committed"] >= 1,
             timeout=8000,
         )
-        assert page.record_button.text() == "停止记录"
+        assert page.record_button.text().startswith("停止记录")
         assert page.chart.property("recordingPhase") == "recording"
-        page.timing.interval.setValue(5)
-        page.timing.commit()
+        page.timing.setValue(5)
+        page.timing.interpretText()
         assert runtime.monitoring.tasks[device].interval == 5
 
         page.channel_checks[8].setChecked(False)

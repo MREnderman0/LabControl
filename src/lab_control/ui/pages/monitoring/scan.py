@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.acquisition_pipeline import validate_displayed_batch
 from lab_control.domain.instruments import DeviceError
 from lab_control.ui.pages.monitoring.channel_selection import instrument_scan_channels
+from lab_control.ui.pages.monitoring.frame import displayed_frame_saver
 from lab_control.ui.pages.monitoring.optical_power import (
     OpticalPowerMonitoringPage,
     OpticalPowerPlot,
@@ -75,7 +76,7 @@ class ScanTrendPlot(OpticalPowerPlot):
         accepted = super().show_frame(frame, channels)
         self.set_channels(visible)
         if accepted:
-            self.fit_current()
+            self.fit_y()
         return accepted
 
 
@@ -103,7 +104,8 @@ class ScanReadoutCard(PowerMeterReadoutCard):
         self.heading.setSpacing(6)
         self.channel_label.hide()
         self.check = QCheckBox()
-        self.check.setStyleSheet(self.channel_label.styleSheet())
+        self.check.setObjectName("channelToggle")
+        self.check.setProperty("channel", str(((channel - 1) % 8) + 1))
         self.value.setObjectName("scanReadoutValue")
         self.value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.value.setText("—")
@@ -194,7 +196,7 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
     plot_type = ScanTrendPlot
     card_type = ScanReadoutCard
 
-    def __init__(self, controller, add_card, parent=None, *, manage_selection=True):
+    def __init__(self, controller, add_card=None, parent=None, *, manage_selection=True):
         super().__init__(controller, add_card, parent, manage_selection=manage_selection)
         self.notice = QLabel("温度峰峰值使用最近 30 min 的有效温度。")
         self.notice.setObjectName("mutedText")
@@ -202,6 +204,7 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
         self.main_layout.insertWidget(2, self.notice)
         self.save_button = QPushButton("保存当前帧")
         self.save_button.clicked.connect(self.save)
+        self.plot.plot.frame_save_provider = lambda: displayed_frame_saver(self, self.device_id, self.mode)
         self.chart_actions.insertWidget(2, self.save_button)
         self.channel_bar.hide()
         readout_panel = self.splitter.widget(1)

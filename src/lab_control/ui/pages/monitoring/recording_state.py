@@ -1,10 +1,11 @@
 """Presentation of the existing recording lifecycle; no instrument or storage I/O."""
 
+import time
 from typing import Any
 
 from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QToolButton, QWidget
+from PySide6.QtWidgets import QSizePolicy, QToolButton, QWidget
 
 from lab_control.ui.styles import tokens as tk
 
@@ -78,7 +79,7 @@ def _icon(stop: bool) -> QIcon:
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(tk.ERR if not stop else "#f6b9bb"))
+        painter.setBrush(QColor(tk.ERR))
         if stop:
             painter.drawRoundedRect(QRectF(3, 3, 10, 10), 1.5, 1.5)
         else:
@@ -88,6 +89,13 @@ def _icon(stop: bool) -> QIcon:
     return icon
 
 
+def _format_elapsed(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 class RecordingButton(QToolButton):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -95,7 +103,8 @@ class RecordingButton(QToolButton):
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.setIconSize(QSize(14, 14))
         self.setProperty("buttonSize", "compact")
-        self.setFixedWidth(108)
+        self.setMinimumWidth(108)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.icons = {False: _icon(False), True: _icon(True)}
         self.refresh({}, connected=False, busy=False, locked=False)
 
@@ -105,8 +114,14 @@ class RecordingButton(QToolButton):
         text = {"idle": "开始记录", "preparing": "准备中…", "recording": "停止记录", "draining": "收尾中…"}[
             phase
         ]
-        self.setText(text)
-        self.setAccessibleName(text)
+        if phase == "recording":
+            started = task.get("recording_started_at")
+            if isinstance(started, (int, float)) and started > 0:
+                text = f"停止记录 {_format_elapsed(time.monotonic() - started)}"
+        if self.text() != text:
+            self.setText(text)
+            self.setAccessibleName(text)
+            self.updateGeometry()
         self.setIcon(self.icons[phase != "idle"])
         self.setEnabled(
             bool(

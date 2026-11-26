@@ -31,7 +31,8 @@ from PySide6.QtWidgets import (
 from lab_control.domain.instruments import DeviceCommand, DeviceError, Parameter
 from lab_control.domain.oscilloscope import COLORS, CONTROL_NAMES, coarse_steps, engineering
 from lab_control.domain.readback import boolean_value, normalized_value, usable_reading
-from lab_control.ui.kit import Segmented, Switch, set_property, style_button
+from lab_control.ui.kit import Dot, Pill, Segmented, Switch, set_property, style_button
+from lab_control.ui.pages.monitoring.frame import show_sync_health
 from lab_control.ui.pages.monitoring.scope_depth import ScopeDepth
 from lab_control.ui.pages.monitoring.scope_points import ScopePoints
 from lab_control.ui.styles import tokens as tk
@@ -177,28 +178,27 @@ class ScopeSlider(QWidget):
         self.division = 1.0
         self.drag_value = 0.0
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-        layout = QHBoxLayout()
-        outer.addLayout(layout)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(7)
-        self.setMinimumHeight(26)
+        outer.setContentsMargins(0, 0, 0, 2)
+        outer.setSpacing(3)
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(8)
+        self.setMinimumHeight(40)
         self.title = QLabel(title)
         self.title.setObjectName("scopeControlLabel")
-        self.title.setFixedWidth(28)
         self.value_label = QLabel("—")
         self.value_label.setObjectName("scopeControlValue")
-        self.value_label.setMinimumWidth(90)
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self.title)
+        top.addWidget(self.title)
+        top.addStretch(1)
+        top.addWidget(self.value_label)
+        outer.addLayout(top)
         self.slider = GestureSlider(Qt.Orientation.Horizontal)
         self.slider.linear = not coarse
         self.target: float | None = None
         self.slider.setAccessibleName(title)
         self.slider.setFixedHeight(18)
-        layout.addWidget(self.slider, 1)
-        layout.addWidget(self.value_label)
+        outer.addWidget(self.slider)
         endpoints = QHBoxLayout()
         self.minimum_label, self.maximum_label = QLabel(), QLabel()
         for label in (self.minimum_label, self.maximum_label):
@@ -429,9 +429,7 @@ class OscilloscopeControls(QFrame):
         title = QLabel("参数", head)
         title.setObjectName("cardTitle")
         heading.addWidget(title)
-        self.health = QLabel("同步中")
-        self.health.setObjectName("spectrumHealth")
-        self.health.setFixedHeight(22)
+        self.health = Pill("同步中", "warn", dot=True)
         heading.addWidget(self.health)
         heading.addStretch(1)
         self.refresh_button = QPushButton("刷新参数", head)
@@ -519,35 +517,44 @@ class OscilloscopeControls(QFrame):
         self._sample_rate_session = None
         self._sample_rate_value: float | None = None
         horizontal.addWidget(self.sample_rate)
-        # 垂直: one channel at a time, chosen with colored chips (same colors as the traces).
+        # 垂直: all channels stacked vertically on one scrollable page (no sub-tabs).
         vertical = tab("垂直")
-        chips_row = QHBoxLayout()
-        chips_row.setContentsMargins(14, 8, 14, 0)
-        self.channel_tabs = Segmented(())
-        self.channel_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        chips_row.addWidget(self.channel_tabs)
-        vertical.addLayout(chips_row)
-        self.channel_pages = QStackedWidget()
-        vertical.addWidget(self.channel_pages)
-        for ch in self.instrument_channels:
-            frame = QFrame()
-            frame.setObjectName("scopeSection")
+        vertical.setContentsMargins(0, 4, 0, 4)
+        vertical.setSpacing(0)
+        vertical_page = self.pages.widget(list(self.tab_pages).index("垂直"))
+        self.channel_sections: dict[int, QFrame] = {}
+        self.channel_dots: dict[int, Dot] = {}
+        self.focused_channel: int | None = None
+        for idx, ch in enumerate(self.instrument_channels):
+            frame = QFrame(vertical_page)
+            frame.setObjectName("scopeChannelSection")
+            frame.setProperty("last", idx == len(self.instrument_channels) - 1)
             box = QVBoxLayout(frame)
-            box.setContentsMargins(16, 10, 16, 12)
-            box.setSpacing(6)
-            self.channel_pages.addWidget(frame)
-            self.channel_tabs.add_item(f"CH{ch}", ch, icon="record", icon_color=COLORS[(ch - 1) % 4])
+            box.setContentsMargins(14, 8, 16, 8)
+            box.setSpacing(3)
+            ch_head = QHBoxLayout()
+            ch_head.setContentsMargins(0, 0, 0, 2)
+            ch_head.setSpacing(7)
+            dot = Dot(COLORS[(ch - 1) % len(COLORS)], size=8, box=12)
+            self.channel_dots[ch] = dot
+            ch_head.addWidget(dot)
+            ch_title = QLabel(f"CH{ch}", frame)
+            ch_title.setObjectName("scopeChannelTitle")
+            ch_head.addWidget(ch_title)
+            ch_head.addStretch(1)
             if (ch, "channel_enabled") in self.model_writes:
-                check = Switch(f"CH {ch} 通道开启")
+                check = Switch("", frame)
+                check.setAccessibleName(f"CH{ch} 通道开启")
+                check.setToolTip(f"开启或关闭 CH{ch}")
                 check.clicked.connect(lambda enabled, c=ch: self.set_channel(c, enabled))
-                box.addWidget(check)
+                ch_head.addWidget(check)
                 self.checks[ch] = check
-            else:
-                box.addWidget(QLabel(f"CH {ch}"))
+            box.addLayout(ch_head)
             self.add_slider(box, ch, "scale", "档位", "V", coarse=True)
             self.add_slider(box, ch, "offset", "偏移", "V")
-        self.channel_tabs.changed.connect(self.show_channel)
-        self.channel_tabs.set_current(self.instrument_channels[0] if self.instrument_channels else None)
+            vertical.addWidget(frame)
+            self.channel_sections[ch] = frame
+        self.pages.currentChanged.connect(lambda _index: self._sync_page_heights())
         trigger = section("", "触发")
         row = QHBoxLayout()
         self.trigger_label = QLabel("触发 · 等待读回")
@@ -614,13 +621,33 @@ class OscilloscopeControls(QFrame):
         foot_layout.addWidget(self.status)
         layout.addWidget(foot)
         controller.refreshed.connect(self.refresh)
+        self._sync_page_heights()
         self.refresh()
 
+    def _sync_page_heights(self) -> None:
+        current = self.pages.currentWidget()
+        for index in range(self.pages.count()):
+            page = self.pages.widget(index)
+            if page is None:
+                continue
+            policy = QSizePolicy.Policy.Preferred if page is current else QSizePolicy.Policy.Ignored
+            page.setSizePolicy(QSizePolicy.Policy.Preferred, policy)
+        self.pages.adjustSize()
+
+    def _scroll_to_focused(self) -> None:
+        if self.focused_channel is None:
+            return
+        target = self.channel_sections.get(self.focused_channel)
+        if target is not None and target.isVisible():
+            self.scroller.ensureWidgetVisible(target, 0, 12)
+
     def show_channel(self, channel) -> None:
-        """Select the 垂直 tab's channel (also used when a channel readout is clicked)."""
-        if channel in self.instrument_channels:
-            self.channel_pages.setCurrentIndex(self.instrument_channels.index(channel))
-            self.channel_tabs.set_current(channel)
+        """Focus and scroll to a channel block in the 垂直 tab."""
+        if channel in self.channel_sections:
+            self.focused_channel = channel
+            for ch, frame in self.channel_sections.items():
+                set_property(frame, "focused", ch == channel)
+            QTimer.singleShot(0, self, self._scroll_to_focused)
 
     def show_tab(self, title: str) -> None:
         if title in self.tab_pages:
@@ -768,6 +795,10 @@ class OscilloscopeControls(QFrame):
             value = boolean_value(self.values.get((ch, "channel_enabled")))
             if value is not None:
                 check.setChecked(value)
+                if ch in self.channel_sections:
+                    set_property(self.channel_sections[ch], "channelOff", not value)
+                if ch in self.channel_dots:
+                    self.channel_dots[ch].set_status(COLORS[(ch - 1) % len(COLORS)] if value else "idle")
             check.setEnabled(bool(available and value is not None and cap and cap.writable and cap.available))
         trigger_ch = self.trigger_channel()
         cap = self.capabilities(trigger_ch or 1).get("trigger_level")
@@ -794,24 +825,17 @@ class OscilloscopeControls(QFrame):
             self.auto_button.setToolTip("执行仪器自动设置" if auto else "当前型号未提供自动设置")
         if self.fine_button is not None:
             self.fine_button.setEnabled(available)
-        self.health.setText(
-            "设置中 · 完成后自动续采"
-            if self.running
-            else "记录收尾前参数锁定"
-            if state.get("controlsLocked")
-            else "参数已同步"
-            if all((ch, "channel_enabled") in self.values for ch in self.instrument_channels)
-            else "等待参数同步"
-        )
-        set_property(
-            self.health,
-            "kind",
-            "warn"
-            if self.running or "等待" in self.health.text()
-            else "accent"
-            if "锁定" in self.health.text()
-            else "ok",
-        )
+        locked = bool(state.get("controlsLocked"))
+        set_property(self, "locked", locked)
+        reason = ""
+        if self.running:
+            self.health.set("设置中…", "warn", icon="", dot=True, live=True)
+        elif locked:
+            self.health.set("采集中 · 参数已锁定", "warn", icon="lock", dot=False)
+        else:
+            health, reason = self.controller.runtime.monitoring.settings_status(self.device_id, self.keys())
+            show_sync_health(self.health, health)
+        self.health.setToolTip(reason)
         self.refresh_button.setEnabled(available)
 
     def refresh_sample_rate(self, state: dict) -> None:

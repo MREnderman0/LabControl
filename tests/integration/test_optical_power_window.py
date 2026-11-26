@@ -93,6 +93,10 @@ def test_hidden_page_keeps_30_minutes_and_unit_switch_preserves_window(workspace
     assert page.plot.plot.viewRange()[0] == pytest.approx([2, 9])
     assert np.array_equal(page.plot.curves[1].xData, before_x)
     assert page.plot.curves[1].yData[-1] == pytest.approx(-30)
+    page.plot.plot.setYRange(100, 200, padding=0)
+    page.fit_button.click()
+    assert page.plot.plot.viewRange()[0] == pytest.approx([0, 30])
+    assert page.plot.plot.viewRange()[1][0] < -30 < page.plot.plot.viewRange()[1][1]
     assert task.requests == before_requests
     assert runtime.repository.load_workspace("monitoring_display/optical_power_meter") == {"unit": "dBm"}
     page.select_device("")

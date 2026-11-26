@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.monitoring_state import MonitorFrame
 from lab_control.domain.instruments import AcquisitionRequest, ParameterReading
 from lab_control.ui.controller import WorkspaceController
+from lab_control.ui.kit import style_button
 from lab_control.ui.pages.device_control.form import ControlForm, OperationEditor
 from lab_control.ui.pages.device_control.signal_source import ParameterGroup
 from lab_control.ui.widgets.device_selector import DeviceSelector
@@ -118,9 +119,13 @@ class ElectronicLoadPage(QWidget):
         )
         header.addWidget(self.selector, 1)
         self.refresh_button = QPushButton("刷新读数")
+        style_button(self.refresh_button, "", "refresh")
+        self.refresh_button.setProperty("buttonSize", "compact")
         self.refresh_button.clicked.connect(self.read_snapshot)
         header.addWidget(self.refresh_button)
         self.save_button = QPushButton("保存当前读数")
+        style_button(self.save_button, "", "download")
+        self.save_button.setProperty("buttonSize", "compact")
         self.save_button.clicked.connect(self.save)
         header.addWidget(self.save_button)
         layout.addLayout(header)
@@ -159,7 +164,8 @@ class ElectronicLoadPage(QWidget):
         self.note.setObjectName("mutedText")
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
-        layout.addStretch(1)
+        self.tail_spacer = QWidget()
+        layout.addWidget(self.tail_spacer, 1)
 
         self.selector.selected.connect(self.bind)
         self.selector.channel_changed.connect(self.select_channel)
@@ -188,10 +194,12 @@ class ElectronicLoadPage(QWidget):
         )
         if generic and self.fallback is None:
             self.fallback = ControlForm(self.controller)
-            self.page_layout.addWidget(self.fallback)
+            self.page_layout.insertWidget(self.page_layout.indexOf(self.tail_spacer), self.fallback, 1)
         if self.fallback:
             self.fallback.setVisible(generic)
             self.fallback.set_device(device_id if generic else "")
+        self.tail_spacer.setVisible(not generic)
+        self.note.setVisible(not generic or not device_id)
         self.selector.channel.setVisible(generic)
         self.table.setVisible(not generic)
         self.refresh_button.setVisible(not generic)

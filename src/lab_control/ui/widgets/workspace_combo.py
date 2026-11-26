@@ -373,12 +373,14 @@ class WorkspaceComboBox(QComboBox):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         color = tk.ACCENT if self._popup.isVisible() else tk.TEXT_2 if self.isEnabled() else tk.TEXT_DISABLED
         painter.setPen(QPen(QColor(color), 1.5))
-        x, y = self.width() - 16, self.height() / 2
+        compact = bool(self.property("fieldUnit") or self.property("fieldValue"))
+        x, y = self.width() - (10 if compact else 16), self.height() / 2
         direction = -1 if self._popup.isVisible() else 1
+        half = 3.2 if compact else 4.0
         path = QPainterPath()
-        path.moveTo(x - 4, y - direction * 2)
+        path.moveTo(x - half, y - direction * 2)
         path.lineTo(x, y + direction * 2)
-        path.lineTo(x + 4, y - direction * 2)
+        path.lineTo(x + half, y - direction * 2)
         painter.drawPath(path)
 
 

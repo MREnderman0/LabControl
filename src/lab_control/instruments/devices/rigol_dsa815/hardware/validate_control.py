@@ -445,7 +445,7 @@ def verify(
         paths = {
             "home": home,
             "inventory": home / "inventory.sqlite3",
-            "lock": Path(os.environ["LOCALAPPDATA"]) / "TF-LabControl/hardware.lock",
+            "lock": Path(os.environ["LOCALAPPDATA"]) / "LabControl/hardware.lock",
         }
         report["environment"].update({key: str(value.resolve()) for key, value in paths.items()})
         if any(p.resolve() != p for p in (*paths.values(), folder)) or not folder.is_relative_to(

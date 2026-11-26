@@ -253,6 +253,10 @@ def test_public_recording_runner_resumes_finite_phase_stream(instrument, tmp_pat
         assert sum("_acquisition_gap" in f["configuration"] for f in frames) == 1
         assert frames[-1]["configuration"]["complete"]
         assert frames[-1]["configuration"]["acquisition_epoch"] == 1
+        for frame in frames:
+            assert frame["timestamp"] == frame["timing"]["host_read_completed_at"]
+            assert frame["timing"]["host_read_started_at"]
+            assert frame["timing"]["read_duration_seconds"] >= 0
         assert history.count("start") == history.count("stop") == 1
         assert not state["running"]
 

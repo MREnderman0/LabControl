@@ -28,7 +28,7 @@ def firewall_plan(settings: dict, program: Path, *, remove=False) -> dict:
         "program": str(program),
         "address": str(address),
         "port": port,
-        "rule": "TF-LabControl-Agent-" + hashlib.sha256(identity.encode()).hexdigest()[:16],
+        "rule": "LabControl-Agent-" + hashlib.sha256(identity.encode()).hexdigest()[:16],
         "remote_address": "LocalSubnet",
         "profile": "Private,Domain",
     }

@@ -27,11 +27,12 @@ from lab_control.instruments.devices.microchip_53100a.profile import (
 )
 from lab_control.storage.layout import raw_folder
 from lab_control.storage.recording import read_frames
+from lab_control.ui.kit import style_button
 from lab_control.ui.pages.device_control.fspn import FspnPanel
 from lab_control.ui.pages.monitoring.recording_state import update_recording_frame
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.device_selector import DeviceSelector
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget
+from lab_control.ui.widgets.plot_export import InstrumentMenuCanvas
 
 SAMPLE_RATE = PHASE_NOISE_SAMPLE_RATE
 DURATION = PHASE_NOISE_DURATION
@@ -94,15 +95,20 @@ class PhaseNoisePage(QWidget):
         self.run_tokens: dict[str, int] = {}
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(14)
         header = QHBoxLayout()
+        header.setSpacing(8)
         self.selector = DeviceSelector(
             controller, "phase_noise_analyzer", self, compact=True, surface="management"
         )
         header.addWidget(self.selector, 1)
         self.start_button = QPushButton("一键采集 · 1 分钟")
-        self.start_button.setObjectName("primaryButton")
+        style_button(self.start_button, "primary", "play")
+        self.start_button.setProperty("buttonSize", "compact")
         self.start_button.clicked.connect(self.start)
         self.stop_button = QPushButton("提前停止")
+        style_button(self.stop_button, "", "stop")
+        self.stop_button.setProperty("buttonSize", "compact")
         self.stop_button.clicked.connect(self.stop)
         header.addWidget(self.start_button)
         header.addWidget(self.stop_button)
@@ -110,6 +116,7 @@ class PhaseNoisePage(QWidget):
         self.legacy_body = QWidget()
         body = QHBoxLayout(self.legacy_body)
         body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(14)
         layout.addWidget(self.legacy_body, 1)
         self.fspn = FspnPanel(controller, self.plot, self.selector)
         self.fspn.hide()
@@ -148,23 +155,36 @@ class PhaseNoisePage(QWidget):
             ),
         }
         self.side = QFrame()
-        self.side.setObjectName("operationCard")
-        self.side.setMinimumWidth(290)
-        self.side.setMaximumWidth(340)
-        controls = QVBoxLayout(self.side)
-        title = QLabel("单设备采集")
-        title.setObjectName("controlTitle")
-        controls.addWidget(title)
-        self.timing_form = QWidget()
+        self.side.setObjectName("paramCard")
+        side_root = QVBoxLayout(self.side)
+        side_root.setContentsMargins(0, 0, 0, 0)
+        side_root.setSpacing(0)
+        side_head = QFrame(self.side)
+        side_head.setObjectName("cardHead")
+        side_head.setFixedHeight(52)
+        side_head_row = QHBoxLayout(side_head)
+        side_head_row.setContentsMargins(16, 0, 14, 0)
+        title = QLabel("单设备采集", side_head)
+        title.setObjectName("cardTitle")
+        side_head_row.addWidget(title)
+        side_root.addWidget(side_head)
+        controls = QVBoxLayout()
+        controls.setContentsMargins(16, 14, 16, 14)
+        controls.setSpacing(10)
+        self.timing_form = QWidget(self.side)
+        self.timing_form.setObjectName("cardBody")
         form = QFormLayout(self.timing_form)
         form.setContentsMargins(0, 0, 0, 0)
+        form.setVerticalSpacing(8)
         for label, value in (
             ("DUT 频率", "Auto"),
             ("参考频率", "Auto"),
             ("相位采样率", "1,000 点/秒"),
             ("采集时长", "1 分钟（60 秒）"),
         ):
-            form.addRow(label, QLabel(value))
+            val_label = QLabel(value)
+            val_label.setObjectName("scopeControlValue")
+            form.addRow(label, val_label)
         controls.addWidget(self.timing_form)
         self.estimate = QLabel("预计 60,001 点，覆盖完整 60 秒。\n时长从首个有效相位点开始计算。")
         self.estimate.setWordWrap(True)
@@ -178,22 +198,35 @@ class PhaseNoisePage(QWidget):
         self.note.setObjectName("mutedText")
         controls.addWidget(self.note)
         controls.addStretch()
+        side_root.addLayout(controls, 1)
+        side_foot = QFrame(self.side)
+        side_foot.setObjectName("cardFoot")
+        foot_col = QVBoxLayout(side_foot)
+        foot_col.setContentsMargins(14, 12, 14, 12)
+        foot_col.setSpacing(8)
         self.progress = QProgressBar()
         self.progress.setObjectName("phaseProgress")
         self.progress.setRange(0, 1000)
         self.progress.setValue(0)
-        controls.addWidget(self.progress)
+        foot_col.addWidget(self.progress)
         self.status = QLabel("选择已连接的相噪仪")
+        self.status.setObjectName("mutedText")
         self.status.setWordWrap(True)
-        controls.addWidget(self.status)
+        foot_col.addWidget(self.status)
         self.folder = QPushButton("打开单设备采集目录")
+        style_button(self.folder, "", "folder")
+        self.folder.setProperty("buttonSize", "panel")
         self.folder.clicked.connect(self.open_folder)
-        controls.addWidget(self.folder)
+        foot_col.addWidget(self.folder)
+        side_root.addWidget(side_foot)
+        self.side.setMinimumWidth(340)
+        self.side.setMaximumWidth(380)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(self.side)
-        scroll.setMinimumWidth(310)
-        scroll.setMaximumWidth(360)
+        scroll.setMinimumWidth(340)
+        scroll.setMaximumWidth(380)
         body.addWidget(scroll)
         self.timed_notice = "自动保存原始相位、相噪、ADEV 和 MDEV；结束后显示结果，CSV 在后台生成。"
         self.notice = QLabel(self.timed_notice)
@@ -210,7 +243,7 @@ class PhaseNoisePage(QWidget):
         axes = {"bottom": LogAxis(orientation="bottom")} if log_x else {}
         if log_y:
             axes["left"] = LogAxis(orientation="left")
-        chart = PublicationPlotWidget(background=tk.CHART_BG, axisItems=axes)
+        chart = InstrumentMenuCanvas(background=tk.CHART_BG, axisItems=axes)
         chart.setTitle(title, color=tk.TEXT, size="12pt")
         chart.setLabel("bottom", xlabel, units=xunit)
         chart.setLabel("left", ylabel, units=yunit)
