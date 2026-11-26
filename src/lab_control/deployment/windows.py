@@ -105,7 +105,7 @@ try { $result.products=@(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Curr
     Select-Object DisplayName,DisplayVersion,InstallLocation,Publisher) }
 catch { $result.products_error=$_.Exception.Message }
 try { $result.firewall_profiles=@(Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction)
-    $result.firewall_rules=@(Get-NetFirewallRule | Where-Object {$_.Group -eq 'TF-LabControl'} |
+    $result.firewall_rules=@(Get-NetFirewallRule | Where-Object {$_.Group -in @('LabControl','LabControl-Agent','TF-LabControl','TF-LabControl-Agent')} |
         Select-Object Name,Enabled,Direction,Action,Profile)
 } catch { $result.firewall_error=$_.Exception.Message }
 try { $result.vc_runtime=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' |

@@ -92,7 +92,9 @@ def runtime_directories() -> tuple[Path, ...]:
     candidates = [
         *(cache / "tools/kplusk/runtime" for cache in cache_directories()),
         root / "deployment/packages/tools/kplusk/runtime",
+        root / "dist/LabControl/maintenance/packages/tools/kplusk/runtime",
         root / "dist/TF-LabControl/maintenance/packages/tools/kplusk/runtime",
+        Path(os.environ.get("PROGRAMDATA", "")) / "LabControl/maintenance/packages/tools/kplusk/runtime",
         Path(os.environ.get("PROGRAMDATA", "")) / "TF-LabControl/maintenance/packages/tools/kplusk/runtime",
     ]
     if getattr(sys, "frozen", False):

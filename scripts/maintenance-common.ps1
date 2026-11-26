@@ -1,7 +1,16 @@
 # Shared by the source and bundled maintenance entry points. No device I/O.
+function Get-LabDefaultRoot {
+    $newRoot = Join-Path $env:LOCALAPPDATA 'LabControl'
+    $oldRoot = Join-Path $env:LOCALAPPDATA 'TF-LabControl'
+    if (-not (Test-Path -LiteralPath $newRoot) -and (Test-Path -LiteralPath $oldRoot)) {
+        return $oldRoot
+    }
+    return $newRoot
+}
+
 function Get-LabRuntimeRoot {
     if ($env:LAB_CONTROL_HOME) { return [IO.Path]::GetFullPath($env:LAB_CONTROL_HOME) }
-    return Join-Path $env:LOCALAPPDATA 'TF-LabControl'
+    return Get-LabDefaultRoot
 }
 
 function ConvertTo-LabProcessArguments {
@@ -52,8 +61,14 @@ namespace LabControl {
 }
 
 function Enter-LabMaintenanceLease {
-    $fixedRoot = Join-Path $env:LOCALAPPDATA 'TF-LabControl'
-    $roots = @($fixedRoot, (Get-LabRuntimeRoot)) | Select-Object -Unique
+    $fixedRoot = Get-LabDefaultRoot
+    $oldRoot = Join-Path $env:LOCALAPPDATA 'TF-LabControl'
+    if (-not (Test-Path -LiteralPath $oldRoot)) {
+        [IO.Directory]::CreateDirectory($fixedRoot) | Out-Null
+        try { New-Item -ItemType Junction -Path $oldRoot -Target $fixedRoot -ErrorAction Stop | Out-Null }
+        catch { if (-not (Test-Path -LiteralPath $oldRoot)) { throw } }
+    }
+    $roots = @($fixedRoot, $oldRoot, (Get-LabRuntimeRoot)) | Select-Object -Unique
     $streams = [Collections.Generic.List[IO.FileStream]]::new()
     $identities = [Collections.Generic.HashSet[string]]::new()
     try {
@@ -76,7 +91,7 @@ function Enter-LabMaintenanceLease {
         return ,$streams
     } catch {
         foreach ($stream in $streams) { $stream.Dispose() }
-        throw ('TF-LabControl hardware is busy or its maintenance lock is unavailable: ' + $_.Exception.Message)
+        throw ('LabControl hardware is busy or its maintenance lock is unavailable: ' + $_.Exception.Message)
     }
 }
 

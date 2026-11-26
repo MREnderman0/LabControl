@@ -63,7 +63,7 @@ def main() -> int:
     if sys.platform == "win32":
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TF.LabControl.Desktop")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("LabControl.Desktop")
     app = QApplication(sys.argv)
     configure_app_icon(app)
     app.setApplicationName("LabControl")

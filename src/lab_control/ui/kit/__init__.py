@@ -1,4 +1,4 @@
-"""TF LabControl component kit (graphite theme).
+"""LabControl component kit (graphite theme).
 
 Every page builds from these pieces instead of styling widgets locally:
 

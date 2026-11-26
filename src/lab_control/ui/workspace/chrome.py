@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from lab_control.ui.real_window import RealWindow
 
 try:
-    VERSION = importlib.metadata.version("tf-labcontrol-shell")
+    VERSION = importlib.metadata.version("labcontrol")
 except importlib.metadata.PackageNotFoundError:  # pragma: no cover - source checkout without metadata
     VERSION = ""
 

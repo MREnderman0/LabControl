@@ -29,14 +29,14 @@ VISA/厂商程序确认能识别后，释放其仪器会话再连接本软件。
 
 保存铭牌、背板、完整型号、序列号、固件、接口选件、驱动/SDK 版本、位数、设备管理器名称、资源、COM 参数、现有输出状态和接线说明。资料和报告放在运行数据目录，不提交到源码。
 
-从 [config/examples](../../config/examples/README.md) 复制一种模板，修改为现场值。实际配置可放 `%LOCALAPPDATA%\TF-LabControl\config\bench.toml`。示例中的 192.0.2.x 是保留地址，必须替换。PSW160、DS1202Z 原始后缀等信息不足条目保持待补。
+从 [config/examples](../../config/examples/README.md) 复制一种模板，修改为现场值。实际配置可放 `%LOCALAPPDATA%\LabControl\config\bench.toml`。示例中的 192.0.2.x 是保留地址，必须替换。PSW160、DS1202Z 原始后缀等信息不足条目保持待补。
 
 常用环境检查：
 
 ```powershell
 .venv-dev\Scripts\lab-control-cli.exe doctor
 .venv-dev\Scripts\lab-control-cli.exe models
-.venv-dev\Scripts\lab-control-cli.exe --config "$env:LOCALAPPDATA\TF-LabControl\config\bench.toml" scan
+.venv-dev\Scripts\lab-control-cli.exe --config "$env:LOCALAPPDATA\LabControl\config\bench.toml" scan
 ```
 
 扫描不自动连接；SDK 只枚举。已有连接扫描使用缓存；新地址可能是活动设备别名时会延后身份探测。显示 unknown、driver error、probe timeout 或 deferred 均应保留并说明原因。
@@ -46,7 +46,7 @@ VISA/厂商程序确认能识别后，释放其仪器会话再连接本软件。
 下面变量必须填写实际配置和完整资源：
 
 ```powershell
-$cfg = "$env:LOCALAPPDATA\TF-LabControl\config\bench.toml"
+$cfg = "$env:LOCALAPPDATA\LabControl\config\bench.toml"
 $resource = "TCPIP0::192.0.2.10::inst0::INSTR"
 .venv-dev\Scripts\lab-control-cli.exe --config $cfg --resource $resource identity
 .venv-dev\Scripts\lab-control-cli.exe --config $cfg --resource $resource capabilities

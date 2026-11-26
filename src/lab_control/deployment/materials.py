@@ -106,7 +106,7 @@ def download_file(component: dict, destination: Path, cancel=None, progress=None
         for attempt in range(2):
             _cancelled(cancel)
             try:
-                request = urllib.request.Request(url, headers={"User-Agent": "TF-LabControl/0.3"})
+                request = urllib.request.Request(url, headers={"User-Agent": "LabControl/0.3"})
                 deadline = time.monotonic() + 600
                 with opener.open(request, timeout=15) as response, destination.open("wb") as stream:
                     received = 0

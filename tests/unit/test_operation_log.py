@@ -98,3 +98,15 @@ def test_device_names_resolve_and_are_searchable(qtbot, tmp_path):
     assert [e.event for e in page.model.entries] == ["connection_failed"]
     page.category.button(2).click()  # 参数操作
     assert page.model.entries == []
+
+
+def test_mcp_task_history_shows_device_result_and_failed_tasks(tmp_path):
+    def finished(state, error=""):
+        task = {"device_id": "scope", "id": "rec-01", "action": "record", "state": state, "error": error}
+        return {"event": "agent_task_finished", "task": task}
+
+    write_day(tmp_path, "2026-11-25", [finished("completed"), finished("failed", "连接断开")])
+    failed, saved = read_log(tmp_path / "2026-11-25.jsonl")
+    assert saved.category == "agent" and saved.device == "scope" and not saved.problem
+    assert saved.summary == "连续记录 · 已完成 · rec-01"
+    assert failed.problem and "连接断开" in failed.summary

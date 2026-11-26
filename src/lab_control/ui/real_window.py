@@ -310,7 +310,7 @@ class RealWindow(QMainWindow):
         for key, label in (
             ("storage", "数据存储"),
             ("directory", "库存与日志"),
-            ("agent", "Agent 协作"),
+            ("agent", "MCP 接入"),
             ("environment", "环境与修复"),
         ):
             jump = QPushButton(label)

@@ -67,6 +67,7 @@ def run(destination: Path) -> int:
 
             from lab_control.app import configure_app_icon, load_stylesheet, load_ui_font
             from lab_control.application.runtime import ApplicationRuntime
+            from lab_control.storage.runtime import default_home
             from lab_control.ui.real_window import RealWindow
 
             app = QApplication.instance() or QApplication([])
@@ -81,6 +82,14 @@ def run(destination: Path) -> int:
             runtime = ApplicationRuntime(root=root, hardware=False)
             window = RealWindow(runtime)
             window.navigate("系统设置")
+            assert importlib.metadata.version("labcontrol")
+            assert default_home().name == "LabControl"
+            panel = window.agent_panel
+            assert panel.address.text() == "http://127.0.0.1:8765/mcp"
+            assert not panel.enabled.isChecked()
+            assert [action.text() for action in panel.export.menu().actions()] == ["连接 JSON", "Codex 配置"]
+            result["mcp_settings"] = "MCP 接入"
+            result["default_workspace"] = "LabControl"
             assert not window.brand_logo.icon.isNull()
             window._completed(
                 "scan",
@@ -107,6 +116,7 @@ def run(destination: Path) -> int:
                     >= window.message.fontMetrics().horizontalAdvance("缺少 VISA 驱动，部分仪器无法扫描")
                 ), "The actionable VISA notice must be fully visible"
             window.grab().save(str(destination.with_suffix(".png")))
+            panel.grab().save(str(destination.with_suffix(".mcp.png")))
             from lab_control.agent.verification import verify_mock
 
             try:

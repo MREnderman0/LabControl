@@ -46,10 +46,10 @@ class CaptureParameters(MetricParameters):
     frames: int = 1
 
 
-def settle(service, client, grant, task, timeout=12, *, local_commands=False):
+def settle(service, client, grant, task, timeout=12):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        value = service.get_task_status(client, grant, task["id"], local_commands=local_commands)
+        value = service.get_task_status(client, grant, task["id"])
         if value["state"] not in ACTIVE:
             return value
         time.sleep(0.02)
@@ -917,137 +917,38 @@ def test_mcp_new_tools_flow(metrics):
     assert rejected.returncode == 2 and not json.loads(rejected.stdout)["ok"]
 
 
-def test_command_string_experiment_through_local_and_lab_mcp(metrics, tmp_path):
-    from lab_control.agent.connector import connection, remote_client
+def test_mcp_rejects_removed_commands_and_requires_grants(metrics):
+    from lab_control.agent.connector import remote_client
     from lab_control.agent.server import AgentServer
 
-    runtime, service, owner, grant, device, *_ = metrics
-    first = capture_record(metrics)
-    second = capture_record(metrics)
-    ordinary = settle(service, owner, grant, process_record(metrics, first))
-    assert ordinary["state"] == "completed", ordinary
-    script = tmp_path / "process with spaces.py"
-    script.write_text(
-        """
-import json
-import sys
-
-request = json.load(sys.stdin)
-source = request["source"]
-assert source["complete"]
-assert source["recording_ids"] == request["parameters"]["expected"]
-assert source["metadata"]["adapter_id"] == "rs.rtm3004"
-assert sys.argv[1] == "argument with spaces"
-if len(sys.argv) > 2:
-    print("not JSON")
-else:
-    points = sum(len(frame["measurements"][0]["values"]) for frame in source["frames"])
-    print(json.dumps({"metrics": {"points": {"value": points, "unit": "samples", "quality": "good"}}}))
-""",
-        encoding="utf-8",
-    )
-    command = subprocess.list2cmdline([sys.executable, str(script), "argument with spaces"])
-    arguments = {
-        "device_id": device,
-        "request_id": "command-test",
-        "profile_id": "local.command",
-        "command": command,
-        "recording_ids": [second, first],
-        "parameters": {"expected": [second, first]},
-    }
-    with socket.socket() as local, socket.socket() as tls:
-        local.bind(("127.0.0.1", 0))
-        tls.bind(("127.0.0.1", 0))
-        local_port, tls_port = local.getsockname()[1], tls.getsockname()[1]
+    _, service, _, grant, device, *_ = metrics
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
     server = service.server = AgentServer(service)
-    server.configure({"enabled": True, "local_port": local_port, "local_commands": True})
-    assert "local_commands" not in service.repository.load_workspace("agent/server")
-    server.close()
-    assert not server.local_commands
-    server.settings.update(lan_enabled=True, lan_address="127.0.0.1", lan_port=tls_port)
-    server.start()
-    exported = tmp_path / "command-https.json"
-    server.export_connection(exported, lan=True)
-    lan_config, lan_verify = connection(exported)
-    local_config = {"url": f"http://127.0.0.1:{local_port}/mcp"}
+    server.configure({"enabled": True, "local_port": port, "local_commands": True})
 
-    async def flow():
-        async with remote_client(local_config, True) as local, remote_client(lan_config, lan_verify) as lan:
-            denied = await lan.call_tool("start_experiment", arguments)
-            assert denied.is_error and denied.structured_content["code"] == "local_command_disabled"
-            server.local_commands = True
-            capabilities = await lan.call_tool("get_processing_capabilities", {"device_id": device})
-            (profile,) = capabilities.structured_content["data"]["profiles"]
-            assert profile["id"] == "local.command" and profile["requires_command"]
-            for tool, query in (
-                ("get_task_status", {"task_id": ordinary["id"]}),
-                ("get_processing_result", {"result_id": ordinary["result_id"]}),
-                ("stop_task", {"task_id": ordinary["id"], "request_id": "stop-ordinary"}),
-                (
+    async def check():
+        async with remote_client({"url": server.url}, True) as client:
+            tools = (await client.list_tools()).tools
+            tool = next(t for t in tools if t.name == "start_experiment")
+            assert "command" not in tool.input_schema["properties"]
+            scope = {"device_id": device, "grant_id": grant}
+            caps = await client.call_tool("get_processing_capabilities", scope)
+            assert "local.command" not in {p["id"] for p in caps.structured_content["data"]["profiles"]}
+            for extra in ({}, {"command": "retired"}):
+                result = await client.call_tool(
                     "start_experiment",
                     {
-                        "device_id": device,
-                        "profile_id": "test.mean",
-                        "recording_ids": [first],
-                        "request_id": "ordinary-without-grant",
+                        **scope,
+                        "request_id": "old",
+                        "profile_id": "local.command",
+                        **extra,
                     },
-                ),
-            ):
-                denied = await lan.call_tool(tool, query)
-                assert denied.is_error and denied.structured_content["code"] == "grant_expired"
-            submitted = await lan.call_tool("start_experiment", arguments)
-            assert not submitted.is_error, submitted
-            task = submitted.structured_content["data"]
-            duplicate = await local.call_tool("start_experiment", arguments | {"grant_id": grant})
-            assert duplicate.structured_content["data"]["id"] == task["id"]
-            done = await asyncio.to_thread(settle, service, owner, "", task, local_commands=True)
-            assert done["state"] == "completed", done
-            status = await lan.call_tool("get_task_status", {"task_id": task["id"]})
-            assert status.structured_content["data"]["result_id"] == done["result_id"]
-            result = await lan.call_tool("get_processing_result", {"result_id": done["result_id"]})
-            assert result.structured_content["data"]["metrics"] == {
-                "points": {"value": 64, "unit": "samples", "quality": "simulated"}
-            }
-            repeated = await local.call_tool("start_experiment", arguments | {"request_id": "command-again"})
-            repeated_task = repeated.structured_content["data"]
-            again = await asyncio.to_thread(settle, service, owner, "", repeated_task, local_commands=True)
-            assert again["state"] == "completed" and again["result_id"] != done["result_id"]
-            malformed = await local.call_tool(
-                "start_experiment",
-                arguments | {"request_id": "command-malformed", "command": command + " malformed"},
-            )
-            failure = await asyncio.to_thread(
-                settle, service, owner, "", malformed.structured_content["data"], local_commands=True
-            )
-            assert failure["state"] == "failed" and failure["code"] == "command_invalid_output"
+                )
+                assert result.is_error and result.structured_content["code"] == "processing_unsupported"
+            missing = await client.call_tool("get_processing_capabilities", {"device_id": device})
+            assert missing.is_error
+            assert not service.ledger.tasks()
 
-    asyncio.run(flow())
-
-
-def test_stop_waiting_command(metrics, tmp_path):
-    _, service, client, grant, device, *_ = metrics
-    record = capture_record(metrics)
-    ready = tmp_path / "command-ready"
-    program = (
-        "import json, sys, time; from pathlib import Path; json.load(sys.stdin); "
-        "Path(sys.argv[1]).touch(); time.sleep(60)"
-    )
-    command = subprocess.list2cmdline([sys.executable, "-c", program, str(ready)])
-    task = service.start_experiment(
-        client,
-        "",
-        device,
-        "wait-command",
-        "local.command",
-        recording_ids=[record],
-        command=command,
-        local_commands=True,
-    )
-    deadline = time.monotonic() + 8
-    while not ready.is_file() and time.monotonic() < deadline:
-        time.sleep(0.02)
-    assert ready.is_file()
-    stopped = service.stop_task(client, "", task["id"], "stop-command", local_commands=True)
-    assert settle(service, client, "", stopped, local_commands=True)["state"] == "completed"
-    assert settle(service, client, "", task, local_commands=True)["state"] == "cancelled"
-    assert service.list_processing_results(client, grant, profile_id="local.command") == []
+    asyncio.run(check())

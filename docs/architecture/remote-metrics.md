@@ -34,12 +34,12 @@
 
 | 工具 | 主要参数及行为 |
 | --- | --- |
-| `get_processing_capabilities` | `device_id`；提供 `grant_id` 时返回授权设备的处理项。临时命令开关开启时，省略 `grant_id` 可查询 `local.command`。 |
+| `get_processing_capabilities` | 使用 `grant_id` 和 `device_id` 查询型号内置的指标处理项。 |
 | `list_recordings` | `grant_id`，可选 `device_id`；返回 recording_id、类型、实际通道、帧数、完整性与可用性 |
 | `start_processing` | `grant_id, device_id, request_id, recording_id, profile_id`，可选 parameters、allow_partial、force |
-| `start_experiment` | `device_id, request_id, profile_id`，可选 `parameters`。普通处理项需要 `grant_id`，并用 `recording_ids` 或 `capture_parameters` 选输入。`local.command` 传 `recording_ids` 和 `command` 字符串。 |
+| `start_experiment` | 使用 `grant_id, device_id, request_id, profile_id`，可选 `parameters`。通过 `recording_ids` 或 `capture_parameters` 选择输入。 |
 | `list_processing_results` | `grant_id`，可按 device_id、recording_id、profile_id 过滤 |
-| `get_processing_result` | `result_id`；普通指标结果还需要 `grant_id`。开关开启时可直接读回 `local.command` 结果。 |
+| `get_processing_result` | 使用 `grant_id` 和 `result_id` 读取已保存的指标。 |
 
 提交返回原有 Agent 任务结构，任务标识字段是 `id`；后续传给 `get_task_status.task_id`。通用 state 沿用 accepted/running/stopping/completed/partial/failed/interrupted，并增加 cancelled；`phase` 区分 queued、acquiring、saving、validating、processing、publishing、completed 或 reused。progress 是处理器提供的 done/total，不假装是硬件采集百分比。completed 表示任务完成，不代表物理指标合格；partial 和每项 unavailable 必须由调用方单独判读。
 
@@ -49,40 +49,11 @@
 
 客户端断线不取消任务；`stop_task` 协作取消处理或停止本任务自有采集，并等待原始记录收尾，不停止其他设备任务。排队取消不会运行算法。软件退出等待已接受 I/O 和计算器协作退出；重启后未完成任务记为 interrupted，不重放。授权在运行期间无时间限制，撤销或重启后失效。
 
-## 临时命令处理
-
-在服务端“系统设置 → Agent 协作实验”勾选“启用临时命令处理”并应用。本机和已开放的实验网 HTTPS 的所有 MCP 客户端均可使用 `local.command`。它使用独立的命令任务范围，提交、查询、取消和读回结果时可省略 `grant_id`。采集、查询设备记录和运行普通指标处理使用实验授权。开关随软件退出复位。命令在采数机以桌面程序的 Windows 用户身份执行。
-
-向 `start_experiment` 传入下列 `arguments`。同一个处理项适用于所有设备，命令直接由客户端提交。
-
-```json
-{
-  "device_id": "<设备 ID>",
-  "request_id": "<本次请求 UUID>",
-  "profile_id": "local.command",
-  "command": "python.exe \"process custom.py\"",
-  "recording_ids": ["<记录 ID>"],
-  "parameters": {"channel": 1}
-}
-```
-
-`command` 是一行 Windows 命令字符串，最长 4096 字符。服务端按 Windows 引号规则拆分参数并直接启动程序。脚本和可执行文件须在采数机可访问，相对路径按软件运行目录解析。客户端先完成采集并取得 `recording_ids`，临时命令处理只接收已有记录。多条记录沿用同设备、单帧及提交顺序约定。
-
-程序从 stdin 读取一个 UTF-8 JSON 对象 `{"source":{...},"parameters":{...}}`。其中 `source` 包含 `recording_id`、`recording_ids`、`metadata`、`complete` 和完整的 `frames` 数组。它沿用原 `process(source, parameters)` 的记录元数据和测量帧结构，数组序列化为 JSON 数组，复数序列化为 `{"real":...,"imag":...}`。算法参数按提交的 JSON 对象传递。
-
-程序的 stdout 输出一个 UTF-8 JSON 指标对象。键为指标名，值包含 `value`、`unit` 和 `quality`。下面是脚本输出示例。
-
-```json
-{"metrics":{"ch1.std":{"value":0.0123,"unit":"V","quality":"good"}}}
-```
-
-日志写 stderr。非零退出、超时或 stdout 格式无效会使任务失败，错误见 `get_task_status`。命令执行上限为 300 秒，stdout 上限为 256 KiB。取消任务会终止命令进程。在同一 `request_id` 下沿用原任务，新请求重新执行命令。任务审计保存命令摘要。完成后用 `get_processing_result` 读取指标，模拟记录的有效值统一标为 `simulated`。
-
 ## 记录、授权与结果
 
 规范记录须保存版本、run_id、device_id、adapter_id、厂家和型号。有可读序列号时按序列号匹配，无可读序列号时按采集会话保存的连接地址与当前授权映射匹配。缺少这两种凭据的旧记录无法远程处理。记录 ID 由 device_id 与 run_id 派生，重命名、移动及算法更新不改变；重复 ID 的多目录副本报冲突。
 
-仅从本机已登记的数据目录检索，客户端用记录 ID 引用数据。查看和选择记录需要当前 view/results 授权。执行普通处理项另需 process，并检查源文件实际全部通道。自动采集还检查 acquire 或 record、必要的 output_trigger/acquisition_setup。process 默认不勾选。解析或校验失败标记不可用，未完成保存的记录拒绝处理，不完整来源仅在声明 supports_partial 且请求 allow_partial 时允许。
+仅从本机已登记的数据目录检索，客户端用记录 ID 引用数据。查看和选择记录需要当前 view/results 授权。执行普通处理项另需 process，并检查源文件实际全部通道。自动采集还检查 acquire 或 record、必要的 output_trigger/acquisition_setup。桌面自动授权包含 process。解析或校验失败标记不可用，未完成保存的记录拒绝处理，不完整来源仅在声明 supports_partial 且请求 allow_partial 时允许。
 
 原始输入指纹包括文件内容、相对名称与大小，不以绝对位置或修改时间作为内容身份。处理前后复核，排队期间变化也拒绝；不把处理结果和自动 CSV 纳入原始输入。公共目录预约与桌面处理、重命名、移动、回收站操作互斥，批量记录按整个批次保护。
 

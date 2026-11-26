@@ -38,6 +38,11 @@ QPushButton:pressed { background: #2a2c31; }
 QPushButton:focus { border-color: #43464e; }
 QPushButton:disabled { color: #4f525a; background: #16171a; border-color: #25272c; }
 QPushButton::menu-indicator { image: none; width: 0; }
+QPushButton#mcpExportMenu { padding-right: 22px; }
+QPushButton#mcpExportMenu::menu-indicator {
+    image: url("@assets@/spin-down.svg"); width: 10px; height: 10px;
+    subcontrol-position: center right; subcontrol-origin: padding; right: 6px;
+}
 QPushButton#primaryButton, QPushButton[variant="primary"] { background: #ee9a48; border-color: #ee9a48; color: #1b1207; font-weight: 600; }
 QPushButton#primaryButton:hover, QPushButton[variant="primary"]:hover { background: #f4ab62; border-color: #f4ab62; }
 QPushButton#primaryButton:pressed, QPushButton[variant="primary"]:pressed { background: #d98a3e; border-color: #d98a3e; }

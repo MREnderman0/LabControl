@@ -185,7 +185,7 @@ class Adapter:
                     force_deploy=False,
                     ignore_busy=False,
                     persist_state=True,
-                    client_name="TF-LabControl",
+                    client_name="LabControl",
                 ),
             )
         try:

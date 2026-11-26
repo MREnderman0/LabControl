@@ -39,7 +39,7 @@ def export_touchstone(path: Path, traces: Mapping[str, Measurement], reference_o
         columns.extend((values.real, values.imag))
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="\n") as stream:
-        stream.write("! TF LabControl export. Consult the accompanying configuration/calibration snapshot.\n")
+        stream.write("! LabControl export. Consult the accompanying configuration/calibration snapshot.\n")
         stream.write(f"# Hz S RI R {reference_ohm:.12g}\n")
         np.savetxt(stream, np.column_stack(columns), fmt="%.15g")
     return path

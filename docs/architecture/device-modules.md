@@ -70,7 +70,7 @@ MCP 控制端根据通道能力、参数定义及实验授权呈现可写设置�
 .venv-dev\Scripts\python.exe scripts/generate_device_docs.py --check
 .venv-dev\Scripts\python.exe scripts/check_docs.py
 .venv-dev\Scripts\uv.exe build --offline --python .venv-dev\Scripts\python.exe --no-python-downloads --out-dir dist
-.venv-dev\Scripts\python.exe scripts/check_device_wheel.py dist/tf_labcontrol_shell-0.3.0-py3-none-any.whl
+.venv-dev\Scripts\python.exe scripts/check_device_wheel.py dist/labcontrol-0.3.0-py3-none-any.whl
 ```
 
 pytest 已包含型号包内测试。构建必须包含兼容实现、README 和脱敏样本，且安装后的注册、能力读取不依赖源码工作目录、SDK 或硬件。自动化的移除测试用临时注册表/隔离副本执行，不删除工作目录或现场数据。

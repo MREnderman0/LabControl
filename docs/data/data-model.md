@@ -12,7 +12,7 @@
 
 ## 实际存储结构
 
-    %LOCALAPPDATA%/TF-LabControl/       # LAB_CONTROL_HOME 可覆盖
+    %LOCALAPPDATA%/LabControl/       # LAB_CONTROL_HOME 可覆盖
       config/                         # 用户自行保存的 UTF-8 TOML
       inventory.sqlite3               # WAL 模式
       logs/YYYY-MM-DD.jsonl           # UTF-8 审计
@@ -57,7 +57,7 @@ storage/paths.py 的不可变 `SaveContext` 固定根目录、带时区开始时
 
 自定义目录只影响采集数据。真实与 Mock 的偏好分别保存在各自库存中；Mock 默认使用 simulation/data，自定义一级目录下则额外使用 simulation 子目录，设置页展示实际生效路径。不迁移库存、槽位、日志、配置、实机档案或历史采集文件。
 
-进程锁固定在每用户 TF-LabControl 根目录，防止换数据目录后启动第二个真实设备进程。`hardware.lock.owner.json` 只保存当前独占锁的 PID 和启动时间用于冲突提示，正常退出时删除，不能据此判断锁是否可用。SQLite 包含 inventory(id, document)、scans(id, document) 和新增 workspace(id, document)，document 为 UTF-8 JSON。新增表不改变旧库存/槽位格式；会话驻留内存，旧记录不能当成当前已连接。
+进程锁固定在每用户 LabControl 根目录，防止换数据目录后启动第二个真实设备进程。`hardware.lock.owner.json` 只保存当前独占锁的 PID 和启动时间用于冲突提示，正常退出时删除，不能据此判断锁是否可用。SQLite 包含 inventory(id, document)、scans(id, document) 和新增 workspace(id, document)，document 为 UTF-8 JSON。新增表不改变旧库存/槽位格式；会话驻留内存，旧记录不能当成当前已连接。
 
 ## 原始数据保存契约
 
@@ -206,3 +206,7 @@ HDF5、高频无限流写盘、完整实验/阈值索引、遥测和科学数据
 无歧义旧槽位复制到 general。同一设备旧绑定不一致、槽位类别不匹配或多设备争用同一槽位时，general 保持未绑定，库存 slotMigrationConflict 保存提示，重新绑定／解除绑定会清除此提示；原冲突依据保存在迁移记录中。既有 general 绑定和设置优先，不被旧值覆盖。未绑定设备的总览偏好使用稳定设备 ID，避免冲突槽位混用。
 
 监测、采集、记录、保存上下文和 CLI 统一接受 general/electronic/optical；默认使用 general，显式旧标签仅影响元数据，未知标签仍拒绝。保存目录及分段版本不变，旧记录读取和离线转换无需改写。
+
+## 旧版 Windows 目录升级
+
+默认工作区为 `%LOCALAPPDATA%\LabControl`。首次升级会检查旧目录 `TF-LabControl` 的库存数据库和硬件锁，备份至同级 `LabControl-backups` 的时间戳子目录，校验文件内容与 SQLite 完整性后，再在同一卷更名并建立旧路径的目录联接。既有记录的绝对路径和旧软件的互斥锁仍然有效。两个目录已各有数据或数据库被其他程序占用时，请先关闭占用程序并核对库存。显式数据根目录仍由 `LAB_CONTROL_HOME` 指定。
