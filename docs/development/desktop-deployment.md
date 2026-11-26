@@ -123,7 +123,7 @@ LabControl.exe --cli environment --report .temp/deployment/environment.json
 
 ## 验收与发布
 
-MCP 接入随目录包提供 `LabControl-Agent.exe` 标准流连接器。桌面服务仅监听回环地址，端口和配置导出入口见[MCP 接入指南](../guides/agent-collaboration.md)。已有启动配置仍可使用 `TF-LabControl-Agent.exe`。
+目录包的唯一程序入口为 `LabControl.exe`。双击打开桌面，客户端使用 `--agent-connector` 启动标准流连接器。升级后重新导出 Codex 配置。见[MCP 接入指南](../guides/agent-collaboration.md)。
 
 原部署阶段证据见[历史部署验收记录](../reviews/desktop-deployment-review.md)；此次瘦身证据见[仓库瘦身验收](../reviews/repository-slimming-review.md)。
 

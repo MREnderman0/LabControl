@@ -81,6 +81,8 @@ def migrate_default_home(base: Path) -> tuple[Path, Path | None]:
     old, new = base / "TF-LabControl", base / "LabControl"
     if old.exists() and new.exists() and not _linked(new) and old.samefile(new):
         return new, None
+    if new.is_dir() and not _linked(new) and not os.path.lexists(old):
+        return new, None
     coordination = FileLease(base / ".labcontrol-migration.lock", code="migration_busy")
     try:
         if _linked(new):
@@ -91,7 +93,6 @@ def migrate_default_home(base: Path) -> tuple[Path, Path | None]:
             raise ValueError(f"旧数据目录的链接目标异常，请核对：{old}")
         if not old.exists():
             new.mkdir(exist_ok=True)
-            _link_directory(old, new)
             return new, None
         if old.resolve(strict=True) != old or not old.is_dir():
             raise ValueError(f"旧数据目录不在预期位置：{old}")

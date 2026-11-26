@@ -31,6 +31,4 @@ for destination, source, kind in a.binaries:
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="LabControl", debug=False,
           icon=str(icon), bootloader_ignore_signals=False, strip=False, upx=False, console=False)
-connector = EXE(pyz, a.scripts, [], exclude_binaries=True, name="LabControl-Agent", debug=False,
-                icon=str(icon), bootloader_ignore_signals=False, strip=False, upx=False, console=True)
-coll = COLLECT(exe, connector, a.binaries, a.datas, strip=False, upx=False, name="LabControl")
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="LabControl")

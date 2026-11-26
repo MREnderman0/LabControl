@@ -11,7 +11,9 @@ from lab_control.application.runtime import ApplicationRuntime
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--connector", type=Path, help="Optional built console connector EXE")
+    parser.add_argument(
+        "--connector", type=Path, help="Optional packaged LabControl.exe for stdio verification"
+    )
     parser.add_argument("--codex", type=Path, help="Optional installed Codex CLI for actual Agent acceptance")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1] / ".temp/agent-checks" / uuid4().hex

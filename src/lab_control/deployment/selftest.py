@@ -84,6 +84,7 @@ def run(destination: Path) -> int:
             window.navigate("系统设置")
             assert importlib.metadata.version("labcontrol")
             assert default_home().name == "LabControl"
+            assert not os.path.lexists(default_home().with_name("TF-LabControl"))
             panel = window.agent_panel
             assert panel.address.text() == "http://127.0.0.1:8765/mcp"
             assert not panel.enabled.isChecked()

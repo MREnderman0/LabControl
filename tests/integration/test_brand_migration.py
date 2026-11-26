@@ -12,6 +12,14 @@ from lab_control.domain.instruments import DeviceError
 from lab_control.storage import brand_migration as migration
 
 
+def test_new_workspace_never_creates_legacy_directory(tmp_path):
+    new = tmp_path / "LabControl"
+    for _ in range(2):
+        assert migration.migrate_default_home(tmp_path) == (new, None)
+        assert new.is_dir()
+        assert not os.path.lexists(tmp_path / "TF-LabControl")
+
+
 def legacy_inventory(base):
     old = base / "TF-LabControl"
     old.mkdir()

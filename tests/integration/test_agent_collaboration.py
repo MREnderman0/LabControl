@@ -663,13 +663,13 @@ def test_runtime_exit_drains_recording_and_persists_completion(experiment, tmp_p
         assert reopened.agent.ledger.artifacts(task["id"])
 
 
-def test_console_executable_always_dispatches_to_connector(monkeypatch):
+def test_desktop_executable_dispatches_explicit_connector_mode(monkeypatch):
     from lab_control import launcher
     from lab_control.agent import connector
 
     calls = []
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", "C:/package/TF-LabControl-Agent.exe")
-    monkeypatch.setattr(sys, "argv", [sys.executable])
+    monkeypatch.setattr(sys, "executable", "C:/package/LabControl.exe")
+    monkeypatch.setattr(sys, "argv", [sys.executable, "--agent-connector"])
     monkeypatch.setattr(connector, "main", lambda argv: calls.append(argv) or 2)
     assert launcher.main() == 2 and calls == [[]]

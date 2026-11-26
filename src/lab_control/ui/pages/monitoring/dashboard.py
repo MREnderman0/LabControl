@@ -737,11 +737,7 @@ class MonitoringDashboard(QWidget):
                 # setting into the overview preference before the card is
                 # persisted.  This avoids reviving an older overview value on
                 # the next stop/start cycle.
-                target["interval"] = (
-                    0.0
-                    if task.get("cadence") == "fastest"
-                    else float(task["interval"])
-                )
+                target["interval"] = 0.0 if task.get("cadence") == "fastest" else float(task["interval"])
             target.update(
                 source=source,
                 channels=list(channels),

@@ -63,12 +63,9 @@ namespace LabControl {
 function Enter-LabMaintenanceLease {
     $fixedRoot = Get-LabDefaultRoot
     $oldRoot = Join-Path $env:LOCALAPPDATA 'TF-LabControl'
-    if (-not (Test-Path -LiteralPath $oldRoot)) {
-        [IO.Directory]::CreateDirectory($fixedRoot) | Out-Null
-        try { New-Item -ItemType Junction -Path $oldRoot -Target $fixedRoot -ErrorAction Stop | Out-Null }
-        catch { if (-not (Test-Path -LiteralPath $oldRoot)) { throw } }
-    }
-    $roots = @($fixedRoot, $oldRoot, (Get-LabRuntimeRoot)) | Select-Object -Unique
+    $roots = @($fixedRoot, (Get-LabRuntimeRoot))
+    if (Test-Path -LiteralPath $oldRoot) { $roots += $oldRoot }
+    $roots = $roots | Select-Object -Unique
     $streams = [Collections.Generic.List[IO.FileStream]]::new()
     $identities = [Collections.Generic.HashSet[string]]::new()
     try {

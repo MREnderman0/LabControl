@@ -184,8 +184,6 @@ def main() -> int:
         check=True,
     )
     target = output / "LabControl"
-    for name in ("LabControl.exe", "LabControl-Agent.exe"):
-        shutil.copy2(target / name, target / ("TF-" + name))
     if args.distribution == "offline":
         stage_offline_packages(target, components, tuple(args.cache) if args.cache else None)
     maintenance = target / "maintenance"

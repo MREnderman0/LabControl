@@ -63,7 +63,7 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
     connection = runtime.repository.root / "connector.json"
     service.server.export_connection(connection)
     if connector is None and getattr(sys, "frozen", False):
-        connector = Path(sys.executable).with_name("LabControl-Agent.exe")
+        connector = Path(sys.executable)
     command = str(connector) if connector else sys.executable
     arguments = ([] if connector else ["-m", "lab_control"]) + [
         "--agent-connector",

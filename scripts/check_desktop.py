@@ -25,25 +25,24 @@ def verify_exe_icons(bundle: Path) -> list[str]:
     for index in range(count):
         size, offset = struct.unpack_from("<II", ico, 6 + index * 16 + 8)
         images.append(ico[offset : offset + size])
-    verified = []
-    for name in ("LabControl.exe", "LabControl-Agent.exe", "TF-LabControl.exe", "TF-LabControl-Agent.exe"):
-        with pefile.PE(str(bundle / name), fast_load=True) as pe:
-            pe.parse_data_directories([pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]])
-            types = {t.id: t.directory.entries for t in pe.DIRECTORY_ENTRY_RESOURCE.entries}
+    name = "LabControl.exe"
+    assert {p.name for p in bundle.glob("*.exe")} == {name}
+    with pefile.PE(str(bundle / name), fast_load=True) as pe:
+        pe.parse_data_directories([pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]])
+        types = {t.id: t.directory.entries for t in pe.DIRECTORY_ENTRY_RESOURCE.entries}
 
-            def resource(entry):
-                data = entry.directory.entries[0].data.struct
-                return pe.get_data(data.OffsetToData, data.Size)
+        def resource(entry):
+            data = entry.directory.entries[0].data.struct
+            return pe.get_data(data.OffsetToData, data.Size)
 
-            resources = {entry.id: resource(entry) for entry in types[3]}
-            assert types[14], name
-            for group in types[14]:
-                data = resource(group)
-                assert struct.unpack_from("<HHH", data) == (0, 1, count), name
-                referenced = [struct.unpack_from("<H", data, 6 + 14 * i + 12)[0] for i in range(count)]
-                assert [resources[i] for i in referenced] == images, name
-        verified.append(name)
-    return verified
+        resources = {entry.id: resource(entry) for entry in types[3]}
+        assert types[14], name
+        for group in types[14]:
+            data = resource(group)
+            assert struct.unpack_from("<HHH", data) == (0, 1, count), name
+            referenced = [struct.unpack_from("<H", data, 6 + 14 * i + 12)[0] for i in range(count)]
+            assert [resources[i] for i in referenced] == images, name
+    return [name]
 
 
 def main() -> int:
@@ -53,7 +52,7 @@ def main() -> int:
     parser.add_argument(
         "--check-agent-default",
         action="store_true",
-        help="For a freshly built Agent console entry, verify no-argument dispatch",
+        help="Verify explicit MCP mode before GUI startup",
     )
     args = parser.parse_args()
     args.report = args.report.resolve()
@@ -80,7 +79,7 @@ def main() -> int:
         )
         if args.check_agent_default:
             connector = subprocess.run(
-                [str(target / "LabControl-Agent.exe")],
+                [str(executable), "--agent-connector"],
                 cwd=outside,
                 env=environment,
                 capture_output=True,
