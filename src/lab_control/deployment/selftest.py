@@ -102,8 +102,9 @@ def run(destination: Path) -> int:
             app.processEvents()
             destination.parent.mkdir(parents=True, exist_ok=True)
             if window.message.isVisible():
-                assert window.message.contentsRect().width() >= window.message.fontMetrics().horizontalAdvance(
-                    "缺少 VISA 驱动，部分仪器无法扫描"
+                assert (
+                    window.message.contentsRect().width()
+                    >= window.message.fontMetrics().horizontalAdvance("缺少 VISA 驱动，部分仪器无法扫描")
                 ), "The actionable VISA notice must be fully visible"
             window.grab().save(str(destination.with_suffix(".png")))
             from lab_control.agent.verification import verify_mock
