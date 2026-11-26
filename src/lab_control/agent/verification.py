@@ -67,7 +67,7 @@ def verify_mock(runtime, *, connector: Path | None = None, codex: Path | None = 
     settings["export_root"] = str(folder)
     connection.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
     if connector is None and getattr(sys, "frozen", False):
-        connector = Path(sys.executable).with_name("LabControl-Agent.exe")
+        connector = Path(sys.executable)
     command = str(connector) if connector else sys.executable
     arguments = ([] if connector else ["-m", "lab_control"]) + [
         "--agent-connector",

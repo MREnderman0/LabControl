@@ -184,9 +184,6 @@ def main() -> int:
         check=True,
     )
     target = output / "LabControl"
-    # Existing shortcuts and exported connector configurations may use the old EXE names.
-    for executable in ("LabControl.exe", "LabControl-Agent.exe"):
-        shutil.copy2(target / executable, target / ("TF-" + executable))
     if args.distribution == "offline":
         stage_offline_packages(target, components, tuple(args.cache) if args.cache else None)
     maintenance = target / "maintenance"

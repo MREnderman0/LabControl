@@ -19,7 +19,7 @@ from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 def export_codex_bundle(server, destination: Path):
     connection = destination.with_suffix(".connection.json")
     if getattr(sys, "frozen", False):
-        command = str(Path(sys.executable).with_name("LabControl-Agent.exe"))
+        command = sys.executable
         args = ["--agent-connector"]
     else:
         command = sys.executable

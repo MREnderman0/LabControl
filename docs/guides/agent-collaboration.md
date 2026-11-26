@@ -8,7 +8,7 @@
 
 保存到采数机时使用 `destination=labcontrol`，在 `directory` 填写桌面设置中数据保存目录内的绝对路径（模拟模式使用其实际数据目录）。原始 HTTP MCP 返回异步任务，完成后在 `get_task_status.result.files` 查看实际路径或下载标识。保存到客户端时使用 `destination=client`。OFC Host 或 stdio 连接器在自己的电脑上解释目录，下载后校验完整性并写入。stdio 连接器默认允许写入用户目录下的 `Downloads/LabControl`，也可在本机连接 JSON 的 `export_root` 指定其他绝对目录。两端均拒绝经过符号链接或 Windows 目录联接的路径。连接器等待单帧最多 10 分钟，每个单帧文件上限为 512 MiB。采数机在运行目录的 `agent-frame-artifacts` 保留可重新下载的原始副本。缓存上限为 2 GiB 和 4096 个任务，满后拒绝新导出；操作员可归档并清理已无须重新下载的任务目录。断线后凭原任务号、授权号和本地目录调用连接器的 `download_frame` 可重新下载。文件主名由步骤填写，扩展名自动添加。重名时同一组使用相同的编号。
 
-发行包包含 `LabControl.exe` 和 `LabControl-Agent.exe`，同时提供旧名 EXE 供已有启动配置使用。默认库存使用 `%LOCALAPPDATA%\LabControl`，旧目录联接保留历史文件路径和设备锁。
+发行目录包含一个 `LabControl.exe`。默认库存使用 `%LOCALAPPDATA%\LabControl`。
 
 ## 首次连接
 
@@ -26,10 +26,10 @@ OFC Host v0.1.6 的“远程设备控制”支持从示波器或频谱仪当前�
 
 当前桌面自动授权带有 `full_device_access: true`，其中空的 `channels` 和 `operations` 表示授权范围采用型号支持的全部通道和参数能力，具体能力用 `get_capabilities` 查询。
 
-发行连接器与 GUI 共用 `launcher.main`，但在导入 Qt、创建 Runtime 或加载硬件前进入连接器分支。`LabControl.exe` 保持无控制台；`LabControl-Agent.exe` 提供标准输入输出。GUI 仍由唯一 `run.bat` 或正式安装入口启动。
+双击 `LabControl.exe` 打开桌面。Codex 通过同一程序的 `--agent-connector` 模式连接已启动的桌面服务；升级后请重新导出配置，使 command 指向新版 EXE。
 
 ```powershell
-.\LabControl-Agent.exe --agent-connector --connection .\lab-control-connection.json --check
+.\LabControl.exe --agent-connector --connection .\lab-control-connection.json --check
 # 源码开发环境中的同一分发入口
 .venv-dev\Scripts\python.exe -m lab_control --agent-connector --connection .\lab-control-connection.json --check
 ```
@@ -87,7 +87,7 @@ OFC 自动化外壳目前先接入连接配置与待配置条目，实际 SSH �
 
 另一台电脑可以通过 SSH 在采数电脑执行现有连接器命令，使用 UTF-8 JSON 收发。采数电脑的桌面软件须已运行并启用 MCP 服务。连接 JSON 使用导出的本机地址配置，SSH 登录沿用系统配置。
 
-以下是 SSH **远端执行**的命令；先将工作目录设为项目目录，发行版可替换为完整发行目录内的 `LabControl-Agent.exe`：
+以下是 SSH **远端执行**的命令；先将工作目录设为项目目录，发行版可替换为完整发行目录内的 `LabControl.exe`：
 
 ```powershell
 .venv-dev\Scripts\python.exe -m lab_control --agent-connector --connection .\connection.json --call get_server_info
@@ -118,7 +118,7 @@ OFC 自动化外壳目前先接入连接配置与待配置条目，实际 SSH �
 `get_artifact` 返回下载路径。下载请求按 `grant_id` 再次校验设备和通道结果授权。文件以已登记的产物 ID 引用。可用连接器独立下载：
 
 ```powershell
-.\LabControl-Agent.exe --agent-connector --connection .\lab-control-connection.json --download <产物ID> --grant <当前授权ID> --output .\experiment.csv
+.\LabControl.exe --agent-connector --connection .\lab-control-connection.json --download <产物ID> --grant <当前授权ID> --output .\experiment.csv
 ```
 
 已有目标文件拒绝覆盖；下载失败保留 `.partial`，不能当作完整结果。授权包含多个通道的文件要求调用者拥有其中所有通道的权限。软件记录成功、设备读回成功和物理输出测量是不同结论，Agent 必须分别报告。

@@ -1,5 +1,6 @@
 """Location picker shared by desktop frame data and plot image exports."""
 
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QStandardPaths
@@ -10,6 +11,20 @@ def frame_export_settings() -> QSettings:
     settings = QSettings("LabControl", "LabControl")
     key = "exports/lastFrameDirectory"
     if not settings.contains(key):
+        if sys.platform == "win32" and settings.format() == settings.Format.NativeFormat:
+            # QSettings creates its organization key even for a read-only lookup.
+            import winreg
+
+            try:
+                with winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER, r"Software\TF-LabControl\LabControl\exports"
+                ) as old:
+                    value, kind = winreg.QueryValueEx(old, "lastFrameDirectory")
+            except (FileNotFoundError, PermissionError):
+                return settings
+            if kind in (winreg.REG_SZ, winreg.REG_EXPAND_SZ) and value:
+                settings.setValue(key, value)
+            return settings
         legacy = QSettings("TF-LabControl", "LabControl")
         if legacy.contains(key):
             settings.setValue(key, legacy.value(key))

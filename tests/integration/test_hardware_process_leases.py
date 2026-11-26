@@ -77,6 +77,7 @@ try {
         ).stdout.strip()
 
     assert run() == f"acquired:{1 if same_file else 2}"
+    assert not os.path.lexists(fixed.parent / "TF-LabControl")
     for occupied in (fixed, legacy):
         lease = ProcessLease(occupied)
         try:

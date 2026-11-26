@@ -118,10 +118,7 @@ def command_errors(root: Path, text: str) -> list[tuple[int, str]]:
             "run.bat",
             "lab-control",
             "lab-control.exe",
-            "tf-labcontrol.exe",
             "labcontrol.exe",
-            "tf-labcontrol-agent.exe",
-            "labcontrol-agent.exe",
         }
         if executable in {"lab-control-cli", "lab-control-cli.exe"}:
             source = root / "src/lab_control/cli/main.py"
