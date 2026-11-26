@@ -285,6 +285,10 @@ class WorkspaceChrome:
         if self._disk[0] != str(root) or now - self._disk[2] > 15:
             self._disk = (str(root), _gigabytes(root), now)
         self.status_storage.setText(f"记录目录 {root} · 剩余 {self._disk[1]}")
+        # Give the actionable notice priority over the path and version on a narrow window.
+        compact_error = window.message.property("kind") == "err" and window.status_bar.width() < 720
+        self.status_storage.setVisible(not compact_error)
+        self.status_version.setVisible(not compact_error)
         problems = self._problems()
         self.alerts.set_badge(bool(problems))
         self.alerts.setToolTip(

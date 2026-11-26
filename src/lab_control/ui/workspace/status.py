@@ -93,16 +93,17 @@ def explain(detail: str, code: str = "", provider: str = "") -> Notice:
     for key, terms in ERROR_TERMS:
         if any(term in lower for term in terms):
             return Notice(ERRORS[key])
-    if re.search(r"[\u3400-\u9fff]", detail):
-        # A localized prefix can wrap a raw exception, e.g. “创建采集批次失败：...”.
-        prefix, separator, tail = detail.partition("：")
-        if (
-            separator
-            and not re.search(r"[\u3400-\u9fff]", tail)
-            and any(word in prefix for word in ("失败", "异常", "错误"))
-        ):
-            return Notice(prefix + "，请查看详细信息")
-        return Notice(detail)
+    # Windows exceptions often contain Chinese folder names inside otherwise English errors.
+    # Preserve localized guidance and identifiers, but keep paths and vendor prose in the details.
+    prose = re.sub(r"(?:[A-Za-z]:[\\/]|\\\\)[^\n]*", "", detail)
+    cjk = r"[\u3400-\u9fff]"
+    if re.search(cjk, prose):
+        prefix, separator, tail = prose.partition("：")
+        if separator and any(word in prefix for word in ("失败", "异常", "错误")):
+            if not re.search(cjk, tail) or re.search(r"[a-zA-Z]+(?: [a-zA-Z]+){2,}", tail):
+                return Notice(prefix + "，请查看详细信息")
+        if not re.match(r"[A-Za-z]+(?:Error|Exception)\b|[A-Za-z]+(?: [A-Za-z]+){1,}\b", prose):
+            return Notice(detail)
     if provider:
         return Notice(PROVIDERS.get(provider.split(":")[0], "设备") + "扫描失败，请查看详细信息")
     return Notice("操作失败，请查看详细信息")
