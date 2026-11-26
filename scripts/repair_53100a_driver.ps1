@@ -87,8 +87,8 @@ try {
 
     $maintenanceLease = Enter-LabMaintenanceLease
     $busy = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -in @('TF-LabControl.exe', 'tserve64.exe', 'tserve.exe', 'TimeLab64.exe', 'TimeLab.exe') })
-    if ($busy) { throw '检测到 TF-LabControl/TimeLab/TSERVE 正在运行，拒绝在占用中重绑驱动' }
+        Where-Object { $_.Name -in @('LabControl.exe', 'TF-LabControl.exe', 'tserve64.exe', 'tserve.exe', 'TimeLab64.exe', 'TimeLab.exe') })
+    if ($busy) { throw '检测到 LabControl/TimeLab/TSERVE 正在运行，拒绝在占用中重绑驱动' }
     $before = Snapshot
     $before | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $batch 'before.json') -Encoding UTF8
     $target = @($before.device | Where-Object { $_.Present })

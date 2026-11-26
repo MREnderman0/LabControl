@@ -19,7 +19,7 @@ def output(value: Any) -> None:
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(
-        description="TF LabControl hardware test tools. Default operations are read-only."
+        description="LabControl hardware test tools. Default operations are read-only."
     )
     root.add_argument("--config", type=Path, help="UTF-8 TOML configuration")
     root.add_argument("--resource", help="Exact resource; always select explicitly for hardware tests")

@@ -16,7 +16,7 @@
 
 下载资源页面只由 `scripts/generate_download_docs.py` 根据组件清单、开发材料清单和 `uv.lock` 生成，禁止手工维护重复数据。新增、升级或替换材料后，须运行生成器检查并执行文档链接、锚点和导航检查。
 
-所有新组件下载默认存入 `%LOCALAPPDATA%\TF-LabControl\maintenance\packages`。仍兼容项目 `deployment/packages`、旧 `.tools/installers`、发行目录 `maintenance/packages`、`%ProgramData%\TF-LabControl\maintenance\packages`。旧材料仅在校验后复用；Git 不再跟踪安装包、wheels、工具 EXE、解压 DLL/wrapper。许可、清单、恢复说明保留在 [packages](../../deployment/packages/README.md)。
+所有新组件下载默认存入 `%LOCALAPPDATA%\LabControl\maintenance\packages`。仍兼容项目 `deployment/packages`、旧 `.tools/installers`、发行目录 `maintenance/packages`、`%ProgramData%\LabControl\maintenance\packages`。旧材料仅在校验后复用；Git 不再跟踪安装包、wheels、工具 EXE、解压 DLL/wrapper。许可、清单、恢复说明保留在 [packages](../../deployment/packages/README.md)。
 
 下载进程禁用代理且只接受 HTTPS；不修改系统代理。厂商优先官方国内站，否则官方直连；先写临时文件，再校验大小、固定 SHA256 和适用的 Authenticode 发布者。网络错误有限重试，4xx 明确失败，校验失败不自动升级或改清单。取消/失败清理临时文件，可再次准备；同一缓存组件使用进程文件锁，结果保存在缓存 `reports`。固定链接被厂商更新时可能不能恢复旧版本，应由维护者核实更新元数据。
 
@@ -44,23 +44,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-dev.ps1 -Build
 
 公共 CLI 的 `prepare --offline` 只复用缓存，`verify` 不联网；安装向导不通过 CLI 启动。原 `scripts/download-vendors.ps1` 是兼容入口，`-VerifyOnly` 只验证。`--cache` 在组件服务中指定输出/验证根目录，在构建/检查中指定材料根目录（可重复）。自定义缓存必须包含清单约定的子目录；不能把临时文件或 LFS 指针当成材料。
 
-构建默认 `online`，输出 `dist/online/TF-LabControl`；离线输出 `dist/offline/TF-LabControl`。已有目录不覆盖，使用 `--output` 指定新目录。联网版不带厂商安装包、wheelhouse、uv 或 Python 安装器。离线版仅装配所选组件及依赖，构建前核验材料；未指定组件时准备公共清单，型号包通过 `--model` 或 `--component` 显式追加到自选清单，存在缺项就报告失败，不悄悄忽略。开发材料通过独立脚本导出。
+构建默认 `online`，输出 `dist/online/LabControl`；离线输出 `dist/offline/LabControl`。已有目录不覆盖，使用 `--output` 指定新目录。联网版不带厂商安装包、wheelhouse、uv 或 Python 安装器。离线版仅装配所选组件及依赖，构建前核验材料；未指定组件时准备公共清单，型号包通过 `--model` 或 `--component` 显式追加到自选清单，存在缺项就报告失败，不悄悄忽略。开发材料通过独立脚本导出。
 
 构建按当前目标环境解析锁文件 marker，核验运行和构建工具的完整适用依赖闭包；包缺失、版本漂移或锁项歧义都会在打包前失败。使用 PyInstaller 已锁定并登记的 packaging 解析工具，不新增运行依赖。`build/<distribution>/deployment/release-manifest.json` 随 EXE 发布，运行包和构建包版本来自实际核验结果，同时记录清单/锁文件哈希、模式及所选组件。维护脚本放 `maintenance`，目录须整体分发，测试包不等于正式安装包。源码 sdist 排除全部评审截图，Git 中的设计基线与评审证据保持不变。
 
-`maintenance-common.ps1` 随维护脚本一起打包，统一处理包含空格/中文的提权参数和硬件互斥。应用及维护入口使用固定 `%LOCALAPPDATA%\TF-LabControl\hardware.lock`，同时兼容当前运行根目录的旧锁；修改 `LAB_CONTROL_HOME` 或输出目录不能绕过互斥。VC++ 安装和选定 53100A 驱动修复全程持锁，不能仅凭进程名称快照判断空闲。记录默认写入运行目录，无需其他电脑存在开发机的 D 盘路径；`-OutputRoot` 可明确覆盖记录位置。
+`maintenance-common.ps1` 随维护脚本一起打包，统一处理包含空格/中文的提权参数和硬件互斥。应用及维护入口使用固定 `%LOCALAPPDATA%\LabControl\hardware.lock`，同时兼容当前运行根目录的旧锁；修改 `LAB_CONTROL_HOME` 或输出目录不能绕过互斥。VC++ 安装和选定 53100A 驱动修复全程持锁，不能仅凭进程名称快照判断空闲。记录默认写入运行目录，无需其他电脑存在开发机的 D 盘路径；`-OutputRoot` 可明确覆盖记录位置。
 
 `--release` 保留原有来源、安装、签名策略、分发、目标环境等门禁；联网模式不要求已携带载荷，离线模式额外验证实际材料及解压签名。已有待验收项保持阻断，不因仓库瘦身通过。安装向导可用不等于严格发布通过。
 
 `deployment/labcontrol.spec` 收集 Qt、主题和动态型号模块；不复制开发机厂商驱动。统一启动分发函数先识别 `--csv-worker` / `--deployment-check` / `--cli` 再进入 GUI，这些入口均不显示首次准备页或隐式下载。扫描、连接也不触发下载。
 
 ```powershell
-.venv-dev\Scripts\python.exe scripts/check_desktop.py --bundle dist/online/TF-LabControl --report .temp/deployment/online-smoke.json
-TF-LabControl.exe --deployment-check .temp/deployment/labcontrol-smoke.json
-TF-LabControl.exe --cli environment --report .temp/deployment/environment.json
+.venv-dev\Scripts\python.exe scripts/check_desktop.py --bundle dist/online/LabControl --report .temp/deployment/online-smoke.json
+LabControl.exe --deployment-check .temp/deployment/labcontrol-smoke.json
+LabControl.exe --cli environment --report .temp/deployment/environment.json
 ```
 
-开发自检将产物复制到项目 `.temp` 下独立中文及空格路径，清除源码导入环境并使用隔离数据和模拟界面，禁止 VISA ResourceManager，运行真实 CSV 子进程及连接器。冻结报告明确标记 isolated_bundle，不声称已在源码目录外验收。自检临时数据放在报告所在目录，开发时将报告指向 `.temp`。它不证明驱动、网络或设备验收。普通用户数据继续位于 `%LOCALAPPDATA%\TF-LabControl` 或 `LAB_CONTROL_HOME`，升级/卸载保留数据。
+开发自检将产物复制到项目 `.temp` 下独立中文及空格路径，清除源码导入环境并使用隔离数据和模拟界面，禁止 VISA ResourceManager，运行真实 CSV 子进程及连接器。冻结报告明确标记 isolated_bundle，不声称已在源码目录外验收。自检临时数据放在报告所在目录，开发时将报告指向 `.temp`。它不证明驱动、网络或设备验收。普通用户数据继续位于 `%LOCALAPPDATA%\LabControl` 或 `LAB_CONTROL_HOME`，升级/卸载保留数据。
 
 ## 首次部署的环境完整性门禁
 
@@ -70,7 +70,7 @@ TF-LabControl.exe --cli environment --report .temp/deployment/environment.json
 | --- | --- | --- |
 | 源码运行环境 | 用 `setup-dev.ps1` 安装完整锁定依赖闭包；完成[依赖检查与同版本修复](environment.md#首次部署的依赖检查)中的运行模块导入、NumPy FFT/线性求解及默认开发工具检查 | 区分整包缺失与包内文件损坏；从已校验的锁定 wheel 恢复并重复检查，不靠升级版本消除报错 |
 | 构建电脑 | 准备时加 `-Build`，检查 PyInstaller 入口；执行组件登记检查、源码/冻结 worker 回归及实际目录式打包验证 | 缺少构建依赖时停止产出；不能把现存旧 EXE 当成本轮构建通过 |
-| 新电脑上的目录式 EXE | 完整复制发行目录，保留 `_internal`、维护材料和发布清单；执行 `TF-LabControl.exe --deployment-check <报告路径>`，再普通权限启动 GUI，检查主题及窗口 | 从同一已核验发行包恢复完整目录；不往发行目录混装开发 wheel，不要求最终用户另装 Python、pytest 或 PyInstaller |
+| 新电脑上的目录式 EXE | 完整复制发行目录，保留 `_internal`、维护材料和发布清单；执行 `LabControl.exe --deployment-check <报告路径>`，再普通权限启动 GUI，检查主题及窗口 | 从同一已核验发行包恢复完整目录；不往发行目录混装开发 wheel，不要求最终用户另装 Python、pytest 或 PyInstaller |
 | 厂商驱动与实验网络 | 按所选设备检查组件，再验证实验网有效地址、发现和完整身份 | Python 环境修复不自动启动 DHCP，也不修改网卡或仪器；按[实验网部署](../guides/lab-network-deployment.md)单独处理并留档 |
 
 本机排查出现过 NumPy 包元数据仍在但 `numpy.exceptions` 等内容缺失，以及 `colorama`、`iniconfig`、`altgraph` 整包缺失。前者需要实际导入/功能检查才能发现，后者应由完整依赖闭包和依赖一致性检查拦截；不能把直接依赖列表当作全部安装材料。文件缺失的原因尚未确认，不能推断为版本不兼容。
@@ -123,7 +123,7 @@ TF-LabControl.exe --cli environment --report .temp/deployment/environment.json
 
 ## 验收与发布
 
-Agent 接入随目录包提供 `TF-LabControl-Agent.exe` 标准流连接器，与无控制台 GUI 使用同一启动分发；须携带整个目录。新增 Python 材料由 `uv.lock`、`deployment/components.json` 与开发材料清单共同登记，执行 `scripts/generate_python_materials.py` 后运行下载页生成器。MCP 固定 2.3.0，TLS 使用锁定的 cryptography；不新增系统服务或全局证书信任。局域网防火墙有单独的本机维护入口，限定程序/IP/接口/端口并支持撤销，不代表原 DHCP/网卡自动修复已实现。使用及验收边界见 [Agent 指南](../guides/agent-collaboration.md)。
+MCP 接入随目录包提供 `LabControl-Agent.exe` 标准流连接器。桌面服务仅监听回环地址，端口和配置导出入口见[MCP 接入指南](../guides/agent-collaboration.md)。已有启动配置仍可使用 `TF-LabControl-Agent.exe`。
 
 原部署阶段证据见[历史部署验收记录](../reviews/desktop-deployment-review.md)；此次瘦身证据见[仓库瘦身验收](../reviews/repository-slimming-review.md)。
 

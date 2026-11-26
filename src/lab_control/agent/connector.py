@@ -70,7 +70,7 @@ async def bridge(config, verify, *, check=False):
             return await client.call_tool(params.name, params.arguments or {})
 
         server = Server(
-            "TF LabControl connector", version="1.0", on_list_tools=list_tools, on_call_tool=call_tool
+            "LabControl connector", version="1.0", on_list_tools=list_tools, on_call_tool=call_tool
         )
         async with stdio_server() as (read, write):
             await server.run(read, write, server.create_initialization_options())
@@ -118,7 +118,7 @@ def download(config, verify, artifact: str, grant: str, output: Path):
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="TF LabControl MCP connector (no instrument access)")
+    parser = argparse.ArgumentParser(description="LabControl MCP connector (no instrument access)")
     parser.add_argument("--connection", required=True, type=Path)
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--check", action="store_true")

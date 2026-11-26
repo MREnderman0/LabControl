@@ -168,7 +168,7 @@ def export_figure(
         device.setResolution(600)
         device.setPageSize(QPageSize(QSizeF(width, height), QPageSize.Unit.Point))
         device.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Point)
-        device.setCreator("TF-LabControl")
+        device.setCreator("LabControl")
     painter = QPainter(device)
     if not painter.isActive():
         raise OSError("无法创建插图文件")

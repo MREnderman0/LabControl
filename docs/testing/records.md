@@ -4,7 +4,7 @@
 
 ## 存放与索引
 
-默认根目录为 `%LOCALAPPDATA%\TF-LabControl\hardware-tests`，若设置 `LAB_CONTROL_HOME`，则使用该目录下的 `hardware-tests`。
+默认根目录为 `%LOCALAPPDATA%\LabControl\hardware-tests`，若设置 `LAB_CONTROL_HOME`，则使用该目录下的 `hardware-tests`。
 
 按 `<完整型号>-<序列号>/<日期时间>-<测试类型>/` 分批保存，不覆盖旧结果。已有当天唯一批次目录可继续追加不同阶段文件。没有可信序列号时分配人工资产号并注明身份可信度，不能把地址当成序列号。
 

@@ -1,5 +1,5 @@
 [project]
-name = "tf-labcontrol-shell"
+name = "labcontrol"
 version = "0.3.0"
 description = "Laboratory instrument compatibility layer and desktop workstation"
 readme = "README.md"

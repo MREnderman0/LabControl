@@ -32,7 +32,7 @@ def test_legacy_alias_of_same_lock_does_not_self_conflict(tmp_path):
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell maintenance locks")
 @pytest.mark.parametrize("same_file", [True, False])
 def test_maintenance_deduplicates_file_aliases_and_keeps_external_exclusion(tmp_path, same_file):
-    fixed = tmp_path / "appdata" / "TF-LabControl"
+    fixed = tmp_path / "appdata" / "LabControl"
     legacy = tmp_path / "legacy"
     fixed.mkdir(parents=True)
     legacy.mkdir()
@@ -80,7 +80,7 @@ try {
     for occupied in (fixed, legacy):
         lease = ProcessLease(occupied)
         try:
-            assert run().startswith("blocked:TF-LabControl hardware is busy")
+            assert run().startswith("blocked:LabControl hardware is busy")
             if occupied == legacy and not same_file:
                 # Failure on the second gate must release the first gate.
                 ProcessLease(fixed).close()
@@ -194,8 +194,8 @@ def test_exclusive_process_lease_reports_holder_and_cleans_advisory_metadata(tmp
 
 
 def test_process_lease_cleans_stale_metadata_from_redirected_appdata_view(tmp_path, monkeypatch):
-    physical = tmp_path / "physical" / "TF-LabControl"
-    logical = tmp_path / "logical" / "TF-LabControl"
+    physical = tmp_path / "physical" / "LabControl"
+    logical = tmp_path / "logical" / "LabControl"
     physical.mkdir(parents=True)
     logical.mkdir(parents=True)
     physical_lock = physical / "hardware.lock"

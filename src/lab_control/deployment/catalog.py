@@ -124,6 +124,8 @@ def validate_manifest(value: dict) -> list[str]:
 def cache_directories() -> tuple[Path, ...]:
     folders = [
         user_cache(),
+        Path(os.environ.get("LOCALAPPDATA", Path.home() / ".cache")) / "TF-LabControl/maintenance/packages",
+        Path(os.environ.get("PROGRAMDATA", Path.home())) / "LabControl/maintenance/packages",
         Path(os.environ.get("PROGRAMDATA", Path.home())) / "TF-LabControl/maintenance/packages",
     ]
     if not getattr(sys, "frozen", False):
@@ -139,7 +141,7 @@ def cache_directories() -> tuple[Path, ...]:
 
 
 def user_cache() -> Path:
-    return Path(os.environ.get("LOCALAPPDATA", Path.home() / ".cache")) / "TF-LabControl/maintenance/packages"
+    return Path(os.environ.get("LOCALAPPDATA", Path.home() / ".cache")) / "LabControl/maintenance/packages"
 
 
 def payload_status(component: dict, caches: tuple[Path, ...], cancel=None) -> dict:

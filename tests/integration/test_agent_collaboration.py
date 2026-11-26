@@ -113,6 +113,28 @@ def test_shared_monitor_recording_stop_and_artifacts(experiment):
     assert not runtime.sessions.sessions[device].controls_locked
 
 
+def test_operator_stop_during_recording_setup_reports_cancelled(experiment, monkeypatch):
+    runtime, service, client, grant, device = experiment
+    entered, release = threading.Event(), threading.Event()
+    create = runtime.repository.create_recording
+
+    def wait_for_operator(*args, **kwargs):
+        entered.set()
+        assert release.wait(10)
+        return create(*args, **kwargs)
+
+    monkeypatch.setattr(runtime.repository, "create_recording", wait_for_operator)
+    task = service.start_recording(client, grant, device, {"kind": "waveform"}, "cancel-during-setup")
+    try:
+        assert entered.wait(5)
+        service.stop_local(task["id"])
+    finally:
+        release.set()
+    result = wait_task(service, client, grant, task)
+    assert result["state"] == "cancelled" and "未开始" in result["error"]
+    assert not service.list_artifacts(client, grant, task["id"])
+
+
 def test_sdk_http_without_token_enforces_origin_and_grants(experiment):
     runtime, service, client, grant, device = experiment
     with socket.socket() as sock:
@@ -329,41 +351,35 @@ def test_stdio_connector_has_only_protocol_stdout(experiment, tmp_path):
     asyncio.run(run())
 
 
-def test_https_certificate_validation_and_download(single_experiment, tmp_path):
-    import ssl
-
-    from lab_control.agent.certificates import prepare_certificate
+def test_loopback_port_change_rollback_and_download(single_experiment, tmp_path):
     from lab_control.agent.connector import connection, download
+    from lab_control.agent.server import saved_settings
 
-    _runtime, service, client, grant, device = single_experiment
-    ports = []
-    for _ in range(2):
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", 0))
-            ports.append(sock.getsockname()[1])
-    service.server = AgentServer(service)
-    # Listener plumbing tested entirely on loopback. Production configure() rejects
-    # loopback as a LAN interface; no real network or physical device is involved.
-    service.server.settings.update(
-        enabled=True, local_port=ports[0], lan_enabled=True, lan_address="127.0.0.1", lan_port=ports[1]
-    )
-    service.server.start()
-    path = tmp_path / "https.json"
-    service.server.export_connection(path, lan=True)
+    runtime, service, client, grant, device = single_experiment
+    server = service.server = AgentServer(service)
+    with socket.socket() as reserve:
+        reserve.bind(("127.0.0.1", 0))
+        port = reserve.getsockname()[1]
+    server.configure({"enabled": True, "local_port": port})
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        occupied.listen()
+        other = occupied.getsockname()[1]
+        with pytest.raises(OSError, match=str(other)):
+            server.configure({"enabled": True, "local_port": other})
+        assert saved_settings(runtime.repository)["local_port"] == port
+        with httpx2.Client(trust_env=False) as http:
+            assert http.post(server.url, headers={"Host": "invalid.test"}).status_code == 403
+    server.configure({"enabled": True, "local_port": other})
+    with socket.socket() as probe:
+        assert probe.connect_ex(("127.0.0.1", port)) != 0
+    path = tmp_path / "local.json"
+    server.export_connection(path)
     config, verify = connection(path)
-    with httpx2.Client(verify=verify, trust_env=False) as http:
-        assert http.post(config["url"], headers={"Host": "evil.test"}, json={}).status_code == 403
+    assert config["url"] == f"http://127.0.0.1:{other}/mcp"
+    with httpx2.Client(trust_env=False) as http:
         assert http.post(config["url"], content=b"x" * (1024 * 1024 + 1)).status_code == 413
-    with httpx2.Client(trust_env=False) as http, pytest.raises(httpx2.ConnectError):
-        http.post(config["url"], json={})
-    wrong, _ = prepare_certificate(tmp_path / "other", "127.0.0.1")
-    trust = ssl.create_default_context(cafile=str(wrong))
-    with httpx2.Client(verify=trust, trust_env=False) as http, pytest.raises(httpx2.ConnectError):
-        http.post(config["url"], json={})
-    # The trusted certificate still must name the destination.
-    with httpx2.Client(verify=verify, trust_env=False) as http, pytest.raises(httpx2.ConnectError):
-        http.post(config["url"].replace("127.0.0.1", "localhost"), json={})
-    task = service.acquire_once(client, grant, device, {"kind": "waveform", "points": 16}, "https-data")
+    task = service.acquire_once(client, grant, device, {"kind": "waveform", "points": 16}, "port-change-data")
     assert wait_task(service, client, grant, task)["state"] == "completed"
     artifact = service.list_artifacts(client, grant, task["id"])[0]
     output = tmp_path / "downloaded"
@@ -426,39 +442,92 @@ def test_cross_model_capabilities_and_output_authority(tmp_path, adapter):
         assert wait_task(service, client, grant, task)["state"] == "completed"
 
 
-def test_local_panel_and_reusable_grant_template(experiment, qtbot, tmp_path):
-    from lab_control.app import load_stylesheet
-    from lab_control.ui.pages.agent_collaboration import AgentCollaborationPanel, GrantDialog
+def test_panel_restores_local_settings_and_exports_matching_pair(experiment, qtbot, tmp_path, monkeypatch):
+    import tomllib
+    from pathlib import Path
 
-    runtime, service, client, grant, _device = experiment
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QFileDialog
+
+    from lab_control.ui.pages.agent_collaboration import AgentCollaborationPanel
+
+    runtime, service, client, grant, device = experiment
+    with socket.socket() as reserve:
+        reserve.bind(("127.0.0.1", 0))
+        port = reserve.getsockname()[1]
     runtime.repository.save_workspace(
-        "agent/server", {"lan_enabled": True, "lan_address": "192.0.2.3", "lan_port": 8777}
+        "agent/server",
+        {
+            "enabled": True,
+            "local_port": port,
+            "lan_enabled": True,
+            "lan_address": "192.0.2.3",
+            "lan_port": 8777,
+            "local_commands": True,
+        },
     )
     panel = AgentCollaborationPanel(runtime)
     qtbot.addWidget(panel)
-    panel.setStyleSheet(load_stylesheet())
-    panel.resize(1180, 520)
     panel.show()
-    assert not panel.enabled.isChecked() and not panel.service.server
-    assert not panel.lan_enabled.isChecked()
-    assert panel.lan_port.value() == 8777
-    assert not AgentServer(service).settings["lan_enabled"]
-    template = {**service.policy.grants[grant], "client_id": "legacy"}
-    dialog = GrantDialog(service, template=template)
-    qtbot.addWidget(dialog)
-    assert dialog.channels.text() == "1"
-    dialog.save()
-    assert dialog.grant_id and dialog.grant_id != grant
-    assert service.policy.grants[dialog.grant_id]["client_id"] == INTERNAL_CLIENT
-    assert service.policy.grants[dialog.grant_id]["expires_at"] is None
-    assert service.policy.grants[dialog.grant_id]["limits"]["timebase"]["value"] == [0.0001, 0.01]
-    assert panel.grab().save(str(tmp_path / "agent-panel.png"))
-    panel.timer.stop()
-    panel.shutdown()
+    try:
+        qtbot.waitUntil(lambda: not panel.busy and panel.enabled.isChecked())
+        assert panel.server.snapshot()["settings"] == {"enabled": True, "local_port": port}
+        assert panel.server.listener.sock.getsockname() == ("127.0.0.1", port)
+        assert runtime.repository.load_workspace("agent/server") == panel.server.settings
+        assert panel.authority.text() == "已自动授权 1 台设备" and not panel.tasks.isVisible()
+        with socket.socket() as occupied:
+            occupied.bind(("127.0.0.1", 0))
+            occupied.listen()
+            other = occupied.getsockname()[1]
+            panel.local_port.setValue(other)
+            panel.apply.click()
+            qtbot.waitUntil(lambda: not panel.busy)
+            assert str(other) in panel.status.text() and panel.address.text() == panel.server.url
+            assert panel.server.url.endswith(f":{port}/mcp")
+        qtbot.keyClick(panel.local_port, Qt.Key.Key_Return)
+        qtbot.waitUntil(lambda: not panel.busy and panel.server.settings["local_port"] == other)
+        panel.copy.click()
+        assert QApplication.clipboard().text() == f"http://127.0.0.1:{other}/mcp"
+        target = tmp_path / "配置.toml"
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(target), ""))
+        panel.export.menu().actions()[1].trigger()
+        cfg = tomllib.loads(target.read_text(encoding="utf-8"))["mcp_servers"]["lab_control"]
+        assert json.loads(Path(cfg["args"][-1]).read_text(encoding="utf-8"))["url"] == panel.address.text()
+
+        connection = Path(cfg["args"][-1])
+        previous = connection.read_bytes(), target.read_bytes()
+        panel.export.menu().actions()[1].trigger()
+        assert (connection.read_bytes(), target.read_bytes()) == previous
+        standalone = tmp_path / "连接.json"
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(standalone), ""))
+        panel.export.menu().actions()[0].trigger()
+        assert json.loads(standalone.read_text(encoding="utf-8"))["url"] == panel.server.url
+
+        task = service.start_recording(
+            client, grant, device, {"kind": "waveform", "points": 32}, "panel-record", interval=0.05
+        )
+        qtbot.waitUntil(
+            lambda: any(
+                item["id"] == task["id"] and item.get("recorded_frames", 0) > 0
+                for item in service.snapshot(active_only=True)["tasks"]
+            ),
+            timeout=10000,
+        )
+        panel.refresh()
+        assert task["id"] in panel.task_rows and panel.tasks.isVisible()
+        panel.task_rows[task["id"]][2].click()
+        qtbot.waitUntil(lambda: service.ledger.get(task["id"])["state"] == "completed", timeout=10000)
+        panel.refresh()
+        assert not panel.tasks.isVisible()
+        assert any(a["name"].endswith(".csv") for a in service.list_artifacts(client, grant, task["id"]))
+        panel.enabled.click()
+        qtbot.waitUntil(lambda: not panel.busy and not panel.server.snapshot()["running"])
+        assert not AgentServer(service).settings["enabled"]
+    finally:
+        panel.shutdown()
 
 
-def test_one_click_grants_all_verified_devices_without_io(experiment, qtbot, monkeypatch):
-    from PySide6.QtWidgets import QPushButton
+def test_automatic_grant_includes_all_verified_devices_without_io(experiment, qtbot, monkeypatch):
 
     from lab_control.application.agents.policy import ACTIONS
     from lab_control.ui.pages.agent_collaboration import AgentCollaborationPanel
@@ -477,11 +546,10 @@ def test_one_click_grants_all_verified_devices_without_io(experiment, qtbot, mon
         guarded.setattr(runtime.sessions, "submit", no_io)
         guarded.setattr(runtime, "connect", no_io)
         guarded.setattr(runtime.discovery, "scan", no_io)
-        button = next(b for b in panel.findChildren(QPushButton) if b.text() == "一键全部授权")
-        button.click()
-    grant_id = panel.grants.currentData()
+        panel.refresh()
+    assert panel.authority.text() == "已自动授权 2 台设备"
+    grant_id = service.policy.desktop_grant_id
     assert grant_id != limited
-    assert "跳过 1 台" in panel.status.text()
     grant = service.policy.grants[grant_id]
     assert grant["full_device_access"] and grant["expires_at"] is None
     assert set(grant["actions"]) == ACTIONS
@@ -497,11 +565,10 @@ def test_one_click_grants_all_verified_devices_without_io(experiment, qtbot, mon
         service.read_parameters(client, limited, scope, ["coupling"], channel=2)
 
     runtime.connect(pending).result()
-    panel.renew_grant()
-    renewed = service.policy.grants[panel.grants.currentData()]
-    assert renewed["id"] != grant_id and renewed["devices"] == grant["devices"]
-    with pytest.raises(DeviceError, match="设备"):
-        service.get_device_state(client, renewed["id"], pending)
+    panel.refresh()
+    assert service.policy.desktop_grant_id == grant_id
+    assert pending in service.policy.grants[grant_id]["devices"]
+    assert panel.authority.text() == "已自动授权 3 台设备"
     panel.timer.stop()
     panel.shutdown()
 

@@ -131,7 +131,7 @@ class RealWindow(QMainWindow):
         self._static_address_dialog: QDialog | None = None
         self._static_address_status: QLabel | None = None
         self._refresh_static_address_dialog: Callable[[], None] | None = None
-        self.setWindowTitle("TF LabControl · 分类卡片 · " + ("真实设备" if runtime.hardware else "模拟演示"))
+        self.setWindowTitle("LabControl · 分类卡片 · " + ("真实设备" if runtime.hardware else "模拟演示"))
         self.resize(1440, 900)
         self.setMinimumSize(1280, 760)
         self._navigation = WorkspaceNavigation(self)
@@ -168,7 +168,7 @@ class RealWindow(QMainWindow):
         brand_row = QHBoxLayout()
         self.brand_logo = BrandIcon()
         brand_row.addWidget(self.brand_logo)
-        self.brand = QLabel("TF LABCONTROL")
+        self.brand = QLabel("LabControl")
         self.brand.setObjectName("commandBrand")
         brand_row.addWidget(self.brand)
         brand_row.addStretch()

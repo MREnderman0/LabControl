@@ -48,7 +48,7 @@ def verify_exe_icons(bundle: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bundle", type=Path, default=ROOT / "dist/TF-LabControl")
+    parser.add_argument("--bundle", type=Path, default=ROOT / "dist/LabControl")
     parser.add_argument("--report", type=Path, default=ROOT / ".temp/deployment/frozen-smoke.json")
     parser.add_argument(
         "--check-agent-default",
@@ -65,7 +65,7 @@ def main() -> int:
         assert outside.parent == scratch.resolve()
         target = outside / "应用 程序"
         shutil.copytree(args.bundle.resolve(), target)
-        executable = target / "TF-LabControl.exe"
+        executable = target / "LabControl.exe"
         environment = dict(os.environ)
         for name in ("PYTHONPATH", "PYTHONHOME", "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH"):
             environment.pop(name, None)
@@ -80,7 +80,7 @@ def main() -> int:
         )
         if args.check_agent_default:
             connector = subprocess.run(
-                [str(target / "TF-LabControl-Agent.exe")],
+                [str(target / "LabControl-Agent.exe")],
                 cwd=outside,
                 env=environment,
                 capture_output=True,

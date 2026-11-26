@@ -28,7 +28,7 @@ def capability(definition):
         OPERATION,
         writable=True,
         channel_scoped=True,
-        source="TF LabControl",
+        source="LabControl",
         section="采集",
         requires_confirmation=definition.category == "oscilloscope"
         or definition.acquisition_initiate_default

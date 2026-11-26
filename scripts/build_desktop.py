@@ -109,7 +109,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="New output directory; existing builds are preserved")
     args = parser.parse_args()
     output = (args.output or ROOT / "dist" / args.distribution).resolve()
-    if (output / "TF-LabControl").exists():
+    if (output / "LabControl").exists():
         parser.error("Output already exists; use --output with a new directory to preserve this build")
     from lab_control.deployment.catalog import default_components, load_manifest, model_components
 
@@ -183,9 +183,9 @@ def main() -> int:
         },
         check=True,
     )
-    target = output / "TF-LabControl"
+    target = output / "LabControl"
     for name in ("LabControl.exe", "LabControl-Agent.exe"):
-        shutil.copy2(target / ("TF-" + name), target / name)
+        shutil.copy2(target / name, target / ("TF-" + name))
     if args.distribution == "offline":
         stage_offline_packages(target, components, tuple(args.cache) if args.cache else None)
     maintenance = target / "maintenance"

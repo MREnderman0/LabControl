@@ -1,15 +1,13 @@
-"""Internal local/LAN MCP listeners attached to one desktop runtime."""
+"""Loopback MCP listener attached to one desktop runtime."""
 
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import socket
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 import uvicorn
 from mcp.server.transport_security import RequestBodyLimitMiddleware, TransportSecuritySettings
@@ -18,22 +16,20 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 
-from lab_control.agent.certificates import prepare_certificate
 from lab_control.agent.tools import create_mcp_server
 from lab_control.application.agents.policy import INTERNAL_CLIENT
 from lab_control.domain.instruments import DeviceError
 
-DEFAULTS = {"enabled": False, "local_port": 8765, "lan_enabled": False, "lan_address": "", "lan_port": 8766}
+DEFAULTS = {"enabled": False, "local_port": 8765}
 
 
 def saved_settings(repository):
     saved = repository.load_workspace("agent/server", {})
-    settings = {**DEFAULTS, **saved}
-    settings.pop("local_commands", None)
-    if saved.get("access_mode") != INTERNAL_CLIENT:
-        # The old checkbox allowed token-authenticated LAN access only.
-        settings["lan_enabled"] = False
-    return settings
+    port = saved.get("local_port")
+    return {
+        "enabled": saved.get("enabled") is True,
+        "local_port": port if type(port) is int and 1024 <= port <= 65535 else DEFAULTS["local_port"],
+    }
 
 
 class RequestGuard:
@@ -61,9 +57,9 @@ class RequestGuard:
             self.inflight -= 1
 
 
-def create_app(service, host: str, port: int, *, tls=False, local_commands=None):
-    server = create_mcp_server(service, local_commands=local_commands)
-    authority, scheme = f"{host}:{port}", "https" if tls else "http"
+def create_app(service, port: int):
+    server = create_mcp_server(service)
+    authority, scheme = f"127.0.0.1:{port}", "http"
     mcp_app = server.streamable_http_app(
         stateless_http=True,
         json_response=True,
@@ -95,154 +91,118 @@ def create_app(service, host: str, port: int, *, tls=False, local_commands=None)
     return RequestGuard(RequestBodyLimitMiddleware(app, 1024 * 1024), authority, scheme)
 
 
-class AgentServer:
-    def __init__(self, service):
-        self.service = service
-        self.settings = saved_settings(service.repository)
-        self.local_commands = False
-        self.thread: threading.Thread | None = None
-        self.servers: list[Any] = []
-        self.sockets: list[socket.socket] = []
+class _Listener:
+    def __init__(self, service, port):
+        self.port = port
+        self.ready = threading.Event()
         self.error = ""
-        self.certificate: Path | None = None
-        self._ready = threading.Event()
-
-    def configure(self, settings):
-        candidate = {**DEFAULTS, **settings, "access_mode": INTERNAL_CLIENT}
-        local_commands = candidate.pop("local_commands", False) is True
-        for name in ("local_port", "lan_port"):
-            if type(candidate[name]) is not int or not 1024 <= candidate[name] <= 65535:
-                raise ValueError("监听端口须为 1024..65535")
-        if candidate["lan_enabled"]:
-            from lab_control.discovery.lan import physical_ipv4_addresses
-
-            address = ipaddress.ip_address(candidate["lan_address"])
-            available = physical_ipv4_addresses()
-            if address.is_loopback or address.is_unspecified or str(address) not in available:
-                raise ValueError("请选择本机实验网卡上已配置的 IPv4 地址")
-        self.close()
-        self.settings = candidate
-        self.local_commands = local_commands and candidate["enabled"]
-        self.service.repository.save_workspace("agent/server", candidate)
-        if candidate["enabled"]:
-            self.start()
-
-    def start(self):
-        if self.thread and self.thread.is_alive():
-            return
-        self.error = ""
-        self._ready.clear()
-        self.servers, self.sockets = [], []
-        endpoints: list[tuple[str, int, Path | None, Path | None]] = [
-            ("127.0.0.1", self.settings["local_port"], None, None)
-        ]
-        if self.settings["lan_enabled"]:
-            address = self.settings["lan_address"]
-            certificate_path, key_path = prepare_certificate(
-                self.service.repository.root / "agent/tls", address
+        self.server = uvicorn.Server(
+            uvicorn.Config(
+                create_app(service, port),
+                host="127.0.0.1",
+                port=port,
+                access_log=False,
+                log_config=None,
+                timeout_graceful_shutdown=5,
             )
-            self.certificate = certificate_path
-            endpoints.append((address, self.settings["lan_port"], certificate_path, key_path))
+        )
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            for host, port, cert, key in endpoints:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-                self.sockets.append(sock)
-                sock.bind((host, port))
-                sock.listen(64)
-                sock.setblocking(False)
-                config = uvicorn.Config(
-                    create_app(
-                        self.service,
-                        host,
-                        port,
-                        tls=cert is not None,
-                        local_commands=lambda: self.local_commands,
-                    ),
-                    host=host,
-                    port=port,
-                    access_log=False,
-                    log_config=None,
-                    log_level="warning",
-                    ssl_certfile=str(cert) if cert else None,
-                    ssl_keyfile=str(key) if key else None,
-                    timeout_graceful_shutdown=5,
-                )
-                self.servers.append(uvicorn.Server(config))
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            self.sock.bind(("127.0.0.1", port))
+            self.sock.listen(64)
+            self.sock.setblocking(False)
+            self.thread = threading.Thread(target=self._run, name="labcontrol-mcp", daemon=True)
+            self.thread.start()
+        except OSError as exc:
+            self.sock.close()
+            raise OSError(f"无法监听本机端口 {port}：{exc}") from exc
         except Exception:
-            self.local_commands = False
-            for sock in self.sockets:
-                sock.close()
-            self.sockets.clear()
-            self.servers.clear()
+            self.sock.close()
             raise
-        self.thread = threading.Thread(target=self._run, name="agent-mcp", daemon=True)
-        self.thread.start()
-        if not self._ready.wait(10) or self.error:
+        if not self.ready.wait(10) or not self.running:
             self.close()
-            raise RuntimeError(self.error or "MCP 服务启动超时")
+            raise RuntimeError(self.error or f"MCP 端口 {port} 启动失败")
+
+    @property
+    def running(self):
+        return self.server.started and self.thread.is_alive() and not self.error
 
     def _run(self):
         async def serve():
-            tasks = [
-                asyncio.create_task(s.serve(sockets=[sock])) for s, sock in zip(self.servers, self.sockets)
-            ]
-            try:
-                while not all(s.started for s in self.servers):
-                    if any(t.done() for t in tasks):
-                        raise RuntimeError("MCP 监听启动失败")
-                    await asyncio.sleep(0.01)
-                self._ready.set()
-                await asyncio.gather(*tasks)
-            finally:
-                for s in self.servers:
-                    s.should_exit = True
-                await asyncio.gather(*tasks, return_exceptions=True)
+            task = asyncio.create_task(self.server.serve(sockets=[self.sock]))
+            while not self.server.started and not task.done():
+                await asyncio.sleep(0.01)
+            self.ready.set()
+            await task
 
         try:
             asyncio.run(serve())
         except Exception as exc:
             self.error = str(exc)
-            self.service.repository.audit_sink.try_record("agent_server_failed", error=self.error)
         finally:
-            self._ready.set()
-
-    def snapshot(self):
-        return {
-            "running": bool(
-                self.thread and self.thread.is_alive() and self._ready.is_set() and not self.error
-            ),
-            "settings": dict(self.settings),
-            "local_commands": self.local_commands,
-            "error": self.error,
-        }
-
-    def export_connection(self, destination: Path, *, lan=False):
-        if lan and (not self.settings["lan_enabled"] or self.certificate is None):
-            raise ValueError("请先启用局域网接入")
-        value = {
-            "schema_version": 1,
-            "url": (
-                f"https://{self.settings['lan_address']}:{self.settings['lan_port']}/mcp"
-                if lan
-                else f"http://127.0.0.1:{self.settings['local_port']}/mcp"
-            ),
-        }
-        if lan:
-            assert self.certificate is not None
-            value["certificate_pem"] = self.certificate.read_text(encoding="ascii")
-        with destination.open("x", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2)
+            self.ready.set()
 
     def close(self):
-        self.local_commands = False
-        for server in self.servers:
-            server.should_exit = True
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=15)
-            if self.thread.is_alive():
-                raise RuntimeError("MCP 服务仍在退出，请等待在途请求完成")
-        for sock in self.sockets:
-            sock.close()
-        self.sockets.clear()
+        self.server.should_exit = True
+        self.thread.join(timeout=15)
+        if self.thread.is_alive():
+            raise RuntimeError("MCP 服务仍在退出，请等待在途请求完成")
+        self.sock.close()
+
+
+class AgentServer:
+    def __init__(self, service):
+        self.service = service
+        self.settings = saved_settings(service.repository)
+        self.listener: _Listener | None = None
+        self.lock = threading.Lock()
+
+    def configure(self, settings):
+        port = settings.get("local_port", DEFAULTS["local_port"])
+        if type(port) is not int or not 1024 <= port <= 65535:
+            raise ValueError("本机端口须为 1024–65535")
+        candidate = {"enabled": settings.get("enabled") is True, "local_port": port}
+        with self.lock:
+            old = self.listener
+            new = None
+            if candidate["enabled"]:
+                new = old if old and old.port == port and old.running else _Listener(self.service, port)
+            try:
+                self.service.repository.save_workspace("agent/server", candidate)
+            except Exception:
+                if new and new is not old:
+                    new.close()
+                raise
+            self.settings = candidate
+            self.listener = new
+            if old and old is not new:
+                old.close()
+
+    @property
+    def url(self):
+        return f"http://127.0.0.1:{self.settings['local_port']}/mcp"
+
+    def snapshot(self):
+        listener = self.listener
+        return {
+            "running": bool(listener and listener.running),
+            "settings": dict(self.settings),
+            "error": listener.error if listener else "",
+        }
+
+    def export_connection(self, destination: Path):
+        stream = destination.open("x", encoding="utf-8")
+        try:
+            with stream:
+                json.dump({"schema_version": 1, "url": self.url}, stream, ensure_ascii=False, indent=2)
+        except Exception:
+            destination.unlink()
+            raise
+
+    def close(self):
+        with self.lock:
+            if self.listener:
+                self.listener.close()
+                self.listener = None

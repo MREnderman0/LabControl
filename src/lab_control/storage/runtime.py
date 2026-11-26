@@ -65,6 +65,26 @@ def physical_path(path: Path) -> Path:
         close(handle)
 
 
+def default_home() -> Path:
+    base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+    destination = base / "LabControl"
+    if os.name != "nt" or "LOCALAPPDATA" not in os.environ:
+        return destination
+    from lab_control.storage.brand_migration import migrate_default_home
+
+    for root in (destination, base / "TF-LabControl"):
+        marker = root / "inventory.sqlite3"
+        if marker.is_file() and _packaged_redirect(root, physical_path(marker).parent):
+            from lab_control.domain.instruments import DeviceError
+
+            raise DeviceError(
+                "默认目录被重定向到 Windows 应用私有副本，请使用 run.bat 或核对 LAB_CONTROL_HOME。",
+                "path_redirected",
+            )
+    base.mkdir(parents=True, exist_ok=True)
+    return migrate_default_home(base)[0]
+
+
 def runtime_home() -> Path:
     """Return the canonical physical root for the current user runtime.
 
@@ -72,10 +92,8 @@ def runtime_home() -> Path:
     same textual path. Refuse implicit selection of a private packaged copy;
     maintenance must explicitly select the verified desktop runtime first.
     """
-    logical = Path(
-        os.environ.get("LAB_CONTROL_HOME")
-        or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TF-LabControl"
-    )
+    override = os.environ.get("LAB_CONTROL_HOME")
+    logical = Path(override) if override else default_home()
     marker = logical / "inventory.sqlite3"
     if marker.exists():
         try:
@@ -103,7 +121,7 @@ def hardware_lock_home() -> Path:
     directory itself when present; inventory redirection must not select a
     different lock every time the user changes LAB_CONTROL_HOME.
     """
-    logical = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TF-LabControl"
+    logical = default_home()
     if logical.is_dir():
         return physical_path(logical)
     return logical.absolute()

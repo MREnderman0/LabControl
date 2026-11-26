@@ -11,9 +11,6 @@ from uuid import uuid4
 from lab_control.domain.instruments import DeviceError, ValidationError, utc_now
 
 INTERNAL_CLIENT = "internal"
-COMMAND_CLIENT = "internal-command"
-COMMAND_ACTIONS = frozenset({"view", "process", "results", "stop"})
-
 ACTIONS = frozenset(
     {
         "view",
@@ -200,11 +197,6 @@ class AgentPolicy:
         parameters: dict | None = None,
         require_full_scope: bool = False,
     ) -> dict:
-        if client_id == COMMAND_CLIENT:
-            if grant_id or action not in COMMAND_ACTIONS:
-                fail("临时命令入口仅支持处理及结果操作")
-            self.identity_lookup(device)
-            return {"channels": [], "full_device_access": True}
         self.require_client(client_id)
         with self.lock:
             grant = self.grants.get(grant_id, {})

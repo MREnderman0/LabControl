@@ -8,7 +8,7 @@ Git 仅保留清单、说明、锁定依赖导出和许可；第三方安装包�
 
 ## 恢复运行材料
 
-新材料默认放入 `%LOCALAPPDATA%\TF-LabControl\maintenance\packages`；仍读取本目录、旧 `.tools/installers`、发行目录和 ProgramData 维护缓存。文件须校验后复用；不完整下载或 LFS 指针不视为可用材料。
+新材料默认放入 `%LOCALAPPDATA%\LabControl\maintenance\packages`；仍读取本目录、旧 `.tools/installers`、发行目录和 ProgramData 维护缓存。文件须校验后复用；不完整下载或 LFS 指针不视为可用材料。
 
 在首次运行/环境与修复中选择所需组件，或使用公共 CLI：
 

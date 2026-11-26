@@ -118,6 +118,8 @@ def command_errors(root: Path, text: str) -> list[tuple[int, str]]:
             "run.bat",
             "lab-control",
             "lab-control.exe",
+            "labcontrol.exe",
+            "labcontrol-agent.exe",
             "tf-labcontrol.exe",
             "tf-labcontrol-agent.exe",
         }

@@ -11,7 +11,7 @@ icon = root / "src/lab_control/ui/styles/sciagent.ico"
 datas += [(str(icon), "lab_control/ui/styles")]
 datas += [(str(root / "deployment/components.json"), "lab_control/deployment")]
 datas += [(os.environ.get("LABCONTROL_BUILD_MANIFEST", str(root / "build/deployment/release-manifest.json")), "lab_control/deployment")]
-for distribution in ("PySide6", "PyVISA", "pyserial", "numpy", "pyqtgraph", "shiboken6", "PySide6_Essentials", "PySide6_Addons"):
+for distribution in ("labcontrol", "PySide6", "PyVISA", "pyserial", "numpy", "pyqtgraph", "shiboken6", "PySide6_Essentials", "PySide6_Addons"):
     datas += copy_metadata(distribution)
 datas += copy_metadata("zeroconf", recursive=True)
 datas += copy_metadata("moku", recursive=True)
@@ -29,8 +29,8 @@ for destination, source, kind in a.binaries:
     if not any(Path(source).resolve().is_relative_to(folder) for folder in allowed):
         raise ValueError(f"Unregistered native build dependency: {source}")
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="TF-LabControl", debug=False,
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="LabControl", debug=False,
           icon=str(icon), bootloader_ignore_signals=False, strip=False, upx=False, console=False)
-connector = EXE(pyz, a.scripts, [], exclude_binaries=True, name="TF-LabControl-Agent", debug=False,
+connector = EXE(pyz, a.scripts, [], exclude_binaries=True, name="LabControl-Agent", debug=False,
                 icon=str(icon), bootloader_ignore_signals=False, strip=False, upx=False, console=True)
-coll = COLLECT(exe, connector, a.binaries, a.datas, strip=False, upx=False, name="TF-LabControl")
+coll = COLLECT(exe, connector, a.binaries, a.datas, strip=False, upx=False, name="LabControl")

@@ -22,15 +22,15 @@ Joinwit 官方产品页将 JW8105 描述为多通道台式光功率计，公开�
 
 ## 通过 SSH 读取通道光功率
 
-在采数电脑用 `run.bat` 打开桌面程序，在「系统设置 → Agent 协作实验」启用本机 Agent。在「授予实验范围」选中已核对的 JW8105 串口资产与所需通道，勾选「查看设备与任务」「读取设备参数」。勾选「连接设备」后，首次查询可以只读连接尚未打开的仪器。软件退出后授权失效，再次启动时可选原授权并点「按所选范围重新授权」。
+在采数电脑启动 LabControl，在“系统设置 → MCP 接入”开启服务。桌面自动授权包含已核对的 JW8105 串口资产及其通道。首次查询可只读连接已登记的设备。重启后，客户端用 `get_server_info` 获取当前授权。
 
-SSH 客户端调用采数电脑的项目脚本。例如在项目位于 `E:/tf-labcontrol` 的主机上读取通道 9：
+SSH 客户端调用采数电脑的项目脚本。例如在项目位于 `E:/labcontrol` 的主机上读取通道 9：
 
 ```shell
-ssh -T <SSH主机> E:/tf-labcontrol/scripts/jw8105-power.cmd --port <已绑定COM口> 9
+ssh -T <SSH主机> E:/labcontrol/scripts/jw8105-power.cmd --port <已绑定COM口> 9
 ```
 
-成功时标准输出为一行 UTF-8 JSON，包含 `model`、`port`、`channel`、`power`、`unit`（dBm）和 `timestamp`（带时区的 ISO 8601 时间）。调用复用桌面会话，按通道所在模块实时查询 `display_power`，对应协议 `0x0162`。桌面已在监测该仪器时，取请求之后、同一会话的新帧；指定通道须包含在该轮监测中。接口不会改变监测通道或保存文件。设备忙、授权失效或读数无效时返回失败并以非零码退出。桌面本机 Agent 默认端口为 8765，若修改端口则在命令中添加 `--agent-port <端口>`。SSH 登录配置沿用系统配置。
+成功时标准输出为一行 UTF-8 JSON，包含 `model`、`port`、`channel`、`power`、`unit`（dBm）和 `timestamp`（带时区的 ISO 8601 时间）。调用复用桌面会话，按通道所在模块实时查询 `display_power`，对应协议 `0x0162`。桌面已在监测该仪器时，取请求之后、同一会话的新帧；指定通道须包含在该轮监测中。接口不会改变监测通道或保存文件。设备忙、授权失效或读数无效时返回失败并以非零码退出。本机 MCP 默认端口为 8765，若修改端口则在命令中添加 `--agent-port <端口>`。SSH 登录配置沿用系统配置。
 
 ## 连接与驱动
 
@@ -74,7 +74,7 @@ ssh -T <SSH主机> E:/tf-labcontrol/scripts/jw8105-power.cmd --port <已绑定CO
 | 重连 | 释放串口后重连，身份和稳定状态匹配 | passed | 运行目录批次分项结果 |
 | 物理测量 | 未接入已校准外部参考 | not_tested | 运行目录批次分项结果 |
 
-真实资产、USB 桥接器序列号和原始证据保存在 `%LOCALAPPDATA%\TF-LabControl\hardware-tests`，不进入源码。不据软件拒绝路径测试或端口枚举宣称整机验收通过。
+真实资产、USB 桥接器序列号和原始证据保存在 `%LOCALAPPDATA%\LabControl\hardware-tests`，不进入源码。不据软件拒绝路径测试或端口枚举宣称整机验收通过。
 
 ## 已知限制与待测
 

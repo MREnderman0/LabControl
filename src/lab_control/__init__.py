@@ -1,1 +1,1 @@
-"""TF LabControl design shell."""
+"""LabControl design shell."""
