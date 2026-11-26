@@ -199,6 +199,8 @@ def test_scan_reports_other_errors_in_chinese_and_keeps_original_detail(workspac
     tooltip = window.message.toolTip()
     for text in ("访问被拒绝", "响应超时", "设备扫描失败", "&lt;vendor&gt;"):
         assert text in tooltip
+    window._failed(r"Unknown vendor error reading D:\实验数据\log.txt")
+    assert window.message.text() == "操作失败，请查看详细信息"
     window._failed("unmapped vendor error")
     assert window.message.text() == "操作失败，请查看详细信息"
     assert "unmapped vendor error" in window.message.toolTip()
