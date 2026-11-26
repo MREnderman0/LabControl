@@ -159,7 +159,6 @@ QFrame#workspaceSidebar { background: #0b0c0e; border-right: 1px solid #25272c; 
 QWidget#sidebarCategories { background: transparent; }
 QLabel#commandBrand { font-size: 14px; font-weight: 700; color: #ececee; }
 QLabel#commandEyebrow, QLabel#sidebarSection { color: #6e7179; font-size: 11px; }
-QLabel#brandLogo { background: #ee9a48; color: #1b1207; border-radius: 8px; font-size: 12px; font-weight: 800; }
 QLabel#sidebarSection { margin-left: 7px; }
 QPushButton#workspaceNav, QPushButton#workspaceSubNav {
     text-align: left; color: #a3a5ac; border: 0; border-radius: 7px; padding: 0 10px; min-height: 0; background: transparent;

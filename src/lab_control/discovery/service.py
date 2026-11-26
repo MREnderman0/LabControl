@@ -136,7 +136,11 @@ class DiscoveryService:
                         key = canonical_resource(candidate.config.resource)
                         observations.setdefault(key, []).append(candidate)
                 except Exception as exc:
-                    report["providers"][provider.name] = {"state": "error", "error": str(exc)}
+                    report["providers"][provider.name] = {
+                        "state": "error",
+                        "error": str(exc),
+                        "errorCode": exc.code if isinstance(exc, DeviceError) else "",
+                    }
                 self.inventory.repository.audit(
                     "provider_completed",
                     scan_id=scan_id,

@@ -29,7 +29,6 @@ from lab_control.ui.kit import (
     NavButton,
     SearchBox,
     SubNavButton,
-    set_property,
 )
 from lab_control.ui.kit.base import plain_tooltip
 
@@ -293,14 +292,6 @@ class WorkspaceChrome:
             if problems
             else "没有设备告警 · 点击查看操作日志"
         )
-        message = window.message.text()
-        set_property(
-            window.message,
-            "kind",
-            "err" if any(word in message for word in ("失败", "错误", "异常", "failed", "error")) else "",
-        )
-        window.message.setTextFormat(Qt.TextFormat.PlainText)
-        window.message.setToolTip(plain_tooltip(message) if message else "")
 
     def apply_collapsed(self, collapsed: bool) -> None:
         self.category_box.setVisible(bool(self.category_buttons) and not collapsed)

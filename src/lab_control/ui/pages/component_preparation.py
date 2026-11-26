@@ -429,7 +429,7 @@ class ComponentPreparationPanel(QWidget):
         self.release_preparation()
 
 
-def show_preparation(runtime, parent, *, first_run=False):
+def show_preparation(runtime, parent, *, first_run=False, component=None):
     marker = runtime.repository.root / "maintenance/first-run.json"
     if first_run and (marker.exists() or not runtime.hardware):
         return
@@ -446,6 +446,14 @@ def show_preparation(runtime, parent, *, first_run=False):
     dialog.resize(850, 600)
     layout = QVBoxLayout(dialog)
     panel = ComponentPreparationPanel(runtime, dialog)
+    if component is not None:
+        selected = {c["id"] for c in component_closure([component])}
+        for key, row in panel.rows.items():
+            row.setCheckState(0, Qt.CheckState.Checked if key in selected else Qt.CheckState.Unchecked)
+        row = panel.rows[component]
+        panel.table.setCurrentItem(row)
+        panel.table.scrollToItem(row)
+        panel.status.setText("已选中本次提示对应的组件。点击“准备所选组件”开始准备。")
     layout.addWidget(panel)
     skip = QPushButton("稍后准备 / 返回工作台")
     skip.clicked.connect(dialog.accept)

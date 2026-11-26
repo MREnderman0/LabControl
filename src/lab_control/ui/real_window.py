@@ -30,6 +30,7 @@ from lab_control.ui.controller import (
 )
 from lab_control.ui.kit.base import NavButton, Pill
 from lab_control.ui.pages.monitoring.dashboard import MonitoringDashboard
+from lab_control.ui.widgets.brand_icon import BrandIcon
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool
 from lab_control.ui.widgets.input_wheel_guard import install_input_wheel_guard
@@ -54,6 +55,7 @@ from lab_control.ui.workspace.navigation import WorkspaceNavigation
 from lab_control.ui.workspace.overview import WorkspaceOverview
 from lab_control.ui.workspace.overview_side import OverviewSide
 from lab_control.ui.workspace.shutdown import WindowShutdown
+from lab_control.ui.workspace.status import StatusMessage
 
 SIDEBAR_WIDTH = 232  # Layout tests and review scripts pin the expanded sidebar width.
 NAV_ITEMS = (
@@ -68,7 +70,7 @@ NAV_ITEMS = (
 
 class ServiceBridge(QObject):
     completed = Signal(str, object)
-    failed = Signal(str)
+    failed = Signal(object)
 
     def __init__(self, parent: QObject) -> None:
         super().__init__(parent)
@@ -82,7 +84,7 @@ class ServiceBridge(QObject):
             try:
                 result = task.result()
             except Exception as exc:
-                signal, args = self.failed, (str(exc),)
+                signal, args = self.failed, (exc,)
             else:
                 signal, args = self.completed, (label, result)
             if isValid(self):
@@ -119,7 +121,7 @@ class RealWindow(QMainWindow):
     pool_title: QLabel
     pool_count: QLabel
     pool_empty: QLabel
-    message: QLabel
+    message: StatusMessage
     presence_filter: WorkspaceComboBox
     category_filter: WorkspaceComboBox
     filter: WorkspaceComboBox
@@ -194,10 +196,7 @@ class RealWindow(QMainWindow):
         brand_row = QHBoxLayout()
         brand_row.setContentsMargins(8, 0, 4, 14)
         brand_row.setSpacing(10)
-        self.brand_logo = QLabel("TF")
-        self.brand_logo.setObjectName("brandLogo")
-        self.brand_logo.setFixedSize(30, 30)
-        self.brand_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.brand_logo = BrandIcon()
         brand_row.addWidget(self.brand_logo)
         brand_text = QVBoxLayout()
         brand_text.setSpacing(0)
@@ -511,7 +510,7 @@ class RealWindow(QMainWindow):
     def _completed(self, label: str, result: Any) -> None:
         self._actions._completed(label, result)
 
-    def _failed(self, message: str) -> None:
+    def _failed(self, message: str | Exception) -> None:
         self._actions._failed(message)
 
     def diagnose(self) -> None:

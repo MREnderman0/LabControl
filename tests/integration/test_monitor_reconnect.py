@@ -182,7 +182,8 @@ def test_monitor_button_reconnects_selected_device_then_returns_to_start(qtbot, 
 
         runtime.sessions.factory = offline
         qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
-        qtbot.waitUntil(lambda: "device still offline" in window.message.text())
+        qtbot.waitUntil(lambda: "设备连接失败" in window.message.text())
+        assert "device still offline" in window.message.toolTip()
         assert button.text() == "重连" and button.isEnabled()
         assert len(failures) == 1 and page.selector.device_id == device
 

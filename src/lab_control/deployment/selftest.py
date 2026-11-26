@@ -81,6 +81,22 @@ def run(destination: Path) -> int:
             runtime = ApplicationRuntime(root=root, hardware=False)
             window = RealWindow(runtime)
             window.navigate("系统设置")
+            assert not window.brand_logo.icon.isNull()
+            window._completed(
+                "scan",
+                {
+                    "providers": {
+                        "visa": {
+                            "state": "error",
+                            "error": "Could not locate a VISA implementation.",
+                            "errorCode": "driver_missing",
+                        }
+                    }
+                },
+            )
+            assert "缺少 VISA 驱动，部分仪器无法扫描" in window.message.text()
+            result["visa_repair_notice"] = True
+            result["sidebar_icon"] = True
             window.show()
             assert not window.windowIcon().pixmap(32, 32).isNull()
             app.processEvents()
