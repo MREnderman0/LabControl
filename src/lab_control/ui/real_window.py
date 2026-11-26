@@ -28,6 +28,7 @@ from lab_control.ui.controller import (
     WorkspaceController,
 )
 from lab_control.ui.pages.monitoring.dashboard import MonitoringDashboard
+from lab_control.ui.widgets.brand_icon import BrandIcon
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool
 from lab_control.ui.widgets.input_wheel_guard import install_input_wheel_guard
@@ -50,11 +51,12 @@ from lab_control.ui.workspace.dialogs import ConnectionDialogs
 from lab_control.ui.workspace.navigation import WorkspaceNavigation
 from lab_control.ui.workspace.overview import WorkspaceOverview
 from lab_control.ui.workspace.shutdown import WindowShutdown
+from lab_control.ui.workspace.status import StatusMessage
 
 
 class ServiceBridge(QObject):
     completed = Signal(str, object)
-    failed = Signal(str)
+    failed = Signal(object)
 
     def __init__(self, parent: QObject) -> None:
         super().__init__(parent)
@@ -65,7 +67,7 @@ class ServiceBridge(QObject):
             try:
                 self.completed.emit(label, task.result())
             except Exception as exc:
-                self.failed.emit(str(exc))
+                self.failed.emit(exc)
 
         future.add_done_callback(finish)
 
@@ -94,7 +96,7 @@ class RealWindow(QMainWindow):
     pool_title: QLabel
     pool_count: QLabel
     pool_empty: QLabel
-    message: QLabel
+    message: StatusMessage
     presence_filter: WorkspaceComboBox
     category_filter: WorkspaceComboBox
     filter: WorkspaceComboBox
@@ -163,9 +165,14 @@ class RealWindow(QMainWindow):
         side = QVBoxLayout(self.sidebar)
         side.setContentsMargins(18, 22, 18, 18)
         side.setSpacing(8)
+        brand_row = QHBoxLayout()
+        self.brand_logo = BrandIcon()
+        brand_row.addWidget(self.brand_logo)
         self.brand = QLabel("TF LABCONTROL")
         self.brand.setObjectName("commandBrand")
-        side.addWidget(self.brand)
+        brand_row.addWidget(self.brand)
+        brand_row.addStretch()
+        side.addLayout(brand_row)
         self.brand_subline = QLabel("LABORATORY CONTROL")
         self.brand_subline.setObjectName("commandEyebrow")
         side.addWidget(self.brand_subline)
@@ -275,7 +282,7 @@ class RealWindow(QMainWindow):
         self.sidebar.setFixedWidth(76 if collapsed else 232)
         if layout := self.sidebar.layout():
             layout.setContentsMargins(8 if collapsed else 18, 22, 8 if collapsed else 18, 18)
-        self.brand.setText("TF" if collapsed else "TF LABCONTROL")
+        self.brand.setVisible(not collapsed)
         self.brand_subline.setVisible(not collapsed)
         self.sidebar_section.setVisible(not collapsed)
         self.runtime_badge.setVisible(not collapsed)
@@ -416,7 +423,7 @@ class RealWindow(QMainWindow):
     def _completed(self, label: str, result: Any) -> None:
         self._actions._completed(label, result)
 
-    def _failed(self, message: str) -> None:
+    def _failed(self, message: str | Exception) -> None:
         self._actions._failed(message)
 
     def diagnose(self) -> None:

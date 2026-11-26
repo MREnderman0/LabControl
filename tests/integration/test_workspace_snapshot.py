@@ -136,4 +136,71 @@ def test_panel_shutdown_failure_still_closes_runtime(workspace, monkeypatch, qtb
     window.close()
     qtbot.waitUntil(lambda: runtime.closed and window.closing, timeout=5000)
     assert calls == ["storage", "environment"]
-    assert "panel shutdown failed" in window.message.text()
+    assert "关闭期间发生错误" in window.message.text()
+    assert "panel shutdown failed" in window.message.toolTip()
+
+
+def test_scan_notice_opens_only_visa_and_clears_on_next_success(workspace, qtbot):
+    from PySide6.QtCore import QPoint, Qt, QTimer
+    from PySide6.QtGui import QTextDocument
+    from PySide6.QtWidgets import QApplication
+
+    from lab_control.ui.pages.component_preparation import ComponentPreparationPanel
+
+    window, _runtime = workspace
+    window.show()
+    failure = {"state": "error", "error": "VISA runtime unavailable: Could not locate a VISA implementation."}
+    window._completed("scan", {"providers": {"lan": failure, "visa": failure}})
+    label = window.message
+    doc = QTextDocument()
+    doc.setHtml(label.text())
+    assert doc.toPlainText() == "缺少 VISA 驱动，部分仪器无法扫描"
+    observed = []
+
+    def inspect_dialog():
+        dialog = QApplication.activeModalWidget()
+        if dialog:
+            panel = dialog.findChild(ComponentPreparationPanel)
+            if panel:
+                observed.append((panel.selected(), panel.current_id(), panel.busy()))
+            dialog.reject()
+
+    # Click the actual text (the two branch layouts use different alignments).
+    QTimer.singleShot(50, inspect_dialog)
+    rect = label.contentsRect()
+    metrics = label.fontMetrics()
+    x = (
+        rect.right() - metrics.horizontalAdvance(doc.toPlainText()) // 2
+        if label.alignment() & Qt.AlignmentFlag.AlignRight
+        else rect.left() + metrics.horizontalAdvance(doc.toPlainText()) // 2
+    )
+    qtbot.mouseClick(label, Qt.MouseButton.LeftButton, pos=QPoint(x, rect.center().y()))
+    qtbot.waitUntil(lambda: bool(observed))
+    assert observed == [(["rs-visa"], "rs-visa", False)]
+    assert window.current_module == "系统设置"
+    window._completed("scan", {"providers": {"visa": {"state": "success", "count": 0}}})
+    assert label.text() == "扫描完成" and not label.toolTip()
+    assert label.textFormat() == Qt.TextFormat.PlainText
+
+
+def test_scan_reports_other_errors_in_chinese_and_keeps_original_detail(workspace):
+    window, _ = workspace
+    window._completed(
+        "address_scan",
+        {
+            "providers": {
+                "serial": {"state": "error", "error": "Access is denied"},
+                "future_backend": {"state": "error", "error": "unexpected <vendor> failure"},
+            },
+            "items": [{"error": "VI_ERROR_TMO", "resource": "test"}],
+        },
+    )
+    assert "Access is denied" not in window.message.text()
+    tooltip = window.message.toolTip()
+    for text in ("访问被拒绝", "响应超时", "设备扫描失败", "&lt;vendor&gt;"):
+        assert text in tooltip
+    window._failed("unmapped vendor error")
+    assert window.message.text() == "操作失败，请查看详细信息"
+    assert "unmapped vendor error" in window.message.toolTip()
+    window._failed("原始数据已保存 · 分析 CSV 已完成：D:/logs/timeout.csv")
+    assert "D:/logs/timeout.csv" in window.message.text()

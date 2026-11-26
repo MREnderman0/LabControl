@@ -21,6 +21,7 @@ from lab_control.domain.instruments import jsonable
 from lab_control.instruments.registry import DEVICE_DEFINITIONS, describe, requires_manual_connection
 from lab_control.ui.widgets.slot_picker import choose_slot
 from lab_control.ui.widgets.workspace_combo import choose_item
+from lab_control.ui.workspace.status import explain, scan_notices
 
 if TYPE_CHECKING:
     from lab_control.ui.real_window import RealWindow
@@ -47,7 +48,7 @@ class WorkspaceActions:
             window.bridge.watch(window.runtime.discovery.scan(), "scan")
             window.refresh()
         except Exception as exc:
-            window._failed(str(exc))
+            window._failed(exc)
 
     def action(self, key: str) -> None:
         window = self.window
@@ -142,7 +143,7 @@ class WorkspaceActions:
                 if slot:
                     edit_slot_name(window, window.runtime, slot, mode)
         except Exception as exc:
-            window._failed(str(exc))
+            window._failed(exc)
         window.refresh()
 
     def choose_slot(self, device_id: str) -> None:
@@ -198,7 +199,7 @@ class WorkspaceActions:
         try:
             window.bridge.watch(window.runtime.connect_all_discovered(), "connect_all")
         except Exception as exc:
-            window._failed(str(exc))
+            window._failed(exc)
         window.refresh()
 
     def show_connection_results(self) -> None:
@@ -234,7 +235,16 @@ class WorkspaceActions:
 
     def _completed(self, label: str, result: Any) -> None:
         window = self.window
-        window.message.setText(f"{label} 完成")
+        labels = {
+            "connect": "设备已连接",
+            "reconnect": "设备已重新连接",
+            "disconnect": "设备已断开",
+            "identify": "设备识别完成",
+            "status": "设备状态已读取",
+            "capabilities": "设备能力已读取",
+            "diagnostics": "设备诊断完成",
+        }
+        window.message.setText(labels.get(label, "操作完成"))
         if label == "connect_all":
             window.message.setText(window.connection_result_text(result))
         elif label in {"capabilities", "diagnostics"}:
@@ -246,36 +256,57 @@ class WorkspaceActions:
             text.setPlainText(json.dumps(jsonable(result), ensure_ascii=False, indent=2))
             layout.addWidget(text)
             dialog.exec()
-        elif label == "scan":
-            failures = {name: data for name, data in result["providers"].items() if data["state"] == "error"}
-            window.message.setText(
-                "扫描完成；" + (json.dumps(failures, ensure_ascii=False) if failures else "已有会话保持不变")
-            )
-        elif label == "address_scan":
-            failures = {name: data for name, data in result["providers"].items() if data["state"] == "error"}
-            failed_items = [item for item in result.get("items", ()) if item.get("error")]
-            if window._static_address_status is not None:
-                if failures or failed_items:
-                    detail = {"providers": failures, "items": failed_items}
+        elif label in {"scan", "address_scan"}:
+            notices, detail = scan_notices(result)
+            if notices:
+                window.message.present(notices, detail)
+            else:
+                window.message.setText(
+                    "扫描已取消"
+                    if result.get("state") == "cancelled"
+                    else "地址列表扫描完成"
+                    if label == "address_scan"
+                    else "扫描完成"
+                )
+            if label == "address_scan":
+                if window._static_address_status is not None:
+                    window._static_address_status.setTextFormat(Qt.TextFormat.PlainText)
                     window._static_address_status.setText(
-                        "地址扫描完成，但有失败：" + json.dumps(detail, ensure_ascii=False)
+                        "；".join(n.text for n in notices) or window.message.text()
                     )
-                else:
-                    window._static_address_status.setText("地址扫描完成；已更新设备池")
-            window.message.setText("地址列表扫描完成")
-            if window._refresh_static_address_dialog is not None:
-                window._refresh_static_address_dialog()
+                    window._static_address_status.setToolTip(window.message.toolTip())
+                if window._refresh_static_address_dialog is not None:
+                    window._refresh_static_address_dialog()
         window.refresh()
 
-    def _failed(self, message: str) -> None:
+    def _failed(self, message: str | Exception) -> None:
         window = self.window
-        window.message.setText(message)
+        detail = str(message)
+        notice = explain(detail, getattr(message, "code", ""))
+        if (
+            notice.text == detail
+            and isinstance(message, str)
+            and not any(flag in detail for flag in ("失败", "异常", "错误"))
+        ):
+            window.message.setText(detail)
+        else:
+            window.message.present([notice], detail)
         if window._static_address_status is not None:
-            window._static_address_status.setText(message)
+            window._static_address_status.setTextFormat(Qt.TextFormat.PlainText)
+            window._static_address_status.setText(notice.text)
+            window._static_address_status.setToolTip(window.message.toolTip())
         if window.runtime.closed:
             window.closing = True
             window.bridge.worker.shutdown(wait=False)
             window.close()
+
+    def prepare_component(self, component: str) -> None:
+        window = self.window
+        window.navigate("系统设置")
+        window.settings_page.ensureWidgetVisible(window.environment_panel, 0, 0)
+        from lab_control.ui.pages.component_preparation import show_preparation
+
+        show_preparation(window.runtime, window.environment_panel, component=component)
 
     def diagnose(self) -> None:
         window = self.window

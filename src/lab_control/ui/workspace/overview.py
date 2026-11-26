@@ -39,6 +39,7 @@ from lab_control.ui.workspace.categories import (
     applicable,
     categories_for,
 )
+from lab_control.ui.workspace.status import StatusMessage
 
 if TYPE_CHECKING:
     from lab_control.ui.real_window import RealWindow
@@ -283,9 +284,10 @@ class WorkspaceOverview:
             window.pool_list, window.details, (window.presence_filter, window.category_filter, window.filter)
         )
         window.device_pool.hide()
-        window.message = QLabel(
+        window.message = StatusMessage(
             ("真实设备" if window.runtime.hardware else "模拟演示") + " · 扫描不会自动连接或恢复输出"
         )
+        window.message.linkActivated.connect(window._actions.prepare_component)
         window.message.setWordWrap(True)
         window.message.setObjectName("commandStatusBar")
         layout.addWidget(window.message)
