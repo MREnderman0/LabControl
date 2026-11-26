@@ -84,7 +84,7 @@ def _connection(resource: str) -> str:
     return value
 
 
-def _runtime_candidates() -> tuple[Path, ...]:
+def runtime_directories() -> tuple[Path, ...]:
     from lab_control.deployment.catalog import cache_directories
 
     here = Path(__file__).resolve()
@@ -97,11 +97,43 @@ def _runtime_candidates() -> tuple[Path, ...]:
     ]
     if getattr(sys, "frozen", False):
         candidates.insert(0, Path(sys.executable).parent / "maintenance/packages/tools/kplusk/runtime")
+    return tuple(dict.fromkeys(candidates))
+
+
+def _runtime_candidates() -> tuple[Path, ...]:
     return tuple(
         path
-        for path in candidates
+        for path in runtime_directories()
         if all((path / member).is_file() for member in ("kklib.py", "KK_Library_64.dll", "KK_FX80E.dll"))
     )
+
+
+def inspect_component(component: dict) -> tuple[str, str]:
+    from lab_control.deployment.materials import check_file
+
+    directories = runtime_directories()
+    files = component["detection"]["runtime_files"]
+    if component["detection"].get("config_tool"):
+        directories = tuple(p.parent for p in directories)
+    else:
+        # Match the adapter's effective search order, including a broken first installation.
+        directories = _runtime_candidates()[:1] or directories
+    expected = {Path(m["path"]).name: m for m in component["archive_members"]}
+    for directory in directories:
+        if all((directory / name).is_file() for name in files):
+            try:
+                for name in files:
+                    check_file(directory / name, expected[name])
+            except (OSError, ValueError) as exc:
+                return "unknown", f"{directory}：{exc}"
+            if "kklib.py" in files and not _runtime_candidates():
+                return "unknown", f"{directory}/kklib.py 已校验，同目录缺少配套 DLL"
+            return "ok", str(directory) + "：" + "、".join(files) + " 哈希已核验"
+    seen = [
+        f"{directory} 缺少 " + "、".join(n for n in files if not (directory / n).is_file())
+        for directory in directories
+    ]
+    return "missing", "；".join(seen)
 
 
 @contextlib.contextmanager

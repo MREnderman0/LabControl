@@ -105,22 +105,27 @@ def main() -> int:
     parser.add_argument("--distribution", choices=("online", "offline"), default="online")
     parser.add_argument("--cache", type=Path, action="append")
     parser.add_argument("--component", action="append", default=[])
+    parser.add_argument("--model", action="append", default=[])
     parser.add_argument("--output", type=Path, help="New output directory; existing builds are preserved")
     args = parser.parse_args()
     output = (args.output or ROOT / "dist" / args.distribution).resolve()
     if (output / "LabControl").exists():
         parser.error("Output already exists; use --output with a new directory to preserve this build")
+    from lab_control.deployment.catalog import default_components, load_manifest, model_components
+
+    manifest = load_manifest()
+    explicit = list(dict.fromkeys([*args.component, *model_components(args.model)]))
+    components = explicit or default_components(manifest)
     command = [sys.executable, str(ROOT / "scripts/check_deployment.py"), "--distribution", args.distribution]
     for cache in args.cache or []:
         command += ["--cache", str(cache.resolve())]
+    if args.distribution == "offline":
+        for component in components:
+            command += ["--component", component]
     if args.release:
         command.append("--release")
     subprocess.run(command, cwd=ROOT, check=True)
     lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
-    from lab_control.deployment.catalog import load_manifest
-
-    manifest = load_manifest()
-    components = args.component or [c["id"] for c in manifest["components"]]
     if args.distribution == "offline":
         from lab_control.deployment.materials import component_closure, verify_component
 
@@ -140,7 +145,7 @@ def main() -> int:
         "kind": "release_manifest",
         "release_ready": args.release,
         "distribution": args.distribution,
-        "selected_components": components if args.distribution == "offline" else args.component,
+        "selected_components": components if args.distribution == "offline" else explicit,
         "python": sys.version,
         "target": "windows-x64",
         "components": manifest["components"],
@@ -171,7 +176,11 @@ def main() -> int:
             str(ROOT / "deployment/labcontrol.spec"),
         ],
         cwd=ROOT,
-        env={**build_environment(), "LABCONTROL_BUILD_MANIFEST": str(destination / "release-manifest.json")},
+        env={
+            **build_environment(),
+            "PYTHONPATH": str(ROOT / "src"),
+            "LABCONTROL_BUILD_MANIFEST": str(destination / "release-manifest.json"),
+        },
         check=True,
     )
     target = output / "LabControl"

@@ -27,15 +27,22 @@ def sdk_candidates(kind: str) -> tuple[Path, ...]:
             ("ProgramFiles(x86)", r"C:\Program Files (x86)"),
         )
     ]
-    result: list[Path] = []
+    system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / filename
+    result = [system] if system.is_file() else []
+    folders = (
+        ("Pico Technology/SDK",)
+        if kind == "pico"
+        else (
+            "Thorlabs/PowerMeters",
+            "Thorlabs/Optical Power Monitor",
+            "IVI Foundation/VISA/Win64",
+            "IVI Foundation/IVI/Bin",
+        )
+    )
     for root in roots:
-        for folder in (
-            root / "Pico Technology" / "SDK",
-            root / "Thorlabs" / "PowerMeters",
-            root / "IVI Foundation" / "VISA" / "Win64",
-        ):
-            if folder.is_dir():
-                result.extend(folder.rglob(filename))
+        for folder in folders:
+            if (root / folder).is_dir():
+                result.extend((root / folder).rglob(filename))
     return tuple(sorted(set(result)))
 
 
@@ -100,7 +107,7 @@ def dependency_diagnostics(
             "state": "loadable"
             if any(c["state"] == "loadable" for c in checks)
             else "error"
-            if checks
+            if any(c["state"] == "error" for c in checks)
             else "missing",
             "libraries": checks,
         }

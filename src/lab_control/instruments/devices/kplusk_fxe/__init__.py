@@ -5,7 +5,7 @@ from pathlib import Path
 from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
-from .adapter import KpluskFxeAdapter, create
+from .adapter import KpluskFxeAdapter, create, inspect_component
 from .discovery import dhcp_discovery_config, normalize_discovery_config
 from .profile import capability_schema, profile
 
@@ -27,6 +27,7 @@ DEFINITION = DeviceDefinition(
     ),
     Path(__file__).parent,
     deployment_components=("kplusk-library-win", "kplusk-python-wrapper"),
+    inspect_component=inspect_component,
     factory=create,
     capability_schema=capability_schema,
     identity_requires_adapter=True,

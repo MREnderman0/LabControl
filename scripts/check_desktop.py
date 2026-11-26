@@ -7,11 +7,43 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def verify_exe_icons(bundle: Path) -> list[str]:
+    """Compare every icon image referenced by each Windows icon group with the source ICO."""
+    import pefile
+
+    ico = (ROOT / "src/lab_control/ui/styles/sciagent.ico").read_bytes()
+    count = struct.unpack_from("<H", ico, 4)[0]
+    images = []
+    for index in range(count):
+        size, offset = struct.unpack_from("<II", ico, 6 + index * 16 + 8)
+        images.append(ico[offset : offset + size])
+    verified = []
+    for name in ("LabControl.exe", "LabControl-Agent.exe", "TF-LabControl.exe", "TF-LabControl-Agent.exe"):
+        with pefile.PE(str(bundle / name), fast_load=True) as pe:
+            pe.parse_data_directories([pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]])
+            types = {t.id: t.directory.entries for t in pe.DIRECTORY_ENTRY_RESOURCE.entries}
+
+            def resource(entry):
+                data = entry.directory.entries[0].data.struct
+                return pe.get_data(data.OffsetToData, data.Size)
+
+            resources = {entry.id: resource(entry) for entry in types[3]}
+            assert types[14], name
+            for group in types[14]:
+                data = resource(group)
+                assert struct.unpack_from("<HHH", data) == (0, 1, count), name
+                referenced = [struct.unpack_from("<H", data, 6 + 14 * i + 12)[0] for i in range(count)]
+                assert [resources[i] for i in referenced] == images, name
+        verified.append(name)
+    return verified
 
 
 def main() -> int:
@@ -84,6 +116,7 @@ def main() -> int:
         assert not list(outside.rglob("hardware.lock"))
         report = json.loads(args.report.read_text(encoding="utf-8"))
         report.update(
+            exe_icons=verify_exe_icons(target),
             outside_source=False,
             isolated_bundle=True,
             path_sanitized=True,

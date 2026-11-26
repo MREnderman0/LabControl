@@ -8,6 +8,14 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
+ICON_PATH = Path(__file__).parent / "ui/styles/sciagent.ico"
+
+
+def configure_app_icon(app: QApplication) -> None:
+    from PySide6.QtGui import QIcon
+
+    app.setWindowIcon(QIcon(str(ICON_PATH)))
+
 
 def load_stylesheet() -> str:
     """Runtime theme; ``@assets@`` points at the bundled SVG check marks and spin arrows."""
@@ -52,7 +60,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="LabControl real instrument overview")
     parser.add_argument("--config", type=Path)
     args = parser.parse_args()
+    if sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TF.LabControl.Desktop")
     app = QApplication(sys.argv)
+    configure_app_icon(app)
     app.setApplicationName("LabControl")
     from lab_control.ui.widgets.publication_figure import prepare_publication_font
 

@@ -2,7 +2,7 @@
 
 由 `scripts/generate_download_docs.py` 根据[组件清单](../../deployment/components.json)和[开发材料清单](../../deployment/packages/manifest.json)生成；勿手工修改。
 
-通常在首次运行或设置 → 环境与修复 → 准备设备组件中选择所需组件。程序按下列顺序直连下载，验证固定大小、SHA256 和适用的签名后才启用；不自动运行安装程序。没有已核实国内来源的厂商组件使用官方直连。材料已准备、组件已检测和设备验收分别显示；下载记录不能替代安装或设备验收。
+首次运行和设置 → 环境与修复使用同一清单。公共项可取消，型号项需勾选。点击准备后按下列顺序直连下载，验证固定大小、SHA256 和适用的签名后才启用；不自动运行安装程序。没有已核实国内来源的厂商组件使用官方直连。材料已准备、组件已检测和设备验收分别显示；下载记录不能替代安装或设备验收。
 
 固定链接可能失效或被厂商更新；大小/哈希不符时拒绝使用，不自动改清单或升级版本。待补的接口驱动继续待核对，不提供猜测下载地址。
 
@@ -11,6 +11,10 @@
 组件 ID：`ni-daqmx`；版本：26.8.0 (2026 Q4)。
 
 NI 9230 (BNC) IEPE acceleration acquisition on USB CompactDAQ
+
+型号专用组件（按需勾选）。
+
+在 Windows 中装载已校验的 ISO，按 NI 官方向导安装 64 位 NI-DAQmx；完成后点击重新检查。
 
 1. [官方直连 — ni-daqmx_26.8.0_offline.iso](https://download.ni.com/support/nipkg/products/ni-d/ni-daqmx/26.8/offline/ni-daqmx_26.8.0_offline.iso)
 
@@ -28,6 +32,8 @@ NI 9230 (BNC) IEPE acceleration acquisition on USB CompactDAQ
 
 VISA communication and R&S LAN discovery
 
+公共组件（默认勾选）。
+
 1. [官方国内站 — RS_VISA_Setup_Win_7_2_6.exe](https://cdn.rohde-schwarz.com.cn/pws/dl_downloads/dl_application/application_notes/1dc02___rs_v/RS_VISA_Setup_Win_7_2_6.exe)
 
 [来源说明](https://www.rohde-schwarz.com.cn/applications/rs-visa_56280-148812.html)
@@ -41,6 +47,8 @@ VISA communication and R&S LAN discovery
 组件 ID：`pico-sdk`；版本：11.1.0.481。
 
 PicoScope 6404E SDK and USB driver
+
+型号专用组件（按需勾选）。
 
 1. [官方直连 — PicoSDK_x64_11.1.0.481.exe](https://www.picotech.com/download/software/sr/PicoSDK_x64_11.1.0.481.exe)
 
@@ -56,6 +64,8 @@ PicoScope 6404E SDK and USB driver
 
 PM100D optical meter SDK and driver
 
+型号专用组件（按需勾选）。
+
 1. [官方国内站 — Thorlabs.OPM.7.0.5320.947.zip](https://media.thorlabscms.cn/contentassets/012d23129bc54ff2bfdbf4c6d4a306fa/thorlabs.opticalparametermonitor.7.0.5320.947.zip)
 
 [来源说明](https://www.thorlabschina.cn/software-pages/OPM)
@@ -69,6 +79,10 @@ PM100D optical meter SDK and driver
 组件 ID：`ftdi-vcp`；版本：2.12.36.20。
 
 FTDI USB 虚拟串口（含 GPD-4303S）。当前固定材料是已验证 Windows DriverStore 中的 x64 驱动导出，不是厂家原始 ZIP；仅供现有维护缓存和内网复用，官方下载归档仍待补。接入后须核对真实芯片及 VID/PID。
+
+公共组件（默认勾选）。
+
+按官方说明在设备管理器选择与转换器硬件 ID 匹配的已签名 INF，再点击重新检查。
 
 下载材料：待登记。
 
@@ -84,6 +98,8 @@ FTDI USB 虚拟串口（含 GPD-4303S）。当前固定材料是已验证 Window
 
 Keithley 2231A-001 的 Tek 官方支持页指向 Prolific PL2303。安装器 4.10.0.0 在 Windows 11 注册 PL2303G 5.2.12.0 和 HXD/EA/RA/SA 3.9.7.0；旧 HXA/XA、非原厂芯片及实际适配器兼容性仍须核对。
 
+公共组件（默认勾选）。
+
 1. [官方直连 — PL23XX-M_LogoDriver_Setup_41000_20260716.zip](https://www.prolific.com.tw/wp-content/uploads/2026/10/PL23XX-M_LogoDriver_Setup_41000_20260716.zip)
 
 [来源说明](https://www.tek.com/en/support/software/driver/2231a-30-3-software)
@@ -98,23 +114,7 @@ Keithley 2231A-001 的 Tek 官方支持页指向 Prolific PL2303。安装器 4.1
 
 按实际 USB VID/PID 选择串口驱动；已登记 FTDI、Prolific、WCH CH340/CH341 和 CP210x。预装只入库，设备接入后的绑定、COM 号及收发另验。
 
-下载材料：待登记。
-
-来源说明：待核实。
-
-大小：待核实 字节；SHA256：`待核实`。
-
-验证策略：`authenticode`；分发依据：`pending`；安装验证：`pending`；目标环境验证：`pending`。
-
-**手动维护材料 · Prolific PL2303TA USB 转串口 3.8.31.0**
-
-供 PL2303TA 在 Windows 11 显示不支持提示时手工选用。安装前备份原驱动并核对芯片、端口和占用情况。
-
-[微软更新目录](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=2274ef6c-b682-4bb7-8f7a-f6f2dc67050b) · [驱动包](https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2019/08/8e9440f0-a252-49ae-ae65-e8fa36f55d47_c908f2dc24f5a7dcda9f567330e813a58087adb2.cab)
-
-大小 3286970 字节，SHA256 `412db2bf8e43abf6e0183b2cc9c68e6bcf578d3df7a2149648876e953d55c6da`。
-
-ser2pl.cat 由 Microsoft Windows Hardware Compatibility Publisher 签名，实机验证有效。 微软目录列为 Windows 10 驱动。Windows 11 x64 Build 26200 实测可绑定 PL2303TA，串口两次打开和关闭成功。仪器通信协议未验证。 Prolific 专有驱动，重新分发许可待核对。
+接口分组，展开后选择具体驱动：ftdi-vcp、keithley-usb、wch-ch34x、silabs-cp210x
 
 ## GPIB interface driver
 
@@ -122,19 +122,17 @@ ser2pl.cat 由 Microsoft Windows Hardware Compatibility Publisher 签名，实�
 
 按 GPIB 控制器厂家选择 NI-488.2 或 Keysight IO Libraries；两者材料和共存验收仍待补，安装 R&S VISA 本身不能证明任意 USB-GPIB 适配器已可用。
 
-下载材料：待登记。
-
-来源说明：待核实。
-
-大小：待核实 字节；SHA256：`待核实`。
-
-验证策略：`authenticode`；分发依据：`pending`；安装验证：`pending`；目标环境验证：`pending`。
+接口分组，展开后选择具体驱动：ni-4882、keysight-iolibs
 
 ## K+K FXE Firmware Upload and Configuration Tool
 
 组件 ID：`kplusk-config-tool`；版本：5.1.0 (2025-11-28)。
 
 USB configuration of K+K FXE static IP, subnet, gateway and device configuration
+
+型号专用组件（按需勾选）。
+
+使用已解压的官方配置工具；按实际设备手动配置。
 
 1. [官方直连 — KK_FirmwareUpload_Win_Ver_5.1.0_25-11-28.zip](https://kplusk-messtechnik.de/downloads/files/KK_FirmwareUpload_Win_Ver_5.1.0_25-11-28.zip)
 
@@ -152,6 +150,10 @@ USB configuration of K+K FXE static IP, subnet, gateway and device configuration
 
 K+K FXE Ethernet/USB protocol library and native development files
 
+型号专用组件（按需勾选）。
+
+准备时将已校验的 DLL 解压到 K+K 运行目录，点击重新检查。
+
 1. [官方直连 — KK-Library_Win_Ver_21.2.2_25-11-28.zip](https://kplusk-messtechnik.de/downloads/files/KK-Library_Win_Ver_21.2.2_25-11-28.zip)
 
 [来源说明](https://kplusk-messtechnik.de/downloads/index.html)
@@ -167,6 +169,10 @@ K+K FXE Ethernet/USB protocol library and native development files
 组件 ID：`kplusk-python-wrapper`；版本：2.1。
 
 Official Python wrapper and examples for KK Library
+
+型号专用组件（按需勾选）。
+
+准备时将已校验的 wrapper 解压到 K+K 运行目录，点击重新检查。
 
 1. [官方直连 — PythonModules_2.1.zip](https://kplusk-messtechnik.de/downloads/files/PythonModules_2.1.zip)
 
@@ -184,6 +190,8 @@ Official Python wrapper and examples for KK Library
 
 53100A command/data server
 
+型号专用组件（按需勾选）。
+
 1. [官方直连 — timelab-1.780a.exe](https://www.miles.io/timelab/mchp/setup.exe)
 
 [来源说明](https://www.microchip.com/en-us/product/53100A)
@@ -197,6 +205,8 @@ Official Python wrapper and examples for KK Library
 组件 ID：`tftpd64`；版本：4.74。
 
 Dedicated lab Ethernet DHCP service; other services disabled
+
+公共组件（默认勾选）。
 
 1. [官方直连 — Tftpd64_Service_Installer_v4.74.exe](https://github.com/PJO2/tftpd64/releases/download/v4.74/Tftpd64_Service_Installer_v4.74.exe)
 
@@ -212,6 +222,8 @@ Dedicated lab Ethernet DHCP service; other services disabled
 
 Native Qt/SDK runtime dependencies
 
+公共组件（默认勾选）。
+
 1. [官方直连 — vc_redist.x64.exe](https://aka.ms/vc14/vc_redist.x64.exe)
 
 [来源说明](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
@@ -225,6 +237,10 @@ Native Qt/SDK runtime dependencies
 组件 ID：`wch-ch34x`；版本：4.0.2026.02。
 
 CH340/CH341 USB 转串口预安装；使用官方国内站 4.0 包中的 Windows 10/11 INF，驱动版本 4.0.2026.02。不能覆盖 CH343/CH9102 等其他芯片系列。
+
+公共组件（默认勾选）。
+
+按 WCH 说明使用已解压的匹配驱动，完成后点击重新检查。
 
 1. [官方国内站 — CH341SER.ZIP](https://file.wch.cn/download/file?id=5)
 
@@ -240,6 +256,10 @@ CH340/CH341 USB 转串口预安装；使用官方国内站 4.0 包中的 Windows
 
 CP210x USB 转串口预安装。采用微软官方更新目录分发的 11.5.0.417 包，含 CP210x/CP2105/CP2108 默认 VID/PID；与厂商网站 11.6.0 ZIP 区分，后者当前直连返回 403。CAB 仅准备材料，须由维护人员验证解包后的 WHQL 目录并预装 INF；接入验收另行进行。
 
+公共组件（默认勾选）。
+
+按 Silicon Labs 说明解包，选择与转换器匹配的签名驱动后重新检查。
+
 1. [官方直连 — CP210x-11.5.0.417-amd64.cab](https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2026/02/3bc68c22-eb83-4383-b451-4c581d06d3fb_6092f1062939e09f524b5d8e9108530f7f516f13.cab)
 
 [来源说明](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=34213758-173c-47ec-951d-16b2c9463881)
@@ -253,6 +273,10 @@ CP210x USB 转串口预安装。采用微软官方更新目录分发的 11.5.0.4
 组件 ID：`ni-4882`；版本：26.8.0。
 
 NI GPIB 控制器备选驱动。2026 Q4 官方清单支持 Windows 11；不要登记为普通 Windows 10 的默认依赖。已在一台 Windows 11 安装，重启后运行及具体适配器支持仍待验证。
+
+公共组件（默认勾选）。
+
+核对控制器和 Windows 支持版本，装载 ISO 后按 NI 向导安装，再点击重新检查。
 
 1. [官方直连 — ni-488.2_26.8.0_offline.iso](https://download.ni.com/support/nipkg/products/ni-4/ni-488.2/26.8/offline/ni-488.2_26.8.0_offline.iso)
 
@@ -270,6 +294,10 @@ NI GPIB 控制器备选驱动。2026 Q4 官方清单支持 Windows 11；不要�
 
 Keysight USB/GPIB 控制器备选套件（2026 Update 1）。官方页面已核对版本及 SHA256，但当前下载入口未取得安装包，未安装；须验证与已有 R&S VISA 的共存，不能替换现有 VISA 或启用未要求的远程服务。
 
+公共组件（默认勾选）。
+
+按 Keysight 官方向导选择当前控制器并检查与已有 VISA 的共存，完成后重新检查。
+
 下载材料：待登记。
 
 [来源说明](https://www.keysight.com.cn/cn/zh/lib/software-detail/computer-software/io-libraries-suite-downloads-2175637.html)
@@ -283,6 +311,10 @@ Keysight USB/GPIB 控制器备选套件（2026 Update 1）。官方页面已核�
 组件 ID：`liquid-moku-desktop`；版本：4.4 (20349)。
 
 Moku:Pro 可选厂商上位机，用于首次手工部署和备份四槽；日常项目使用 REST 4.4 和 mDNS，无需打开上位机或安装 MokuCLI。只准备 Windows 客户端，不改仪器固件。
+
+型号专用组件（按需勾选）。
+
+按 Liquid Instruments 官方向导安装桌面客户端，完成后重新检查。
 
 1. [官方直连 — MokuInstaller.exe](https://download.liquidinstruments.com/software/windows-mac-app/MokuInstaller.exe)
 

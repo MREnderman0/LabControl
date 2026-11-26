@@ -64,6 +64,8 @@ def validate_manifest(value: dict) -> list[str]:
         if not re.fullmatch(r"[a-z][a-z0-9-]+", key) or key in seen:
             errors.append(f"{key}: invalid or duplicate ID")
         seen.add(key)
+        if item.get("scope") not in {"common", "model"}:
+            errors.append(f"{key}: common/model scope required")
         filename = item.get("filename")
         if filename and (Path(filename).name != filename or re.search(r"[\\/:]", filename)):
             errors.append(f"{key}: filename must be a cache basename")
@@ -107,8 +109,14 @@ def validate_manifest(value: dict) -> list[str]:
                     errors.append(f"{key}: installer is not a verified payload member")
         except (ValueError, KeyError, TypeError) as exc:
             errors.append(f"{key}: {exc}")
+    scopes = {item["id"]: item.get("scope") for item in value.get("components", [])}
     for item in value.get("components", []):
-        if any(dep not in seen or dep == item["id"] for dep in item.get("dependencies", [])):
+        dependencies = [*item.get("dependencies", []), *item.get("members", [])]
+        if item.get("scope") == "common" and any(scopes.get(dep) == "model" for dep in dependencies):
+            errors.append(item["id"] + ": common selection includes a model component")
+        if item.get("filename") and not (item.get("installer_entry") or item.get("manual_steps")):
+            errors.append(item["id"] + ": verified installer or manual instructions required")
+        if any(dep not in seen or dep == item["id"] for dep in dependencies):
             errors.append(item["id"] + ": invalid dependency")
     return errors
 
@@ -200,6 +208,22 @@ def release_issues(component: dict, caches: tuple[Path, ...], *, distribution: s
     return issues
 
 
+def default_components(manifest: dict) -> list[str]:
+    return [c["id"] for c in manifest["components"] if c["scope"] == "common" and not c.get("members")]
+
+
+def model_components(models) -> list[str]:
+    from lab_control.instruments.devices.catalog import load_definitions
+
+    definitions = load_definitions()
+    keys: list[str] = []
+    for model in models:
+        if model not in definitions:
+            raise ValueError("未知型号：" + model)
+        keys.extend(definitions[model].deployment_components)
+    return list(dict.fromkeys(keys))
+
+
 def required_components(configs, *, lan: bool = False, dhcp: bool = False) -> set[str]:
     from lab_control.instruments.devices.catalog import load_definitions
 
@@ -222,7 +246,8 @@ def required_components(configs, *, lan: bool = False, dhcp: bool = False) -> se
             required.update(
                 key
                 for key in definition.deployment_components
-                if (not by_id[key]["transports"] or config.transport in by_id[key]["transports"])
+                if not by_id[key].get("members")
+                and (not by_id[key]["transports"] or config.transport in by_id[key]["transports"])
             )
         if config.resource.upper().startswith("GPIB"):
             required.add("gpib-interface")

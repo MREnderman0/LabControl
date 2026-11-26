@@ -58,11 +58,12 @@ def component_closure(ids, manifest=None) -> list[dict]:
         if key not in catalog or key in visiting:
             raise ValueError("Unknown or cyclic component dependency: " + key)
         visiting.add(key)
-        for dependency in catalog[key].get("dependencies", []):
+        for dependency in (*catalog[key].get("dependencies", []), *catalog[key].get("members", [])):
             visit(dependency)
         visiting.remove(key)
         done.add(key)
-        result.append(catalog[key])
+        if not catalog[key].get("members"):
+            result.append(catalog[key])
 
     for key in ids:
         visit(key)
@@ -291,9 +292,13 @@ def verify_component(component: dict, caches=None, cancel=None) -> dict:
     return result
 
 
-def prepare_components(ids, *, cache=None, caches=None, cancel=None, progress=None, download=True) -> dict:
+def prepare_components(
+    ids, *, satisfied=(), cache=None, caches=None, cancel=None, progress=None, download=True
+) -> dict:
     results: list[dict] = []
     for component in component_closure(ids):
+        if component["id"] in satisfied:
+            continue
         if cancel and cancel.is_set():
             break
         if any(r["state"] != "prepared" and r["id"] in component.get("dependencies", []) for r in results):
@@ -329,6 +334,8 @@ def components_cli(args) -> dict:
                     for k in (
                         "id",
                         "name",
+                        "scope",
+                        "members",
                         "purpose",
                         "version",
                         "size",
@@ -340,13 +347,17 @@ def components_cli(args) -> dict:
                 for c in load_manifest()["components"]
             ]
         }
-    if not args.component:
-        raise ValueError("至少使用一次 --component 指定组件")
+    from lab_control.deployment.catalog import model_components
+
+    ids = [*args.component, *model_components(getattr(args, "model", ()))]
+    if getattr(args, "common", False):
+        from lab_control.deployment.catalog import default_components
+
+        ids = [*default_components(load_manifest()), *ids]
+    if not ids:
+        raise ValueError("请用 --common、--component 或 --model 指定所需材料")
     if args.component_action == "verify":
-        items = [
-            verify_component(c, (args.cache,) if args.cache else None)
-            for c in component_closure(args.component)
-        ]
+        items = [verify_component(c, (args.cache,) if args.cache else None) for c in component_closure(ids)]
         return {"items": items, "passed": all(i["state"] == "verified" for i in items)}
     cancel = threading.Event()
-    return prepare_components(args.component, cache=args.cache, cancel=cancel, download=not args.offline)
+    return prepare_components(ids, cache=args.cache, cancel=cancel, download=not args.offline)

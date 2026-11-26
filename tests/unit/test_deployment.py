@@ -155,7 +155,8 @@ def test_inspection_reports_optional_driver_unknown_and_storage_failure(tmp_path
     monkeypatch.setattr(environment, "expected_versions", lambda: {"numpy": "0.0"})
     report = environment.inspect_environment(tmp_path, caches=(tmp_path,))
     by_id = {item["id"]: item for item in report["items"]}
-    assert by_id["pico-sdk"]["state"] == "not_required"
+    assert not by_id["pico-sdk"]["required"]
+    assert by_id["pico-sdk"]["payload"]["state"] == "missing"
     assert by_id["storage"]["state"] == "error"
     assert by_id["msvc-runtime"]["state"] == "unknown"
     assert by_id["python:numpy"]["state"] == "incompatible"
@@ -165,10 +166,13 @@ def test_inspection_reports_optional_driver_unknown_and_storage_failure(tmp_path
     assert json.loads(path.read_text(encoding="utf-8")) == report
 
 
-def test_inspection_handles_model_specific_sdk_without_generic_checker(tmp_path, monkeypatch):
+def test_inspection_reports_missing_runtime_in_model_search_path(tmp_path, monkeypatch):
     from lab_control.application.config import ConnectionConfig
 
     monkeypatch.setattr("lab_control.deployment.windows.inspect_windows", lambda cancel: {})
+    monkeypatch.setattr(
+        "lab_control.instruments.devices.kplusk_fxe.adapter.runtime_directories", lambda: (tmp_path,)
+    )
     report = environment.inspect_environment(
         tmp_path,
         (ConnectionConfig("192.0.2.10", "kplusk.fxe", "kplusk"),),
@@ -176,8 +180,9 @@ def test_inspection_handles_model_specific_sdk_without_generic_checker(tmp_path,
     )
     by_id = {item["id"]: item for item in report["items"]}
     assert report["state"] == "complete"
-    assert by_id["kplusk-library-win"]["state"] == "unknown"
-    assert "未登记通用 DLL 检测器" in by_id["kplusk-library-win"]["reason"]
+    assert by_id["kplusk-library-win"]["state"] == "missing"
+    assert "KK_FX80E.dll" in by_id["kplusk-library-win"]["reason"]
+    assert "kklib.py" in by_id["kplusk-python-wrapper"]["reason"]
 
 
 @pytest.mark.parametrize(
@@ -233,3 +238,137 @@ def test_source_worker_failure_is_reported_and_does_not_delete_input(tmp_path):
     result = subprocess.run(worker_command(tmp_path / "missing"), capture_output=True, timeout=15)
     assert result.returncode == 2
     assert path.read_bytes() == b"broken sqlite fixture"
+
+
+def test_sdk_reports_every_configured_route_and_independent_model(tmp_path, monkeypatch):
+    calls = []
+
+    def diagnostics(configs, *, sdk_kinds):
+        calls.append(set(sdk_kinds))
+        return {
+            "sdk": {
+                kind: {"state": "missing" if kind == "pm100d" else "loadable", "libraries": []}
+                for kind in sdk_kinds
+            }
+        }
+
+    monkeypatch.setattr("lab_control.application.environment.dependency_diagnostics", diagnostics)
+    monkeypatch.setattr("lab_control.deployment.windows.inspect_windows", lambda cancel: {})
+    configs = tuple(
+        ConnectionConfig("fixture", adapter, kind)
+        for adapter, kind in (
+            ("thorlabs.pm100d", "tlpmx"),
+            ("thorlabs.pm100d", "pm100d"),
+            ("pico.6404e", "pico"),
+        )
+    )
+    report = environment.inspect_environment(tmp_path, configs, caches=(tmp_path,))
+    items = {row["id"]: row for row in report["items"]}
+    assert {"pm100d", "tlpmx"} in calls and {"pico"} in calls
+    assert items["thorlabs-opm"]["state"] == "missing" and items["thorlabs-opm"]["required"]
+    assert items["pico-sdk"]["state"] == "ok"
+    assert items["pico-sdk"]["payload"]["state"] == "missing"
+    assert {c["id"] for c in load_manifest()["components"]} <= items.keys()
+
+
+def test_import_and_icon_damage_survive_metadata(tmp_path, monkeypatch):
+    import lab_control.app
+
+    original = environment.importlib.import_module
+
+    def broken(name, *args, **kwargs):
+        if name == "serial":
+            raise ImportError("missing package file")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(environment.importlib, "import_module", broken)
+    monkeypatch.setattr(lab_control.app, "ICON_PATH", tmp_path / "broken.ico")
+    monkeypatch.setattr("lab_control.deployment.windows.inspect_windows", lambda cancel: {})
+    (tmp_path / "broken.ico").write_bytes(b"invalid")
+    items = {i["id"]: i for i in environment.inspect_environment(tmp_path, caches=(tmp_path,))["items"]}
+    assert items["python:pyserial"]["state"] == items["resources"]["state"] == "error"
+
+
+def test_ni_runtime_reports_missing_export_without_driver_calls(tmp_path, monkeypatch):
+    from lab_control.instruments.devices.ni_9230 import daqmx
+
+    path = tmp_path / "nicaiu.dll"
+    path.touch()
+    monkeypatch.setattr(daqmx, "runtime_path", lambda: path)
+    monkeypatch.setattr("lab_control.application.environment.pe_bits", lambda _: 64)
+    monkeypatch.setattr(daqmx.ct, "WinDLL", lambda _: object(), raising=False)
+    state, reason = daqmx.inspect_component({})
+    assert state == "incompatible" and "DAQmx" in reason
+
+
+def test_windows_multiple_interfaces_and_service_path(monkeypatch):
+    from lab_control.deployment import windows
+
+    components = {c["id"]: c for c in load_manifest()["components"]}
+    monkeypatch.setattr(windows, "driver_packages", lambda names: {})
+    drivers = [
+        {
+            "DeviceID": "USB/" + c["detection"]["hardware_ids"][0],
+            "InfName": "oem4.inf",
+            "IsSigned": True,
+            "DriverVersion": c["version"],
+        }
+        for c in (components["ftdi-vcp"], components["silabs-cp210x"])
+    ]
+    observations = {"drivers": drivers}
+    for key in ("ftdi-vcp", "silabs-cp210x"):
+        assert windows.inspect_serial(components[key], observations)[0] == "ok"
+    assert windows.inspect_serial(components["wch-ch34x"], observations)[0] == "missing"
+    svc = {
+        "Name": "tftpd64",
+        "PathName": "fixture/tftpd64.exe",
+        "Binary": "fixture/tftpd64.exe",
+        "Version": "4.74.0.0",
+    }
+    assert windows.inspect_dhcp(components["tftpd64"], {"services": [svc]})[0] == "ok"
+    svc["Version"] = None
+    assert windows.inspect_dhcp(components["tftpd64"], {"services": [svc]})[0] == "unknown"
+
+
+def test_common_and_explicit_model_materials_share_concrete_closure():
+    from lab_control.deployment.catalog import default_components, model_components
+    from lab_control.deployment.materials import component_closure
+
+    manifest = load_manifest()
+    components = {c["id"]: c for c in manifest["components"]}
+    common = set(default_components(manifest))
+    assert len(components) == 19 and len(common) == 9
+    assert all(components[key]["scope"] == "common" for key in common)
+    assert {c["id"] for c in component_closure(["serial-interface", "gpib-interface"])} == common - {
+        "msvc-runtime",
+        "rs-visa",
+        "tftpd64",
+    }
+    assert model_components(["ni.9230", "pico.6404e"]) == ["ni-daqmx", "pico-sdk"]
+    assert [c["id"] for c in component_closure(["kplusk-python-wrapper"])] == [
+        "kplusk-library-win",
+        "kplusk-python-wrapper",
+    ]
+
+
+def test_kplusk_split_runtime_files_and_first_complete_directory(tmp_path, monkeypatch):
+    from lab_control.instruments.devices.kplusk_fxe import adapter
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setattr(adapter, "runtime_directories", lambda: (first, second))
+    manifest = {c["id"]: copy.deepcopy(c) for c in load_manifest()["components"]}
+    component = manifest["kplusk-python-wrapper"]
+    for c in (component, manifest["kplusk-library-win"]):
+        for m in c["archive_members"]:
+            m.update(sha256=hashlib.sha256(b"ok").hexdigest(), size=2)
+    (first / "kklib.py").write_bytes(b"ok")
+    for name in ("KK_FX80E.dll", "KK_Library_64.dll"):
+        (second / name).write_bytes(b"ok")
+    assert adapter.inspect_component(component)[0] == "unknown"
+    assert adapter.inspect_component(manifest["kplusk-library-win"])[0] == "ok"
+    (second / "kklib.py").write_bytes(b"bad")
+    assert adapter.inspect_component(component)[0] == "unknown"
+    (second / "kklib.py").write_bytes(b"ok")
+    assert adapter.inspect_component(component)[0] == "ok"

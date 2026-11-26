@@ -17,7 +17,9 @@ from lab_control.instruments.registry import PROFILES, SDK_ADAPTERS
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def check(root: Path = ROOT, *, release: bool = False, caches=None, distribution="offline") -> dict:
+def check(
+    root: Path = ROOT, *, release: bool = False, caches=None, distribution="offline", selected=()
+) -> dict:
     manifest = load_manifest(root / "deployment/components.json")
     components = {item["id"]: item for item in manifest["components"]}
     project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
@@ -62,8 +64,13 @@ def check(root: Path = ROOT, *, release: bool = False, caches=None, distribution
         for adapter in component["adapters"]:
             if adapter not in PROFILES and adapter not in SDK_ADAPTERS:
                 errors.append(component["id"] + ": unknown adapter " + adapter)
+    from lab_control.deployment.materials import component_closure
+
+    selected_ids = {c["id"] for c in component_closure(selected, manifest)} if selected else set()
     pending = {}
     for component in components.values():
+        if component.get("members") or (selected_ids and component["id"] not in selected_ids):
+            continue
         if release:
             problems = release_issues(
                 component, caches if caches is not None else cache_directories(), distribution=distribution
@@ -91,6 +98,7 @@ def main() -> int:
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--distribution", choices=("online", "offline"), default="online")
     parser.add_argument("--cache", type=Path, action="append")
+    parser.add_argument("--component", action="append", default=[])
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     try:
@@ -98,6 +106,7 @@ def main() -> int:
             release=args.release,
             caches=tuple(args.cache) if args.cache else None,
             distribution=args.distribution,
+            selected=args.component,
         )
     except (ValueError, OSError) as exc:
         result = {"passed": False, "errors": [str(exc)]}

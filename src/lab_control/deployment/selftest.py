@@ -34,6 +34,10 @@ def run(destination: Path) -> int:
         result["packages"] = {
             name: importlib.metadata.version(name) for name in load_manifest()["python_roots"]
         }
+        manifest = load_manifest()
+        for module in {**manifest["python_roots"], **manifest.get("python_transitive_roots", {})}.values():
+            importlib.import_module(module)
+        result["runtime_imports"] = True
         result["models"] = list(load_definitions())
         from lab_control.domain.instruments import DeviceIdentity, Measurement, MeasurementBatch
         from lab_control.storage.recording import Recording, read_frames
@@ -61,12 +65,15 @@ def run(destination: Path) -> int:
             from PySide6.QtGui import QFont
             from PySide6.QtWidgets import QApplication
 
-            from lab_control.app import load_stylesheet, load_ui_font
+            from lab_control.app import configure_app_icon, load_stylesheet, load_ui_font
             from lab_control.application.runtime import ApplicationRuntime
             from lab_control.ui.real_window import RealWindow
 
             app = QApplication.instance() or QApplication([])
             assert isinstance(app, QApplication)
+            configure_app_icon(app)
+            assert not app.windowIcon().pixmap(32, 32).isNull()
+            result["window_icon"] = True
             app.setStyleSheet(load_stylesheet())
             font = load_ui_font()
             result["font"] = font
@@ -75,6 +82,7 @@ def run(destination: Path) -> int:
             window = RealWindow(runtime)
             window.navigate("系统设置")
             window.show()
+            assert not window.windowIcon().pixmap(32, 32).isNull()
             app.processEvents()
             destination.parent.mkdir(parents=True, exist_ok=True)
             window.grab().save(str(destination.with_suffix(".png")))
