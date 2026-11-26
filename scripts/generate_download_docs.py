@@ -19,7 +19,7 @@ def render() -> str:
         "由 `scripts/generate_download_docs.py` 根据[组件清单](../../deployment/components.json)和"
         "[开发材料清单](../../deployment/packages/manifest.json)生成；勿手工修改。",
         "",
-        "通常在首次运行或设置 → 环境与修复 → 准备设备组件中选择所需组件。程序按下列顺序直连下载，"
+        "首次运行和设置 → 环境与修复使用同一清单。公共项可取消，型号项需勾选。点击准备后按下列顺序直连下载，"
         "验证固定大小、SHA256 和适用的签名后才启用；不自动运行安装程序。没有已核实国内来源的厂商组件使用官方直连。"
         "材料已准备、组件已检测和设备验收分别显示；下载记录不能替代安装或设备验收。",
         "",
@@ -38,6 +38,12 @@ def render() -> str:
             c["purpose"],
             "",
         ]
+        if c.get("members"):
+            lines += ["接口分组，展开后选择具体驱动：" + "、".join(c["members"]), ""]
+            continue
+        lines += ["公共组件（默认勾选）。" if c["scope"] == "common" else "型号专用组件（按需勾选）。", ""]
+        if c.get("manual_steps"):
+            lines += [c["manual_steps"], ""]
         for i, s in enumerate(sources(c), 1):
             label = {"official-domestic": "官方国内站", "official-direct": "官方直连"}.get(
                 s["kind"], s["kind"]

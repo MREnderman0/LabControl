@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.application.config import ConnectionConfig
-from lab_control.deployment.catalog import load_manifest, required_components, user_cache
+from lab_control.deployment.catalog import default_components, load_manifest, required_components, user_cache
 from lab_control.deployment.environment import inspect_environment
 from lab_control.deployment.materials import (
     check_file,
@@ -65,12 +65,14 @@ class ComponentPreparationPanel(QWidget):
         super().__init__(parent)
         self.runtime, self.preparer, self.inspector = runtime, preparer, inspector
         self.launcher = launcher or (lambda path: os.startfile(str(path)))
-        self.catalog = {c["id"]: c for c in load_manifest()["components"]}
+        manifest = load_manifest()
+        self.catalog = {c["id"]: c for c in manifest["components"]}
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="component-prepare")
         self.cancel_event = threading.Event()
         self.future = None
         self.disposed = False
         self.installing = False
+        self.preparing_runtime = False
         self.results: dict = {}
         self.inspections: dict = {}
         self.signals = PreparationSignals(self)
@@ -79,7 +81,7 @@ class ComponentPreparationPanel(QWidget):
         self.signals.installer.connect(self.open_verified_installer)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.status = QLabel("按所需设备选择组件，自动检查并下载；下载完成后可打开厂商安装向导。")
+        self.status = QLabel("公共驱动和工具已勾选，可按接口调整。勾选所需型号，再点击“准备所选组件”。")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.device_choice = WorkspaceComboBox()
@@ -100,19 +102,40 @@ class ComponentPreparationPanel(QWidget):
         layout.addWidget(self.device_choice)
         self.table = QTreeWidget()
         self.table.setHeaderLabels(["设备组件", "版本", "准备状态"])
-        self.table.setRootIsDecorated(False)
+        self.table.setRootIsDecorated(True)
         self.table.setMinimumHeight(140)
         self.rows = {}
         configs = configured_devices(runtime)
-        selected = required_components(configs) if configs else set()
+        recommended = required_components(configs)
+        selected = set(default_components(manifest))
+        parents = {}
+        for scope, title in (("common", "公共运行库和接口工具"), ("model", "型号专用组件")):
+            group = QTreeWidgetItem(self.table, [title])
+            group.setFlags(group.flags() | Qt.ItemFlag.ItemIsAutoTristate | Qt.ItemFlag.ItemIsUserCheckable)
+            parents[scope] = group
+        member_groups = {}
+        for c in self.catalog.values():
+            if c.get("members"):
+                group = QTreeWidgetItem(parents[c["scope"]], [c["name"]])
+                group.setFlags(
+                    group.flags() | Qt.ItemFlag.ItemIsAutoTristate | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                member_groups.update(dict.fromkeys(c["members"], group))
         for key, c in self.catalog.items():
-            row = QTreeWidgetItem([c["name"], c["version"] or "待核实", "未准备"])
+            if c.get("members"):
+                continue
+            row = QTreeWidgetItem(
+                member_groups.get(key, parents[c["scope"]]),
+                [
+                    c["name"],
+                    c["version"] or "待核实",
+                    "已登记设备推荐" if key in recommended and c["scope"] == "model" else "未准备",
+                ],
+            )
             row.setData(0, Qt.ItemDataRole.UserRole, key)
             row.setCheckState(0, Qt.CheckState.Checked if key in selected else Qt.CheckState.Unchecked)
-            if not c.get("size"):
-                row.setText(2, "下载信息待核实")
             self.rows[key] = row
-            self.table.addTopLevelItem(row)
+        self.table.expandAll()
         self.table.setColumnWidth(0, 320)
         self.table.setColumnWidth(1, 190)
         layout.addWidget(self.table)
@@ -135,6 +158,7 @@ class ComponentPreparationPanel(QWidget):
         self.install_button.clicked.connect(self.install)
         self.recheck_button.clicked.connect(self.recheck)
         self.table.currentItemChanged.connect(self.show_details)
+        self.table.itemChanged.connect(self.selection_changed)
 
     def selected(self):
         return [key for key, row in self.rows.items() if row.checkState(0) == Qt.CheckState.Checked]
@@ -142,9 +166,22 @@ class ComponentPreparationPanel(QWidget):
     def choose_device(self, index):
         if index <= 0:
             return
-        for key in ["msvc-runtime", *(self.device_choice.itemData(index) or [])]:
-            if key in self.rows:
-                self.rows[key].setCheckState(0, Qt.CheckState.Checked)
+        for component in component_closure(self.device_choice.itemData(index) or []):
+            self.rows[component["id"]].setCheckState(0, Qt.CheckState.Checked)
+
+    def selection_changed(self, row, column):
+        if column != 0:
+            return
+        key = row.data(0, Qt.ItemDataRole.UserRole)
+        if key in self.rows:
+            if row.checkState(0) == Qt.CheckState.Checked:
+                for dependency in self.catalog[key].get("dependencies", []):
+                    self.rows[dependency].setCheckState(0, Qt.CheckState.Checked)
+            else:
+                for other, component in self.catalog.items():
+                    if key in component.get("dependencies", []):
+                        self.rows[other].setCheckState(0, Qt.CheckState.Unchecked)
+        self.show_details()
 
     def current_id(self):
         row = self.table.currentItem()
@@ -153,6 +190,8 @@ class ComponentPreparationPanel(QWidget):
     def show_details(self, *_args):
         key = self.current_id()
         if key not in self.catalog:
+            self.details.clear()
+            self.install_button.setEnabled(False)
             return
         c = self.catalog[key]
         labels = {"official-domestic": "官方国内下载", "official-direct": "官方直连下载"}
@@ -163,11 +202,16 @@ class ComponentPreparationPanel(QWidget):
         ]
         if c.get("source_page"):
             links.append(f'<a href="{html.escape(c["source_page"], quote=True)}">官方说明</a>')
-        self.details.setHtml(
-            html.escape(c["purpose"]) + "<br>" + " · ".join(links) + "<br>材料准备和组件检测不代表设备验收。"
-        )
+        details = [html.escape(c["purpose"]), " · ".join(links)]
+        result = self.results.get(key, {})
+        if result.get("state") == "prepared" and result.get("path"):
+            details.append("已校验材料：" + html.escape(str(result["path"])))
+            if not c.get("installer_entry"):
+                details.append(html.escape(c["manual_steps"]))
+        self.details.setHtml("<br>".join(details))
         self.install_button.setEnabled(
-            bool(c.get("installer_entry"))
+            key in self.selected()
+            and bool(c.get("installer_entry"))
             and self.results.get(key, {}).get("state") == "prepared"
             and self.inspections.get(key, {}).get("state") != "ok"
             and not self.installing
@@ -175,7 +219,7 @@ class ComponentPreparationPanel(QWidget):
         )
 
     def busy(self):
-        return self.future is not None and not self.future.done()
+        return self.future is not None
 
     def prepare(self):
         if self.busy() or self.installing:
@@ -184,6 +228,13 @@ class ComponentPreparationPanel(QWidget):
         if not ids:
             self.status.setText("请选择所需的设备组件；无需下载全部组件。")
             return
+        if any(self.catalog[key]["detection"].get("runtime_files") for key in ids):
+            try:
+                self.runtime.begin_maintenance()
+            except Exception as exc:
+                self.status.setText(str(exc))
+                return
+            self.preparing_runtime = True
         configs = configured_devices(self.runtime)
         self.cancel_event = threading.Event()
         self.prepare_button.setEnabled(False)
@@ -213,7 +264,7 @@ class ComponentPreparationPanel(QWidget):
                     result = {"passed": True, "state": "complete", "items": []}
                 else:
                     result = self.preparer(
-                        needed, cancel=self.cancel_event, progress=self.signals.progress.emit
+                        needed, satisfied=okay, cancel=self.cancel_event, progress=self.signals.progress.emit
                     )
             except Exception as exc:
                 result = {"passed": False, "state": "error", "error": str(exc)}
@@ -256,7 +307,13 @@ class ComponentPreparationPanel(QWidget):
             self.rows[key].setText(2, text)
             self.rows[key].setToolTip(2, result.get("error", text))
 
+    def release_preparation(self):
+        if self.preparing_runtime:
+            self.runtime.end_maintenance()
+            self.preparing_runtime = False
+
     def completed(self, report):
+        self.release_preparation()
         if self.disposed:
             return
         self.future = None
@@ -274,7 +331,7 @@ class ComponentPreparationPanel(QWidget):
 
     def install(self):
         key = self.current_id()
-        if self.busy() or self.installing or not key:
+        if self.busy() or self.installing or key not in self.selected():
             return
         c = self.catalog[key]
         if not c.get("installer_entry") or self.results.get(key, {}).get("state") != "prepared":
@@ -308,7 +365,7 @@ class ComponentPreparationPanel(QWidget):
                     (m for m in c.get("archive_members", []) if m["path"] == c["installer_entry"]), c
                 )
                 check_file(path, expected)
-                self.signals.installer.emit({"path": path})
+                self.signals.installer.emit({"id": key, "path": path})
             except Exception as exc:
                 self.signals.installer.emit({"error": str(exc)})
 
@@ -322,6 +379,8 @@ class ComponentPreparationPanel(QWidget):
         try:
             if result.get("error"):
                 raise ValueError(result["error"])
+            if result["id"] not in self.selected():
+                raise ValueError("已取消勾选此组件")
             self.launcher(result["path"])
             self.status.setText(
                 "请完成或关闭厂商安装向导，再点击“安装完成，重新检查”。设备连接与扫描保持暂停。"
@@ -331,6 +390,7 @@ class ComponentPreparationPanel(QWidget):
             self.installing = False
             self.prepare_button.setEnabled(True)
             self.status.setText("未启动安装向导：" + str(exc))
+            self.show_details()
 
     def recheck(self):
         if self.busy():
@@ -366,6 +426,7 @@ class ComponentPreparationPanel(QWidget):
         self.disposed = True
         self.cancel_event.set()
         self.worker.shutdown(wait=True, cancel_futures=True)
+        self.release_preparation()
 
 
 def show_preparation(runtime, parent, *, first_run=False):

@@ -8,6 +8,14 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
+ICON_PATH = Path(__file__).parent / "ui/styles/sciagent.ico"
+
+
+def configure_app_icon(app: QApplication) -> None:
+    from PySide6.QtGui import QIcon
+
+    app.setWindowIcon(QIcon(str(ICON_PATH)))
+
 
 def load_stylesheet() -> str:
     stylesheet_path = Path(__file__).parent / "ui" / "styles" / "card_workspace.qss"
@@ -43,7 +51,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="TF LabControl real instrument overview")
     parser.add_argument("--config", type=Path)
     args = parser.parse_args()
+    if sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TF.LabControl.Desktop")
     app = QApplication(sys.argv)
+    configure_app_icon(app)
     app.setApplicationName("TF LabControl")
     app.setFont(QFont(load_ui_font(), 10))
     app.setStyle("Fusion")

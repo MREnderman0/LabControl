@@ -9,6 +9,18 @@ from lab_control.application.runtime import ApplicationRuntime
 from lab_control.domain.instruments import DeviceError
 from lab_control.ui.pages import component_preparation as ui
 
+COMMON = {
+    "msvc-runtime",
+    "rs-visa",
+    "ni-4882",
+    "keysight-iolibs",
+    "ftdi-vcp",
+    "keithley-usb",
+    "wch-ch34x",
+    "silabs-cp210x",
+    "tftpd64",
+}
+
 
 def runtime(root):
     value = SimpleNamespace(
@@ -41,6 +53,8 @@ def test_selection_download_and_explicit_installer_click(qtbot, tmp_path, monkey
     monkeypatch.setattr(ui, "verify_component", lambda *a: {"state": "verified"})
     monkeypatch.setattr(ui, "check_file", lambda *a: None)
     try:
+        assert set(panel.selected()) == COMMON
+        panel.table.topLevelItem(0).setCheckState(0, Qt.CheckState.Unchecked)
         assert panel.selected() == []
         assert calls == opened == []
         panel.prepare()
@@ -119,13 +133,22 @@ def test_busy_session_or_failed_verification_cannot_launch(qtbot, tmp_path, monk
         panel.shutdown()
 
 
-def test_empty_inventory_selects_by_model_without_implicit_download(qtbot, tmp_path):
-    panel = ui.ComponentPreparationPanel(runtime(tmp_path), preparer=lambda *a, **k: pytest.fail("download"))
+@pytest.mark.parametrize("stock", [False, True])
+def test_inventory_only_recommends_models_without_implicit_download(qtbot, tmp_path, stock):
+    rt = runtime(tmp_path)
+    if stock:
+        rt.inventory.all = lambda: [
+            {"config": {"resource": "fixture", "adapter": model, "transport": kind}}
+            for model, kind in (("ni.9230", "nidaqmx"), ("pico.6404e", "pico"), ("thorlabs.pm100d", "pm100d"))
+        ]
+    panel = ui.ComponentPreparationPanel(rt, preparer=lambda *a, **k: pytest.fail("download"))
     qtbot.addWidget(panel)
     try:
-        assert panel.selected() == []
+        assert set(panel.selected()) == COMMON
+        for key in ("ni-daqmx", "pico-sdk", "thorlabs-opm"):
+            assert ("推荐" in panel.rows[key].text(2)) == stock
         panel.device_choice.setCurrentIndex(panel.device_choice.findText("PicoScope 6404E / PicoSDK"))
-        assert set(panel.selected()) == {"msvc-runtime", "pico-sdk"}
+        assert set(panel.selected()) == COMMON | {"pico-sdk"}
         assert not panel.busy()
     finally:
         panel.shutdown()
@@ -189,3 +212,63 @@ def test_runtime_maintenance_reservation_blocks_active_hardware(activity):
         DiscoveryService.scan(rt.discovery)
     rt.end_maintenance()
     assert not rt.sessions.maintenance_active
+
+
+def test_unchecking_prepared_component_blocks_click_and_queued_launch(qtbot, tmp_path, monkeypatch):
+    rt, opened = runtime(tmp_path), []
+    entered, release = threading.Event(), threading.Event()
+
+    def verify(*_args):
+        entered.set()
+        assert release.wait(5)
+        return {"state": "verified"}
+
+    monkeypatch.setattr(ui, "verify_component", verify)
+    monkeypatch.setattr(ui, "check_file", lambda *a: None)
+    panel = ui.ComponentPreparationPanel(rt, inspector=lambda *a, **k: {"items": []}, launcher=opened.append)
+    qtbot.addWidget(panel)
+    try:
+        row = panel.rows["msvc-runtime"]
+        panel.table.setCurrentItem(row)
+        panel.update_item({"id": "msvc-runtime", "state": "prepared"})
+        row.setCheckState(0, Qt.CheckState.Unchecked)
+        panel.install()
+        assert not rt.active and not panel.install_button.isEnabled()
+        row.setCheckState(0, Qt.CheckState.Checked)
+        panel.install_button.click()
+        qtbot.waitUntil(entered.is_set)
+        row.setCheckState(0, Qt.CheckState.Unchecked)
+        release.set()
+        qtbot.waitUntil(lambda: not panel.installing)
+        assert not opened and not rt.active and not panel.install_button.isEnabled()
+    finally:
+        release.set()
+        panel.shutdown()
+
+
+def test_model_dependency_selection_and_iso_instructions(qtbot, tmp_path):
+    calls = []
+    rt = runtime(tmp_path)
+
+    def prepare(ids, **kwargs):
+        calls.append(set(ids))
+        return {"passed": True}
+
+    panel = ui.ComponentPreparationPanel(rt, inspector=lambda *a, **k: {"items": []}, preparer=prepare)
+    qtbot.addWidget(panel)
+    try:
+        panel.table.topLevelItem(0).setCheckState(0, Qt.CheckState.Unchecked)
+        panel.rows["kplusk-python-wrapper"].setCheckState(0, Qt.CheckState.Checked)
+        panel.prepare()
+        qtbot.waitUntil(panel.prepare_button.isEnabled)
+        assert calls == [{"kplusk-library-win", "kplusk-python-wrapper"}]
+        assert not rt.active
+        panel.rows["kplusk-library-win"].setCheckState(0, Qt.CheckState.Unchecked)
+        assert not panel.selected()
+        panel.rows["ni-daqmx"].setCheckState(0, Qt.CheckState.Checked)
+        panel.update_item({"id": "ni-daqmx", "state": "prepared", "path": str(tmp_path / "fixture.iso")})
+        panel.table.setCurrentItem(panel.rows["ni-daqmx"])
+        assert "fixture.iso" in panel.details.toPlainText() and "装载" in panel.details.toPlainText()
+        assert not panel.install_button.isEnabled()
+    finally:
+        panel.shutdown()

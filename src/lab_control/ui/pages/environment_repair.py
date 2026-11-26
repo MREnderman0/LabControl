@@ -35,6 +35,15 @@ LABELS = {
 }
 
 
+MATERIALS = {
+    "verified": "已校验 SHA256",
+    "missing": "缺失",
+    "invalid": "校验失败",
+    "unknown": "待补齐",
+    "not_applicable": "—",
+}
+
+
 class InspectionSignals(QObject):
     progress = Signal(object)
     finished = Signal(object)
@@ -75,7 +84,7 @@ class EnvironmentRepairPanel(QWidget):
         self.plan_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.table = QTreeWidget()
-        self.table.setHeaderLabels(["检查项", "状态", "影响范围", "检查结果"])
+        self.table.setHeaderLabels(["检查项", "本机状态", "安装材料", "适用型号 / 接口", "检查结果"])
         self.table.setRootIsDecorated(False)
         self.table.setMinimumHeight(150)
         self.table.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -162,11 +171,14 @@ class EnvironmentRepairPanel(QWidget):
                 [
                     item["title"],
                     LABELS[item["state"]],
-                    "、".join(item["affected"]) or "软件环境",
+                    MATERIALS.get(item.get("payload", {}).get("state", "not_applicable"), "待核实"),
+                    "、".join(item["affected"])
+                    or ("公共环境" if item.get("scope") == "common" else "软件环境"),
                     item["reason"],
                 ]
             )
-            row.setToolTip(3, item["reason"])
+            row.setToolTip(4, item["reason"])
+            row.setToolTip(3, "、".join(item.get("registered_models", ())) or row.text(3))
             self.table.addTopLevelItem(row)
         if self.table.topLevelItemCount():
             selected_row = self.table.topLevelItem(max(0, min(selected, self.table.topLevelItemCount() - 1)))
@@ -200,15 +212,15 @@ class EnvironmentRepairPanel(QWidget):
             return
         item = items[index]
         payload = item.get("payload", {}).get("state", "not_applicable")
-        material = {
-            "verified": "已校验",
-            "missing": "缺失",
-            "invalid": "校验失败",
-            "unknown": "待补齐",
-            "not_applicable": "不适用",
-        }.get(payload, payload)
+        material = MATERIALS.get(payload, payload)
+        path = item.get("payload", {}).get("path")
+        if path:
+            material += " " + path
+        active = "、".join(item.get("registered_models", ()))
         self.details.setPlainText(
-            f"{item['reason']}\n建议：{item['action']}\n离线材料：{material}　"
+            f"{item['reason']}\n"
+            + (f"已登记型号：{active}\n" if active else "")
+            + f"建议：{item['action']}\n离线材料：{material}　"
             f"管理员权限：{'需要' if item.get('requires_admin') else '不需要'}　"
             f"重启：{'可能需要' if item.get('reboot', 'no') != 'no' else '不需要'}"
         )

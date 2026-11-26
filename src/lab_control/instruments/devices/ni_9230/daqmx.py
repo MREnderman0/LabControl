@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes as ct
 import os
+import struct
 from pathlib import Path
 
 import numpy as np
@@ -59,11 +60,29 @@ ARGS = {
 }
 
 
+def runtime_path() -> Path:
+    return Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "nicaiu.dll"
+
+
+def inspect_component(component: dict) -> tuple[str, str]:
+    from lab_control.application.environment import pe_bits
+
+    path = runtime_path()
+    if not path.is_file():
+        return "missing", f"缺少 {path}"
+    try:
+        if pe_bits(path) != 64:
+            return "incompatible", f"{path} 需要 x64 DLL"
+        Driver()  # Resolves the adapter's exports without calling any DAQmx function.
+    except (DeviceError, ValueError, OSError, struct.error) as exc:
+        return "incompatible", f"{path}: {exc}"
+    return "ok", f"{path}：x64，已解析适配器使用的 {len(ARGS)} 个 DAQmx 函数"
+
+
 class Driver:
     def __init__(self):
         try:
-            dll = Path(os.environ["SystemRoot"]) / "System32" / "nicaiu.dll"
-            self.dll = ct.WinDLL(str(dll))
+            self.dll = ct.WinDLL(str(runtime_path()))
             for name, args in ARGS.items():
                 function = getattr(self.dll, "DAQmx" + name)
                 function.argtypes, function.restype = args, I32

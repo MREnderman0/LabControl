@@ -39,6 +39,8 @@ def parser() -> argparse.ArgumentParser:
     components = sub.add_parser("components", help="Explicit component download/verification; never install")
     components.add_argument("component_action", choices=("list", "prepare", "verify"))
     components.add_argument("--component", action="append", default=[])
+    components.add_argument("--model", action="append", default=[], help="Registered model adapter ID")
+    components.add_argument("--common", action="store_true", help="Include common driver and tool materials")
     components.add_argument("--cache", type=Path)
     components.add_argument("--offline", action="store_true")
     components.add_argument("--report", type=Path)

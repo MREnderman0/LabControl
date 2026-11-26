@@ -15,33 +15,71 @@
   "components": [
     {
       "id": "ni-daqmx",
+      "manual_steps": "在 Windows 中装载已校验的 ISO，按 NI 官方向导安装 64 位 NI-DAQmx；完成后点击重新检查。",
+      "scope": "model",
       "name": "NI-DAQmx",
       "purpose": "NI 9230 (BNC) IEPE acceleration acquisition on USB CompactDAQ",
-      "transports": ["nidaqmx"],
-      "adapters": ["ni.9230"],
+      "transports": [
+        "nidaqmx"
+      ],
+      "adapters": [
+        "ni.9230"
+      ],
       "sdk": "",
       "vendor": "National Instruments",
       "version": "26.8.0 (2026 Q4)",
       "architecture": "x64",
-      "systems": ["Windows 11 x64", "Windows 10 IoT Enterprise 2021 x64"],
+      "systems": [
+        "Windows 11 x64",
+        "Windows 10 IoT Enterprise 2021 x64"
+      ],
       "source_page": "https://www.ni.com/en/support/downloads/drivers/download.ni-daq-mx.html",
       "url": "https://download.ni.com/support/nipkg/products/ni-d/ni-daqmx/26.8/offline/ni-daqmx_26.8.0_offline.iso",
       "filename": "ni-daqmx_26.8.0_offline.iso",
       "size": 3529433088,
       "sha256": "62d34e243173fe034a2452216a9d455f629e3d928e7ebd3672a802ae818af7c0",
-      "signature": {"policy": "official-sha256", "publisher": "National Instruments", "evidence": "Official ISO SHA256 matched; internal Install.exe Authenticode verified in lab."},
-      "redistribution": {"state": "pending", "evidence": null},
-      "detection": {"kind": "pending", "detail": "64-bit System32/nicaiu.dll and real NI-DAQmx model/serial enumeration"},
-      "installation": {"state": "pending", "arguments": null, "order": 0, "success_codes": null, "reboot_codes": null, "requires_admin": true, "reboot": "possible", "evidence": "Lab installation from extracted official ISO and explicit reboot verified. Automated deployment of ISO not qualified."},
+      "signature": {
+        "policy": "official-sha256",
+        "publisher": "National Instruments",
+        "evidence": "Official ISO SHA256 matched; internal Install.exe Authenticode verified in lab."
+      },
+      "redistribution": {
+        "state": "pending",
+        "evidence": null
+      },
+      "detection": {
+        "kind": "model_runtime",
+        "adapter": "ni.9230",
+        "detail": "System32/nicaiu.dll x64 and all adapter exports"
+      },
+      "installation": {
+        "state": "pending",
+        "arguments": null,
+        "order": 0,
+        "success_codes": null,
+        "reboot_codes": null,
+        "requires_admin": true,
+        "reboot": "possible",
+        "evidence": "Lab installation from extracted official ISO and explicit reboot verified. Automated deployment of ISO not qualified."
+      },
       "recovery": "Release this application's DAQ tasks. Preserve shared NI drivers, other active tasks and MAX configuration.",
-      "validation": {"state": "pending", "evidence": "Lab device enumerated and sampled; clean-machine release acceptance pending."},
+      "validation": {
+        "state": "pending",
+        "evidence": "Lab device enumerated and sampled; clean-machine release acceptance pending."
+      },
       "dependencies": [],
-      "download_sources": [{"url": "https://download.ni.com/support/nipkg/products/ni-d/ni-daqmx/26.8/offline/ni-daqmx_26.8.0_offline.iso", "kind": "official-direct"}],
+      "download_sources": [
+        {
+          "url": "https://download.ni.com/support/nipkg/products/ni-d/ni-daqmx/26.8/offline/ni-daqmx_26.8.0_offline.iso",
+          "kind": "official-direct"
+        }
+      ],
       "archive_members": [],
       "installer_entry": null
     },
     {
       "id": "rs-visa",
+      "scope": "common",
       "name": "R&S VISA",
       "purpose": "VISA communication and R&S LAN discovery",
       "transports": [
@@ -71,8 +109,9 @@
         "evidence": null
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Requires verified component-specific detection"
+        "kind": "windows_product",
+        "name_pattern": "(?i)(R&S|Rohde.*Schwarz).*VISA",
+        "system_dll": "visa64.dll"
       },
       "installation": {
         "state": "pending",
@@ -102,6 +141,7 @@
     },
     {
       "id": "pico-sdk",
+      "scope": "model",
       "name": "PicoSDK",
       "purpose": "PicoScope 6404E SDK and USB driver",
       "transports": [
@@ -164,6 +204,7 @@
     },
     {
       "id": "thorlabs-opm",
+      "scope": "model",
       "name": "Thorlabs OPM / TLPMX",
       "purpose": "PM100D optical meter SDK and driver",
       "transports": [
@@ -240,6 +281,8 @@
     },
     {
       "id": "ftdi-vcp",
+      "manual_steps": "按官方说明在设备管理器选择与转换器硬件 ID 匹配的已签名 INF，再点击重新检查。",
+      "scope": "common",
       "name": "FTDI VCP",
       "purpose": "FTDI USB 虚拟串口（含 GPD-4303S）。当前固定材料是已验证 Windows DriverStore 中的 x64 驱动导出，不是厂家原始 ZIP；仅供现有维护缓存和内网复用，官方下载归档仍待补。接入后须核对真实芯片及 VID/PID。",
       "transports": [],
@@ -269,8 +312,19 @@
         "evidence": "FTDI proprietary driver license; genuine FTDI devices only. Local signed-package reuse; public redistribution of this derived export has not been approved."
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Inspect Get-WindowsDriver / pnputil DriverStore version and signed INF/catalog; installed-component detection is not implemented in the application. Matching PnP binding and COM identity require the actual adapter."
+        "kind": "serial_driver",
+        "hardware_ids": [
+          "VID_0403&PID_6001",
+          "VID_0403&PID_601"
+        ],
+        "infs": [
+          "ftdibus.inf",
+          "ftdiport.inf"
+        ],
+        "required_infs": [
+          "ftdibus.inf",
+          "ftdiport.inf"
+        ]
       },
       "installation": {
         "state": "pending",
@@ -381,6 +435,7 @@
     },
     {
       "id": "keithley-usb",
+      "scope": "common",
       "name": "Keithley 2231A / Prolific PL2303 USB serial",
       "purpose": "Keithley 2231A-001 的 Tek 官方支持页指向 Prolific PL2303。安装器 4.10.0.0 在 Windows 11 注册 PL2303G 5.2.12.0 和 HXD/EA/RA/SA 3.9.7.0；旧 HXA/XA、非原厂芯片及实际适配器兼容性仍须核对。",
       "transports": [],
@@ -410,8 +465,17 @@
         "evidence": "Prolific proprietary driver for genuine supported chipsets; final redistribution/license review remains pending."
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Inspect Get-WindowsDriver / pnputil DriverStore version and signed INF/catalog; installed-component detection is not implemented in the application. Matching PnP binding and COM identity require the actual adapter."
+        "kind": "serial_driver",
+        "hardware_ids": [
+          "VID_067B&PID_2303",
+          "VID_067B&PID_23"
+        ],
+        "infs": [
+          "ser2pl.inf",
+          "ser2pl64.inf",
+          "ser2pl_1.inf",
+          "ser2pl_2.inf"
+        ]
       },
       "installation": {
         "state": "pending",
@@ -466,6 +530,13 @@
     },
     {
       "id": "serial-interface",
+      "scope": "common",
+      "members": [
+        "ftdi-vcp",
+        "keithley-usb",
+        "wch-ch34x",
+        "silabs-cp210x"
+      ],
       "name": "Serial interface driver",
       "purpose": "按实际 USB VID/PID 选择串口驱动；已登记 FTDI、Prolific、WCH CH340/CH341 和 CP210x。预装只入库，设备接入后的绑定、COM 号及收发另验。",
       "transports": [],
@@ -493,8 +564,7 @@
         "evidence": null
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Requires verified component-specific detection"
+        "kind": "interface_group"
       },
       "installation": {
         "state": "pending",
@@ -521,6 +591,11 @@
     },
     {
       "id": "gpib-interface",
+      "scope": "common",
+      "members": [
+        "ni-4882",
+        "keysight-iolibs"
+      ],
       "name": "GPIB interface driver",
       "purpose": "按 GPIB 控制器厂家选择 NI-488.2 或 Keysight IO Libraries；两者材料和共存验收仍待补，安装 R&S VISA 本身不能证明任意 USB-GPIB 适配器已可用。",
       "transports": [],
@@ -548,8 +623,7 @@
         "evidence": null
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Requires verified component-specific detection"
+        "kind": "interface_group"
       },
       "installation": {
         "state": "pending",
@@ -573,6 +647,8 @@
     },
     {
       "id": "kplusk-config-tool",
+      "manual_steps": "使用已解压的官方配置工具；按实际设备手动配置。",
+      "scope": "model",
       "name": "K+K FXE Firmware Upload and Configuration Tool",
       "purpose": "USB configuration of K+K FXE static IP, subnet, gateway and device configuration",
       "transports": [
@@ -603,14 +679,12 @@
         "evidence": "K+K Terms of Use 2025-08-07 allow integration into distributed products; release-owner confirmation remains pending"
       },
       "detection": {
-        "kind": "files",
-        "files": [
-          {
-            "name": "tools/kplusk/KK_FirmwareUpload_Win_Ver_5.1.0_25-11-28.zip",
-            "sha256": "95AA33D15C8E13FD8B16075482222BCD9AC2D0D774670B3DAAD5CE4FD8F52D2C"
-          }
+        "kind": "model_runtime",
+        "adapter": "kplusk.fxe",
+        "runtime_files": [
+          "KK_FirmwareUpload_Win32_Ver_5.1.0_25-11-28.exe"
         ],
-        "detail": "Portable Win32 tool; runs on Windows x64 and must be launched only after the user confirms the intended USB device"
+        "config_tool": true
       },
       "installation": {
         "state": "verified",
@@ -655,6 +729,8 @@
     },
     {
       "id": "kplusk-library-win",
+      "manual_steps": "准备时将已校验的 DLL 解压到 K+K 运行目录，点击重新检查。",
+      "scope": "model",
       "name": "K+K KK Library for Windows",
       "purpose": "K+K FXE Ethernet/USB protocol library and native development files",
       "transports": [
@@ -687,14 +763,12 @@
         "evidence": "K+K Terms of Use 2025-08-07 allow integration into distributed products; release-owner confirmation remains pending"
       },
       "detection": {
-        "kind": "files",
-        "files": [
-          {
-            "name": "tools/kplusk/KK-Library_Win_Ver_21.2.2_25-11-28.zip",
-            "sha256": "7F457FA4039B3C4F0B6E16C096650419BEB33ED9115F5A548D3FB7A438EEDB2F"
-          }
-        ],
-        "detail": "Archive contains KK_Library_64.dll, KK_FX80E.dll, kk_library.h and official terms"
+        "kind": "model_runtime",
+        "adapter": "kplusk.fxe",
+        "runtime_files": [
+          "KK_Library_64.dll",
+          "KK_FX80E.dll"
+        ]
       },
       "installation": {
         "state": "verified",
@@ -763,6 +837,8 @@
     },
     {
       "id": "kplusk-python-wrapper",
+      "manual_steps": "准备时将已校验的 wrapper 解压到 K+K 运行目录，点击重新检查。",
+      "scope": "model",
       "name": "K+K Python Native Access Modules",
       "purpose": "Official Python wrapper and examples for KK Library",
       "transports": [
@@ -795,14 +871,11 @@
         "evidence": "K+K Terms of Use 2025-08-07 allow integration into distributed products; release-owner confirmation remains pending"
       },
       "detection": {
-        "kind": "files",
-        "files": [
-          {
-            "name": "tools/kplusk/PythonModules_2.1.zip",
-            "sha256": "56C2BBFD51320F593DCC92429706D2B2DE0A91A715D38026102B123587646EB0"
-          }
-        ],
-        "detail": "Official wrapper archive; native DLL remains a separate KK Library payload"
+        "kind": "model_runtime",
+        "adapter": "kplusk.fxe",
+        "runtime_files": [
+          "kklib.py"
+        ]
       },
       "installation": {
         "state": "verified",
@@ -867,6 +940,7 @@
     },
     {
       "id": "tserve",
+      "scope": "model",
       "name": "TimeLab / TSERVE64 / 53100A USB driver",
       "purpose": "53100A command/data server",
       "transports": [
@@ -957,6 +1031,7 @@
     },
     {
       "id": "tftpd64",
+      "scope": "common",
       "name": "Tftpd64 DHCP",
       "purpose": "Dedicated lab Ethernet DHCP service; other services disabled",
       "transports": [],
@@ -984,8 +1059,8 @@
         "evidence": "Official v4.74 archives include EUPL-EN.pdf; final redistribution/source-availability review remains pending."
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Verify the service executable/version, effective INI source, DHCP-only service, scoped UDP/67 firewall, persistent lab address and pool exclusions. On multi-address Ethernet, validate DHCP LocalIP receive-interface filtering separately from the offered subnet and server identifier; require an actual OFFER and target-device lease before reporting network readiness."
+        "kind": "dhcp_service",
+        "detail": "Read service binary path and version. Lab network configuration and leases require separate verification."
       },
       "installation": {
         "state": "pending",
@@ -1019,6 +1094,7 @@
     },
     {
       "id": "msvc-runtime",
+      "scope": "common",
       "name": "Microsoft VC++ x64 runtime",
       "purpose": "Native Qt/SDK runtime dependencies",
       "transports": [],
@@ -1090,6 +1166,8 @@
     },
     {
       "id": "wch-ch34x",
+      "manual_steps": "按 WCH 说明使用已解压的匹配驱动，完成后点击重新检查。",
+      "scope": "common",
       "name": "WCH CH340/CH341 serial driver",
       "purpose": "CH340/CH341 USB 转串口预安装；使用官方国内站 4.0 包中的 Windows 10/11 INF，驱动版本 4.0.2026.02。不能覆盖 CH343/CH9102 等其他芯片系列。",
       "transports": [],
@@ -1117,8 +1195,14 @@
         "evidence": "WCH proprietary driver; official download page describes application bundling. Final redistribution/license review remains pending."
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Inspect Get-WindowsDriver / pnputil DriverStore version and signed INF/catalog; installed-component detection is not implemented in the application. Matching PnP binding and COM identity require the actual adapter."
+        "kind": "serial_driver",
+        "hardware_ids": [
+          "VID_1A86&PID_7523",
+          "VID_1A86&PID_5523"
+        ],
+        "infs": [
+          "ch341ser.inf"
+        ]
       },
       "installation": {
         "state": "pending",
@@ -1327,6 +1411,8 @@
     },
     {
       "id": "silabs-cp210x",
+      "manual_steps": "按 Silicon Labs 说明解包，选择与转换器匹配的签名驱动后重新检查。",
+      "scope": "common",
       "name": "Silicon Labs CP210x VCP",
       "purpose": "CP210x USB 转串口预安装。采用微软官方更新目录分发的 11.5.0.417 包，含 CP210x/CP2105/CP2108 默认 VID/PID；与厂商网站 11.6.0 ZIP 区分，后者当前直连返回 403。CAB 仅准备材料，须由维护人员验证解包后的 WHQL 目录并预装 INF；接入验收另行进行。",
       "transports": [],
@@ -1354,8 +1440,14 @@
         "evidence": "Silicon Labs proprietary VCP driver; sourced from Microsoft Update Catalog. Public redistribution approval/license review remains pending."
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Get-WindowsDriver / pnputil DriverStore: Silicon Laboratories Inc., silabser.inf 11.5.0.417; actual adapter VID/PID and PnP binding remain pending."
+        "kind": "serial_driver",
+        "hardware_ids": [
+          "VID_10C4&PID_EA60",
+          "VID_10C4&PID_EA70"
+        ],
+        "infs": [
+          "silabser.inf"
+        ]
       },
       "installation": {
         "state": "pending",
@@ -1389,6 +1481,8 @@
     },
     {
       "id": "ni-4882",
+      "manual_steps": "核对控制器和 Windows 支持版本，装载 ISO 后按 NI 向导安装，再点击重新检查。",
+      "scope": "common",
       "name": "NI-488.2 GPIB",
       "purpose": "NI GPIB 控制器备选驱动。2026 Q4 官方清单支持 Windows 11；不要登记为普通 Windows 10 的默认依赖。已在一台 Windows 11 安装，重启后运行及具体适配器支持仍待验证。",
       "transports": [],
@@ -1415,8 +1509,9 @@
         "evidence": null
       },
       "detection": {
-        "kind": "pending",
-        "detail": "维护核验可读取 NIPM list-installed 中 ni-488.2、ni-488.2-runtime、ni-488.2-utilities，并核对 System32/ni4882.dll；公共自动检测尚未实现，文件存在不等于驱动可用。"
+        "kind": "windows_product",
+        "name_pattern": "(?i)^NI[- ]488\\.2",
+        "system_dll": "ni4882.dll"
       },
       "installation": {
         "state": "pending",
@@ -1447,6 +1542,8 @@
     },
     {
       "id": "keysight-iolibs",
+      "manual_steps": "按 Keysight 官方向导选择当前控制器并检查与已有 VISA 的共存，完成后重新检查。",
+      "scope": "common",
       "name": "Keysight IO Libraries Suite",
       "purpose": "Keysight USB/GPIB 控制器备选套件（2026 Update 1）。官方页面已核对版本及 SHA256，但当前下载入口未取得安装包，未安装；须验证与已有 R&S VISA 的共存，不能替换现有 VISA 或启用未要求的远程服务。",
       "transports": [],
@@ -1474,8 +1571,8 @@
         "evidence": null
       },
       "detection": {
-        "kind": "pending",
-        "detail": "Requires verified component-specific detection"
+        "kind": "windows_product",
+        "name_pattern": "(?i)Keysight IO Libraries Suite"
       },
       "installation": {
         "state": "pending",
@@ -1499,10 +1596,14 @@
     },
     {
       "id": "liquid-moku-desktop",
+      "manual_steps": "按 Liquid Instruments 官方向导安装桌面客户端，完成后重新检查。",
+      "scope": "model",
       "name": "Liquid Instruments Moku 桌面上位机",
       "purpose": "Moku:Pro 可选厂商上位机，用于首次手工部署和备份四槽；日常项目使用 REST 4.4 和 mDNS，无需打开上位机或安装 MokuCLI。只准备 Windows 客户端，不改仪器固件。",
       "transports": [],
-      "adapters": ["liquid.moku_pro"],
+      "adapters": [
+        "liquid.moku_pro"
+      ],
       "sdk": "",
       "vendor": "Liquid Instruments",
       "version": "4.4 (20349)",
@@ -1527,8 +1628,8 @@
         "evidence": "厂商使用条款：https://liquidinstruments.com/terms-of-use/ ；未核实离线再分发授权。"
       },
       "detection": {
-        "kind": "pending",
-        "detail": "材料准备不证明 Windows 已安装或 Moku:Pro 已连接。"
+        "kind": "windows_product",
+        "name_pattern": "(?i)^Moku(?::? ?Lab| ?Desktop)?(?:\\s|$)"
       },
       "installation": {
         "state": "pending",

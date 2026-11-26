@@ -28,7 +28,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-lab_control = ["ui/styles/*.qss", "agent/*.ps1", "py.typed"]
+lab_control = ["ui/styles/*.qss", "ui/styles/*.ico", "agent/*.ps1", "py.typed"]
 "lab_control.instruments.devices" = ["*/*.md", "*/hardware/*.md", "*/tests/fixtures/*.json"]
 
 [tool.setuptools.data-files]

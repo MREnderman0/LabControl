@@ -6,7 +6,7 @@ from lab_control.domain.processing import ProcessingProfile
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation, DeviceModel
 
 from .adapter import CATEGORY, ID, Adapter, Discovery, capability_schema
-from .daqmx import MODEL
+from .daqmx import MODEL, inspect_component
 
 
 def readonly_check(*args, **kwargs):
@@ -34,6 +34,7 @@ DEFINITION = DeviceDefinition(
         "NI-DAQmx C API 26.8",
         "scalar",
     ),
+    inspect_component=inspect_component,
     factory=Adapter,
     capability_schema=capability_schema,
     discovery_factory=Discovery,

@@ -55,7 +55,7 @@ def export_report(report: dict, path: Path) -> None:
 def plan_repair(report: dict) -> dict:
     actions = []
     for item in report.get("items", []):
-        if item["state"] in {"ok", "not_required"}:
+        if item["state"] in {"ok", "not_required"} or not item.get("required", True):
             continue
         actions.append(
             {
@@ -105,6 +105,38 @@ def expected_versions() -> dict[str, str]:
     else:
         return {}
     return {item["name"].lower(): item["version"] for item in packages}
+
+
+def _inspect_sdk_routes(component: dict, configs) -> tuple[str, str]:
+    from lab_control.application.environment import SDK_LIBRARIES, dependency_diagnostics
+
+    routes = {c.transport for c in configs if c.transport in component["transports"]}
+    kinds = tuple(sorted(routes or {component["sdk"]}))
+    checks = dependency_diagnostics(configs, sdk_kinds=kinds)["sdk"]
+    states, evidence = [], []
+    for kind in kinds:
+        detail = checks[kind]
+        libs = detail["libraries"]
+        explicit = {c.sdk_path for c in configs if c.transport == kind and c.sdk_path}
+        automatic = any(c.transport == kind and not c.sdk_path for c in configs) or not routes
+        if automatic:
+            default = next((entry for entry in libs if entry.get("bits") == 64), None)
+            if default:
+                explicit.add(default["path"])
+        selected = [entry for entry in libs if entry["path"] in explicit]
+        state = detail["state"]
+        if any(entry["state"] != "loadable" for entry in selected):
+            state = next(entry["state"] for entry in selected if entry["state"] != "loadable")
+        states.append(state)
+        evidence.append(
+            f"{kind} ({SDK_LIBRARIES[kind][0]})："
+            + (
+                "；".join(entry["path"] + " " + (entry.get("error") or entry["state"]) for entry in libs)
+                or "缺少 x64 DLL"
+            )
+        )
+    state = "incompatible" if "error" in states else "missing" if "missing" in states else "ok"
+    return state, "；".join(evidence)
 
 
 def inspect_environment(
@@ -185,11 +217,12 @@ def inspect_environment(
     except (OSError, ValueError, KeyError) as exc:
         expected = {}
         add("versions", "发行版本清单", "error", str(exc), "使用同版本安装包修复版本清单")
-    for name in {**manifest["python_roots"], **manifest.get("python_transitive_roots", {})}:
+    for name, module in {**manifest["python_roots"], **manifest.get("python_transitive_roots", {})}.items():
         if cancel.is_set():
             return finish()
         try:
             version = importlib.metadata.version(name)
+            importlib.import_module(module)
             wanted = expected.get(name.lower())
             state = "ok" if version == wanted else "incompatible" if wanted else "unknown"
             add(
@@ -199,20 +232,36 @@ def inspect_environment(
                 f"检测版本 {version}；发行要求 {wanted or '待核实'}",
                 "使用同版本离线安装包修复应用运行库",
             )
-        except importlib.metadata.PackageNotFoundError:
+        except importlib.metadata.PackageNotFoundError as exc:
             add(
                 "python:" + name,
                 name,
                 "missing",
-                "运行包或版本元数据缺失",
+                f"运行包或版本元数据缺失：{exc}",
+                "使用同版本离线安装包修复应用运行库",
+            )
+        except Exception as exc:
+            add(
+                "python:" + name,
+                name,
+                "error",
+                f"导入 {module} 失败：{exc}",
                 "使用同版本离线安装包修复应用运行库",
             )
     try:
-        from lab_control.app import load_stylesheet
+        from PySide6.QtGui import QImageReader
+
+        from lab_control.app import ICON_PATH, load_stylesheet
+        from lab_control.instruments.devices.catalog import load_definitions
+
+        if QImageReader(str(ICON_PATH)).read().isNull():
+            raise ValueError("无法解码应用图标：" + str(ICON_PATH))
+        if not load_definitions():
+            raise ValueError("无法读取仪器型号注册")
 
         if not load_stylesheet().strip():
             raise ValueError("主题文件为空")
-        add("resources", "应用资源", "ok", "主题和型号注册可读取", "使用同版本离线安装包修复应用文件")
+        add("resources", "应用资源", "ok", "主题、图标和型号注册可读取", "使用同版本离线安装包修复应用文件")
     except Exception as exc:
         add("resources", "应用资源", "error", str(exc), "使用同版本离线安装包修复应用文件")
     try:
@@ -276,74 +325,34 @@ def inspect_environment(
             "当前连接未启用实验网络",
             "按实际设备路线启用",
         )
-    for component in manifest["components"]:
+    from lab_control.deployment.file_components import inspect_files_usb
+    from lab_control.deployment.windows import inspect_dhcp, inspect_product, inspect_serial
+    from lab_control.instruments.devices.catalog import load_definitions
+
+    definitions = load_definitions()
+    entries = manifest["components"]
+    groups = {c["id"]: c["members"] for c in entries if c.get("members")}
+    folders = caches if caches is not None else cache_directories()
+    registered = {c.adapter for c in configs if c.transport != "mock"}
+    # Evaluate concrete drivers first so interface rows can report each alternative.
+    items: dict[str, dict] = {}
+    for component in sorted(entries, key=lambda c: bool(c.get("members"))):
         if cancel.is_set():
             return finish()
         key = component["id"]
-        affected = sorted(
-            {
-                c.adapter or c.transport
-                for c in configs
-                if (c.transport in component["transports"] or c.adapter in component["adapters"])
-            }
-        ) or (["实验网络发现"] if key == "rs-visa" and lan else component["adapters"])
-        if key not in needed:
-            add(
-                key,
-                component["name"],
-                "not_required",
-                "当前设备与连接方式未需要",
-                "需要时由安装包准备",
-                affected,
-            )
-            continue
-        state, reason = "unknown", "已记录需求；安装检测与目标版本兼容性尚待核实"
-        if component["detection"].get("kind") == "files_usb":
-            try:
-                from lab_control.deployment.file_components import inspect_files_usb
-
-                state, reason = inspect_files_usb(
-                    component["detection"], tuple(c for c in configs if c.adapter in component["adapters"])
-                )
-            except Exception as exc:
-                state, reason = "error", str(exc)
-        elif key == "rs-visa":
-            # PyVISA ResourceManager may be shared with active sessions: do not create/close one.
-            try:
-                from pyvisa.ctwrapper.highlevel import IVIVisaLibrary
-
-                paths = [str(path) for path in IVIVisaLibrary.get_library_paths()]
-                state, reason = (
-                    "unknown",
-                    "VISA 库候选：" + ", ".join(paths) + "；未打开资源管理器，实际加载及版本待核实",
-                )
-            except Exception as exc:
-                state, reason = "unknown", str(exc)
-        elif component["sdk"]:
-            from lab_control.application.environment import dependency_diagnostics
-
-            checks = dependency_diagnostics(
-                configs,
-                sdk_kinds=(
-                    ("pm100d" if any(c.transport == "pm100d" for c in configs) else component["sdk"]),
-                ),
-            )["sdk"]
-            # K+K uses its own Python wrapper and adjacent DLLs rather than
-            # the generic VendorLibrary SDK table.  Keep the inspection
-            # report usable when a model-specific SDK has no generic checker;
-            # an empty mapping is an unresolved check, not a crash.
-            detail = next(iter(checks.values()), None)
-            if detail is None:
-                state = "unknown"
-                reason = f"SDK {component['sdk']} 未登记通用 DLL 检测器；由型号包运行时路径单独核验"
-            else:
-                state = {"loadable": "unknown", "missing": "missing", "error": "incompatible"}[
-                    detail["state"]
-                ]
-                reason = (
-                    "DLL 检查：" + json.dumps(detail, ensure_ascii=False) + "；驱动版本与实机兼容性须另行核实"
-                )
-        elif key == "msvc-runtime":
+        kind = component["detection"]["kind"]
+        aliases = {group for group, members in groups.items() if key in members}
+        applicable = {
+            d.adapter_id
+            for d in definitions.values()
+            if aliases.union({key}).intersection(d.deployment_components)
+        }
+        applicable.update(component["adapters"])
+        if kind == "model_runtime":
+            applicable.add(component["detection"]["adapter"])
+        affected = sorted(applicable)
+        state, reason = "unknown", "缺少可核验的安装信息"
+        if key == "msvc-runtime":
             vc = windows.get("vc_runtime") or {}
             if vc.get("Installed") == 1:
                 actual = _version_tuple(vc.get("Version"))
@@ -360,13 +369,46 @@ def inspect_environment(
                 state, reason = "missing", vc.get("vc_runtime_error", "未检测到已安装的 VC++ x64 运行库")
             else:
                 state, reason = "unknown", windows.get("vc_runtime_error", "无法核实 VC++ 运行库")
-        elif key in {"ftdi-vcp", "keithley-usb", "serial-interface", "gpib-interface"}:
-            drivers = windows.get("drivers", [])
-            reason = f"已记录 {len(drivers)} 条相关 PnP 驱动信息；需要按实际接口硬件 ID 核实版本"
-        payload = payload_status(component, caches if caches is not None else cache_directories(), cancel)
+        else:
+            try:
+                if kind == "interface_group":
+                    members = [items[k] for k in groups[key]]
+                    evidence = {
+                        "ok": "已检测",
+                        "missing": "缺失",
+                        "unknown": "待核实",
+                        "incompatible": "不兼容",
+                        "error": "检查失败",
+                    }
+                    reason = "；".join(
+                        f"{m['title']}：{evidence.get(m['state'], m['state'])}" for m in members
+                    )
+                    states = {m["state"] for m in members}
+                    state = "ok" if "ok" in states else "missing" if states == {"missing"} else "unknown"
+                elif kind == "model_runtime":
+                    model = definitions.get(component["detection"]["adapter"])
+                    if model and model.inspect_component:
+                        state, reason = model.inspect_component(component)
+                    else:
+                        reason = "缺少已登记型号的运行库检测入口"
+                elif kind == "files_usb":
+                    state, reason = inspect_files_usb(
+                        component["detection"], tuple(c for c in configs if c.adapter in applicable)
+                    )
+                elif kind == "serial_driver":
+                    state, reason = inspect_serial(component, windows)
+                elif kind == "windows_product":
+                    state, reason = inspect_product(component, windows)
+                elif kind == "dhcp_service":
+                    state, reason = inspect_dhcp(component, windows)
+                elif kind == "sdk":
+                    state, reason = _inspect_sdk_routes(component, configs)
+            except Exception as exc:
+                state, reason = "error", str(exc)
+        payload = {"state": "not_applicable"} if key in groups else payload_status(component, folders, cancel)
         if cancel.is_set():
             return finish()
-        action = "使用离线维护组件检测并准备匹配版本；当前不执行安装"
+        action = component.get("manual_steps") or "在组件准备页勾选实际使用的驱动，安装后重新检查"
         requires_admin = component["installation"]["requires_admin"]
         reboot = component["installation"]["reboot"]
         if key == "msvc-runtime" and state == "ok":
@@ -380,8 +422,12 @@ def inspect_environment(
             reason,
             action,
             affected,
+            required=key in needed,
+            scope=component["scope"],
+            registered_models=sorted(applicable & registered),
             payload=payload,
             requires_admin=requires_admin,
             reboot=reboot,
         )
+        items[key] = report["items"][-1]
     return finish()
