@@ -119,6 +119,36 @@ def test_stale_frame_tags_unlock_only_on_fresh_scale(scope, qtbot, writes):
     assert writes[-1].parameters["value"] == pytest.approx(levels[0] * 1.0)
 
 
+def test_eye_hides_only_the_trace_during_recording(scope, qtbot, writes, monkeypatch):
+    _, page, runtime, key, _ = scope
+    plot = show_trace(scope, qtbot, live=True)
+    page.record()
+    qtbot.waitUntil(lambda: runtime.monitoring.snapshots()[key]["recording"])
+    eye = plot.channel_cards[1].eye
+    frame = plot.displayed_frame
+    curve_key = next(key for key in plot.curves if key[0] == 1)
+    task = runtime.monitoring.tasks[key]
+    channels = task.requests[0].channels
+    assert 1 in channels and eye.isEnabled()
+    eye.click()
+    qtbot.waitUntil(lambda: plot.displayed_frame is not frame, timeout=6000)
+    assert task is runtime.monitoring.tasks[key] and task.running
+    assert task.requests[0].channels == channels and 1 in page.controls.channels()
+    assert not plot.curves[curve_key].isVisible() and not plot.ground_tags[1].isVisible()
+    assert any(m.channel == 1 for m in plot.displayed_frame.batch.measurements)
+    saved = []
+    monkeypatch.setattr(page, "save_frame", lambda device, mode, frame: saved.append(frame))
+    snapshot = page.export_snapshot()
+    assert all(name != "CH1" for name, *_ in snapshot.curves)
+    snapshot.save_raw()
+    assert any(m.channel == 1 for m in saved[0].batch.measurements)
+    assert runtime.monitoring.snapshots()[key]["recording"]
+    assert "记录中" in page.status.text()
+    eye.click()
+    assert plot.curves[curve_key].isVisible() and plot.ground_tags[1].isVisible()
+    assert not writes
+
+
 def test_visible_switch_tracks_silent_readback(qtbot):
     from PySide6.QtCore import QSignalBlocker
 

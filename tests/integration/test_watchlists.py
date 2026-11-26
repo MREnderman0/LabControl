@@ -1,7 +1,8 @@
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.application.watchlists import Preset, Presets, WatchRow, bounds_status
@@ -59,6 +60,7 @@ def workspace(tmp_path, qtbot):
         yield window, rt, page, meter, scope
     finally:
         page.shutdown()
+        window.watch_hub.close()
         window.timer.stop()
         window.controller.close()
         rt.close()
@@ -85,7 +87,13 @@ def test_windows_share_task_order_and_thresholds(workspace, qtbot):
     task = rt.monitoring.tasks[meter]
     assert task.watch_owned and len(task.requests) == 1 and task.requests[0].channels == (101, 204)
     assert hub.status["extra"] == "高于上限"
+    (alarm,) = win.chrome.watchlist_alarms()
+    assert alarm["device_id"] == meter and "204" in alarm["detail"]
+    assert alarm["value"] == "22.000001 °C" and alarm["limit"] == "上限 22 °C"
     model = page.table.model
+    assert model.setData(model.index(1, 5), "23")
+    qtbot.waitUntil(lambda: hub.status[rows[1].id] == "低于下限")
+    assert {item["limit"] for item in win.chrome.watchlist_alarms()} == {"下限 23 °C", "上限 22 °C"}
     assert model.setData(model.index(1, 5), "22.000001")
     assert model.setData(model.index(1, 6), "22.000001")
     assert not model.setData(model.index(1, 5), "23")
@@ -100,6 +108,7 @@ def test_windows_share_task_order_and_thresholds(workspace, qtbot):
     popup.close()
     qtbot.waitUntil(lambda: not task.running)
     assert rt.monitoring.stop_revision(meter) == 0
+    assert win.chrome.watchlist_alarms() == []
 
 
 def test_ongoing_scope_and_recording_take_priority(workspace, qtbot, monkeypatch):
@@ -175,8 +184,6 @@ def test_disconnect_reconnect_keeps_timestamp_and_preset_order(workspace, qtbot)
     hub.presets.update(first.id, name="温度读数")
     hub.changed.emit()
     assert "温度读数" in popup.windowTitle()
-    from PySide6.QtCore import QModelIndex
-
     assert page.list.model().moveRows(QModelIndex(), 1, 1, QModelIndex(), 0)
     assert [p.id for p in Presets(rt.repository).items] == [second.id, first.id]
     rt.monitoring.stop(meter).result(5)
@@ -350,3 +357,202 @@ def test_signal_picker_starts_collapsed_and_search_preserves_checks(workspace, q
     assert signal.checkState(0) == Qt.CheckState.Checked
     picker.accept()
     assert len(picker.result_rows) == 1 and picker.result_rows[0].metric == "rms"
+
+
+def test_pinning_preserves_manual_order_and_preset_identity(workspace, monkeypatch):
+    from lab_control.ui.widgets.popup_surface import WorkspaceMenu
+
+    win, rt, page, _, _ = workspace
+    hub = page.hub
+    a, b, c, d = (Preset(name) for name in "ABCD")
+    hub.save((a, b, c, d))
+
+    def order():
+        return [page.key(page.list.item(i)) for i in range(page.list.count())]
+
+    def menu_action(label):
+        monkeypatch.setattr(
+            WorkspaceMenu, "exec", lambda m, _: next(x for x in m.actions() if x.text() == label)
+        )
+        page.menu(page.list.visualItemRect(page.list.currentItem()).center())
+
+    page.pin_button.click()
+    page.select_id(b.id)
+    assert hub.presets.pinned.id == a.id and page.pin_button.text() == "置顶到首页"
+    page.pin_button.click()
+    assert order() == [b.id, a.id, c.id, d.id] and page.pin_button.text() == "取消置顶"
+    assert [not page.list.item(i).icon().isNull() for i in range(4)] == [True, False, False, False]
+    assert page.list.model().moveRows(QModelIndex(), 3, 1, QModelIndex(), 1)
+    assert order() == [b.id, d.id, a.id, c.id]
+    assert page.list.model().moveRows(QModelIndex(), 2, 1, QModelIndex(), 0)
+    assert order() == [b.id, a.id, d.id, c.id]
+    page.select_id(b.id)
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("已改名", True))
+    menu_action("重命名")
+    assert hub.presets.pinned.name == "已改名"
+    menu_action("复制预设")
+    clone = hub.presets.get(page.key(page.list.currentItem()))
+    assert clone.id != b.id and not clone.pinned and clone.name == "已改名 副本"
+    assert Presets(rt.repository).pinned.id == b.id
+    page.select_id(b.id)
+    page.pin_button.click()
+    assert order() == [a.id, b.id, d.id, c.id, clone.id]
+    assert Presets(rt.repository).pinned is None
+    win.navigate("首页")
+    card = win.overview_side.watch_card
+    assert card.empty.isVisible() and "选择" in card.empty.text()
+    card.open_button.click()
+    page.pin_button.click()
+    win.navigate("首页")
+    assert card.preset_name.text() == "已改名" and "添加" in card.empty.text()
+    card.open_button.click()
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    menu_action("删除预设")
+    win.navigate("首页")
+    assert card.empty.isVisible() and "选择" in card.empty.text()
+    assert Presets(rt.repository).pinned is None
+
+
+def test_home_readings_share_live_task_and_alarm_state(workspace, qtbot):
+    from lab_control.ui.pages.watch_table import PresetTable
+
+    win, rt, page, meter, _ = workspace
+    hub = page.hub
+    spec = hub.catalog(meter)[1][("reading", "", "")]
+    rows = tuple(replace(spec.row(win.controller.records[meter], 204, {}), upper=22) for _ in range(40))
+    first, other = Preset("试验箱温度", rows, pinned=True), Preset("另一组")
+    hub.save([other, first])
+    page.select_id(first.id)
+    dlg = page.open_window(first.id)
+    detached = dlg.findChild(PresetTable)
+    qtbot.waitUntil(lambda: hub.status.get(rows[0].id) == "高于上限")
+    task = rt.monitoring.tasks[meter]
+    win.navigate("首页")
+    card = win.overview_side.watch_card
+    assert card.isVisible() and card.model.preset == first.id and card.preset_name.text() == first.name
+    qtbot.waitUntil(lambda: card.list.verticalScrollBar().maximum() > 0)
+    assert hub.views == {card: first.id, detached: first.id}
+    assert card.model.rows == rows
+    for col in (0, 1, 2, 3, 4, 7, 8):
+        assert card.model.index(0, col).data() == detached.model.index(0, col).data()
+    assert "高于上限" in card.model.index(0, 0).data(Qt.ItemDataRole.AccessibleTextRole)
+    assert card.model.index(0, 3).data(Qt.ItemDataRole.ForegroundRole) == detached.model.index(0, 8).data(
+        Qt.ItemDataRole.ForegroundRole
+    )
+    assert len(win.chrome.watchlist_alarms()) == len(rows)
+    win.refresh()
+    alert_count = win._overview.alert_count
+    assert "40" in alert_count.text()
+    qtbot.waitUntil(lambda: alert_count.width() >= alert_count.sizeHint().width())
+    dlg.close()
+    assert hub.views == {card: first.id} and task.running
+    assert rt.monitoring.tasks[meter] is task and len(task.requests) == 1
+    rt.monitoring.stop(meter).result(5)
+    with rt.monitoring.lock:
+        for key, frame in tuple(task.frames.items()):
+            task.frames[key] = replace(frame, received_at=frame.received_at - 120)
+    hub.tick()
+    assert card.model.index(0, 8).data() == "已过期"
+    assert win.chrome.watchlist_alarms() == []
+    rt.sessions.disconnect(meter)
+    win.controller.poll()
+    qtbot.waitUntil(lambda: card.model.index(0, 8).data() == "断线")
+    assert win.chrome.watchlist_alarms() == []
+    rt.connect(meter).result(5)
+    win.controller.poll()
+    qtbot.waitUntil(lambda: card.model.index(0, 8).data() == "高于上限")
+    page.select_id(other.id)
+    task = rt.monitoring.tasks[meter]
+    card.open_button.click()
+    assert page.isVisible() and page.key(page.list.currentItem()) == first.id
+    assert hub.views == {page.table: first.id}
+    win.controller.poll()
+    assert rt.monitoring.tasks[meter] is task and task.running
+    page.select_id(other.id)
+    qtbot.waitUntil(lambda: not task.running)
+
+
+def test_home_loads_persisted_pin_without_opening_editor(tmp_path, qtbot):
+    original = ApplicationRuntime(root=tmp_path, hardware=False)
+    try:
+        original.repository.save_workspace(Presets.key, [{"name": "旧预设", "id": "legacy", "rows": []}])
+        presets = Presets(original.repository)
+        assert presets.pinned is None
+        meter = original.add(ConnectionConfig("mock://startup-meter", "keysight.3458a", "mock"))
+        row = WatchRow(meter, "", "keysight.3458a", 1, "reading", "读数", upper=0)
+        presets.save((*presets.items, Preset("启动读数", (row,), id="home")))
+        presets.pin("home")
+    finally:
+        original.close()
+    rt = ApplicationRuntime(root=tmp_path, hardware=False)
+    rt.sessions.factory = SimulatedInstrument
+    try:
+        rt.connect(meter).result(5)
+        win = RealWindow(rt)
+        qtbot.addWidget(win)
+        win.show()
+        try:
+            card = win.overview_side.watch_card
+            assert win.current_module == "首页" and ("监视列表", "") not in win.page_map
+            qtbot.waitUntil(lambda: card.model.index(0, 8).data() == "高于上限", timeout=8000)
+            assert win.chrome.watchlist_alarms()[0]["preset_id"] == "home"
+            qtbot.mouseClick(win._overview.alert_count, Qt.MouseButton.LeftButton)
+            assert win.stack.currentWidget().table.model.preset == "home"
+            win.navigate("首页")
+            win.chrome.alerts.click()
+            assert win.stack.currentWidget().table.model.preset == "home"
+        finally:
+            win.close()
+            qtbot.waitUntil(lambda: win.closing, timeout=8000)
+    finally:
+        rt.close()
+
+
+def test_home_cards_share_available_height_and_scroll_independently(workspace, qtbot, monkeypatch):
+    win, _, page, meter, _ = workspace
+    win.navigate("首页")
+    win.timer.stop()
+    win.controller.timer.stop()
+    side = win.overview_side
+    card = side.watch_card
+    side.refresh({})
+    win.resize(1330, 780)
+    qtbot.waitUntil(lambda: abs(card.height() - side.tasks.height()) <= 1)
+    heights = (card.height(), side.tasks.height())
+    assert card.title.text() == "状态监视" and side.tasks.title.text() == "采集任务"
+    assert side.task_empty.isVisible()
+    rows = tuple(WatchRow("offline", "", "meter", ch, "reading", "电压") for ch in range(1, 26))
+    page.hub.save([Preset("全部测点", rows, pinned=True)])
+    tasks = {}
+    for index in range(15):
+        key = f"scroll-{index:02}"
+        monkeypatch.setitem(win.controller.records, key, dict(win.controller.records[meter], id=key))
+        tasks[key] = {"running": True}
+    side.refresh(tasks)
+    reads = card.list.verticalScrollBar()
+    jobs = side.task_scroll.verticalScrollBar()
+    qtbot.waitUntil(lambda: reads.maximum() > 0 and jobs.maximum() > 0)
+    assert (card.height(), side.tasks.height()) == heights
+    assert side.task_count.text() == "15 个运行中"
+    assert [row.device_id for row in side.task_rows if row.isVisible()] == list(tasks)
+    reads.setValue(reads.maximum())
+    assert jobs.value() == 0
+    side.task_scroll.ensureWidgetVisible(side.task_rows[-1])
+    assert jobs.value() > 0 and reads.value() == reads.maximum()
+    side.refresh(tasks)
+    assert jobs.value() > 0 and reads.value() == reads.maximum()
+    first = next(iter(tasks))
+    side.refresh({first: {"running": True}})
+    qtbot.waitUntil(lambda: jobs.maximum() == 0)
+    assert (card.height(), side.tasks.height()) == heights
+    assert [row.device_id for row in side.task_rows if row.isVisible()] == [first]
+    assert card.geometry().bottom() < side.tasks.geometry().top()
+    assert side.tasks.geometry().bottom() == side.height() - 1
+    win.resize(1440, 960)
+    qtbot.waitUntil(lambda: card.height() > heights[0] and side.tasks.height() > heights[1])
+    assert abs(card.height() - side.tasks.height()) <= 1
+    assert side.tasks.geometry().bottom() == side.height() - 1
+    win.resize(1280, 760)
+    qtbot.waitUntil(lambda: card.height() < heights[0] and side.tasks.height() < heights[1])
+    assert abs(card.height() - side.tasks.height()) <= 1
+    assert card.list.verticalScrollBar().maximum() > 0

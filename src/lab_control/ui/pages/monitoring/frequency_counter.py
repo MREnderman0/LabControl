@@ -19,12 +19,13 @@ from lab_control.application.catalog import mode_applicable
 from lab_control.application.controls import DataSource
 from lab_control.domain.instruments import AcquisitionRequest, DeviceError
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
+from lab_control.ui.kit import PageHeader
 from lab_control.ui.pages.monitoring.channel_selection import selected_input, selection_key, single_input
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.frame import (
     chart_card,
+    displayed_frame_saver,
     empty_label,
-    header_row,
     page_layout,
     run_button,
     show_state,
@@ -36,7 +37,7 @@ from lab_control.ui.pages.monitoring.recording_state import (
     recording_save_notice,
     update_recording_frame,
 )
-from lab_control.ui.pages.monitoring.timing import MonitoringTiming
+from lab_control.ui.pages.monitoring.timing import MonitoringInterval, actual_interval_text
 from lab_control.ui.widgets.device_selector import DeviceSelector
 
 
@@ -47,7 +48,7 @@ class FrequencyCounterMonitoringPage(QWidget):
 
     def __init__(self, controller, add_card=None, parent=None) -> None:
         super().__init__(parent)
-        self.controller, self.add_card = controller, add_card
+        self.controller = controller
         self.device_id = ""
         self.channel_checks: dict[int, QCheckBox] = {}
         self.channel_notice = ""
@@ -61,18 +62,18 @@ class FrequencyCounterMonitoringPage(QWidget):
 
         layout = QVBoxLayout(self)
         page_layout(layout)
-        header = QHBoxLayout()
+        header = PageHeader(self)
         self.selector = DeviceSelector(controller, "frequency_counter", self, compact=True)
-        header.addWidget(self.selector, 1)
-        self.connection = QLabel()
+        header.add_left(self.selector, 1)
+        self.connection = QLabel(self)
         self.connection.setObjectName("sourceConnectionState")
-        header.addWidget(self.connection)
-        self.timing = MonitoringTiming(controller, self)
-        header.addWidget(self.timing)
+        self.connection.hide()
+        self.timing = MonitoringInterval(controller, self)
+        header.add_right(self.timing)
         self.toggle_button = QPushButton("开始监测")
         self.toggle_button.clicked.connect(self.toggle_monitoring)
-        header.addWidget(self.toggle_button)
-        layout.addLayout(header)
+        header.add_right(self.toggle_button)
+        layout.addWidget(header)
 
         self.empty = QLabel("请先从总览连接频率计数器，再选择设备。")
         empty_label(self.empty)
@@ -103,6 +104,7 @@ class FrequencyCounterMonitoringPage(QWidget):
         title_row.addWidget(self.save_button)
         chart_layout.addLayout(title_row)
         self.plot = LivePlot()
+        self.plot.plot.frame_save_provider = lambda: displayed_frame_saver(self, self.device_id, "general")
         chart_layout.addWidget(self.plot, 1)
         self.status = QLabel("监测未开始。")
         self.status.setObjectName("mutedText")
@@ -110,8 +112,9 @@ class FrequencyCounterMonitoringPage(QWidget):
         chart_layout.addWidget(self.status)
         layout.addWidget(self.chart, 1)
         run_button(self.toggle_button)
-        header_row(header, connection=self.connection, actions=(self.record_button,))
-        self.status_dot = chart_card(self.chart, status=self.status)
+        header.add_right(self.record_button)
+        self.actual = QLabel("实际 — s/帧")
+        self.status_dot = chart_card(self.chart, status=self.status, footer_extra=(self.actual,))
         self.selector.selected.connect(self.select_device)
         controller.refreshed.connect(self.refresh)
         controller.frame_ready.connect(self.refresh_frame)
@@ -227,7 +230,7 @@ class FrequencyCounterMonitoringPage(QWidget):
             record = self.controller.records.get(self.device_id)
             if not record or not mode_applicable(record, "general"):
                 raise DeviceError("此设备不支持频率监测", "unsupported")
-            self.timing.commit()
+            self.timing.interpretText()
             self.controller.start_monitoring(
                 self.device_id,
                 (self.request(self.channels()),),
@@ -329,6 +332,7 @@ class FrequencyCounterMonitoringPage(QWidget):
             )
         )
         self.timing.refresh(task)
+        self.actual.setText(actual_interval_text(task))
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)

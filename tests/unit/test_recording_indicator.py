@@ -39,7 +39,7 @@ def test_recording_frame_pixels_and_geometry_follow_binary_drain(qtbot, name):
         assert button.text() == text and button.isEnabled() == enabled
         pixels = frame.grab().toImage()
         color = pixels.pixelColor(pixels.width() // 2, 0).name()
-        assert (color == "#b96360") == (phase != "idle")
+        assert color == "#25272c"
         assert frame.toolTip() == "" if phase == "idle" else "本设备" in frame.toolTip()
     button.refresh({"running": True}, connected=True, busy=True, locked=False)
     assert not button.isEnabled()

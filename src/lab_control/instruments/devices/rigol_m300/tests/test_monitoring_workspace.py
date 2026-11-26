@@ -109,7 +109,7 @@ def test_scan_curve_selection_keeps_full_recording_and_snapshot(
         monkeypatch.setattr(
             QMessageBox, "question", lambda *_: pytest.fail("Starting M300 monitoring must not open a dialog")
         )
-        page.timing.interval.setValue(0.5)
+        page.timing.setValue(0.5)
         page.start_button.click()
         qtbot.waitUntil(lambda: page.plot.displayed_frame is not None, timeout=8000)
         task = runtime.monitoring.tasks[device]

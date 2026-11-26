@@ -1,19 +1,31 @@
 """Fixed instrument grid; decimation affects the display, never the saved frame."""
 
 from dataclasses import replace
+from datetime import datetime
 from html import escape
 
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QTransform
-from PySide6.QtWidgets import QApplication, QGraphicsItem, QLabel, QVBoxLayout
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QGraphicsItem,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
 
 from lab_control.application.acquisition_pipeline import validate_displayed_batch
 from lab_control.domain.instruments import DeviceError
 from lab_control.domain.oscilloscope import COLORS, ScopeDisplay, engineering
+from lab_control.ui.kit import Dot, IconButton, icons, set_property
 from lab_control.ui.pages.monitoring.plot import LivePlot
 from lab_control.ui.styles import tokens as tk
+from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 
 def waveform_measurements(values, axis) -> tuple[float, float, float | None]:
@@ -149,6 +161,91 @@ class ScopeTag(pg.TextItem):
         super().keyPressEvent(event)
 
 
+class _ScopeChannelCard(QFrame):
+    """Compact channel readout card below the oscilloscope waveform, matching qt-demo-a."""
+
+    selected = Signal(int)
+    toggle_requested = Signal(int)
+
+    def __init__(self, channel: int, parent=None) -> None:
+        super().__init__(parent)
+        self.channel = channel
+        self.setObjectName("scopeChannelCard")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 10, 8)
+        layout.setSpacing(4)
+
+        top = QHBoxLayout()
+        top.setSpacing(6)
+        self.color = COLORS[(channel - 1) % len(COLORS)]
+        self.dot = Dot(self.color, 7, box=10)
+        top.addWidget(self.dot)
+        self.name = QLabel(f"CH{channel}", self)
+        self.name.setObjectName("scopeCardCh")
+        top.addWidget(self.name)
+        self.scale = QLabel("已关闭", self)
+        self.scale.setObjectName("scopeCardScale")
+        top.addWidget(self.scale)
+        top.addStretch(1)
+        self.eye = IconButton("eye", f"显示 / 隐藏 CH{channel} 曲线（采集和记录继续）", size=24, icon_size=14)
+        self.eye.clicked.connect(lambda: self.toggle_requested.emit(channel))
+        top.addWidget(self.eye)
+        layout.addLayout(top)
+
+        metrics = QHBoxLayout()
+        metrics.setSpacing(12)
+        self.values: dict[str, QLabel] = {}
+        for key, label in (("vpp", "Vpp"), ("rms", "RMS"), ("freq", "频率")):
+            pair = QHBoxLayout()
+            pair.setSpacing(4)
+            cap = QLabel(label, self)
+            cap.setObjectName("scopeCardMetricLabel")
+            val = QLabel("—", self)
+            val.setObjectName("scopeCardMetricValue")
+            pair.addWidget(cap)
+            pair.addWidget(val)
+            metrics.addLayout(pair)
+            self.values[key] = val
+        metrics.addStretch(1)
+        layout.addLayout(metrics)
+
+    def set_trace_visible(self, visible: bool) -> None:
+        self.eye.setIcon(icons.icon("eye" if visible else "eyeoff", tk.TEXT_2 if visible else tk.TEXT_3))
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.selected.emit(self.channel)
+        super().mousePressEvent(event)
+
+    def update_state(
+        self,
+        *,
+        enabled: bool,
+        scale_text: str,
+        vpp: str,
+        rms: str,
+        freq: str,
+        visible: bool,
+        selected: bool = False,
+        bottom_tip: str = "",
+    ) -> None:
+        self.dot.set_status(self.color if enabled else "idle")
+        set_property(self, "active", enabled)
+        set_property(self, "selected", selected)
+        self.scale.setText(scale_text if enabled else "已关闭")
+        for key, text in (("vpp", vpp), ("rms", rms), ("freq", freq)):
+            shown = text if enabled else "—"
+            if self.values[key].text() != shown:
+                self.values[key].setText(shown)
+        self.set_trace_visible(enabled and visible)
+        self.eye.setEnabled(enabled)
+        tip = f"CH{self.channel} · 点击切换到垂直设置"
+        if bottom_tip and enabled:
+            tip += f"\n{bottom_tip}"
+        self.setToolTip(tip)
+
+
 class OscilloscopePlot(LivePlot):
     tag_pressed = Signal(int, str)
     tag_cancelled = Signal()
@@ -156,19 +253,36 @@ class OscilloscopePlot(LivePlot):
     ground_dragged = Signal(int, float, bool)
     # Trigger level target in volts (value, released).
     trigger_dragged = Signal(float, bool)
+    channel_selected = Signal(int)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.save_enabled = False
+        self.plot.menu_factory = self.build_menu
+        self.plot.setBackground(tk.CHART_BG)
+        self.plot.plotItem.legend.hide()
+        self.value.hide()
+        self.meta.hide()
+        self.last_frame_clock = ""
+        self.channel_metrics: dict[int, tuple[str, str, str]] = {}
+        self.hidden_channels: set[int] = set()
         self.preview_hint = QLabel()
         self.preview_hint.setObjectName("scopeSampleRate")
         self.preview_hint.hide()
         layout = self.layout()
         assert isinstance(layout, QVBoxLayout)
         layout.insertWidget(0, self.preview_hint)
+        self.cards_frame = QWidget(self)
+        self.cards_grid = QGridLayout(self.cards_frame)
+        self.cards_grid.setContentsMargins(0, 6, 0, 2)
+        self.cards_grid.setSpacing(8)
+        self.channel_cards: dict[int, _ScopeChannelCard] = {}
+        layout.insertWidget(layout.indexOf(self.plot) + 1, self.cards_frame)
+        self.cards_frame.hide()
         self.bottom_voltage = QLabel()
         self.bottom_voltage.setObjectName("scopeSampleRate")
         self.bottom_voltage.setWordWrap(True)
-        layout.insertWidget(layout.indexOf(self.plot) + 1, self.bottom_voltage)
+        layout.insertWidget(layout.indexOf(self.cards_frame) + 1, self.bottom_voltage)
         self.bottom_voltage.hide()
         self.measurements = QLabel()
         self.measurements.setObjectName("scopeMeasurements")
@@ -197,11 +311,26 @@ class OscilloscopePlot(LivePlot):
         self.trigger_preview: pg.InfiniteLine | None = None
         self.plot.getViewBox().sigStateChanged.connect(self._keep_instrument_view)
 
+    def build_menu(self, position=None):
+        snapshot = self.plot.export_snapshot()
+        has_frame = self.displayed_frame is not None
+        return self.plot.view_menu(
+            snapshot,
+            can_restore=has_frame,
+            supports_save=True,
+            save_frame=snapshot.save_raw if has_frame and self.save_enabled else None,
+        )
+
     def reset(self) -> None:
+        for menu in self.plot.findChildren(WorkspaceMenu):
+            menu.close()
+        self.save_enabled = False
         self.bottom_voltage.hide()
         self.bottom_voltage.clear()
         self.measurements.hide()
         self.measurements.clear()
+        self.channel_metrics.clear()
+        self.last_frame_clock = ""
         self.ground_tags.clear()
         self.trigger_tag = None
         self.display_specs.clear()
@@ -211,11 +340,84 @@ class OscilloscopePlot(LivePlot):
         self.instrument_view = False
         self.grid_range = None
         super().reset()
+        self.plot.plotItem.legend.hide()
+        self.value.hide()
+        self.meta.hide()
         self.grid_lines.clear()
         self.trigger_preview = None
         self.grid_range = None
         self.instrument_view = False
         self.legend_signature = None
+
+    def toggle_trace(self, channel: int) -> None:
+        visible = channel in self.hidden_channels
+        if visible:
+            self.hidden_channels.remove(channel)
+        else:
+            self.hidden_channels.add(channel)
+        self.channel_cards[channel].set_trace_visible(visible)
+        frame = self.displayed_frame
+        if frame is None:
+            return
+        for measurement in frame.batch.measurements:
+            if measurement.channel == channel:
+                curve = self.curves.get((channel, measurement.quantity))
+                if curve is not None:
+                    curve.setVisible(visible)
+        if self.preview_targets:
+            self.render_preview()
+        elif self.display_specs:
+            self._place_tags(self.display_specs)
+
+    def sync_channel_cards(
+        self,
+        channels: tuple[int, ...],
+        enabled_channels: set[int],
+        scales: dict[int, str],
+        *,
+        selected_channel: int | None = None,
+    ) -> None:
+        existing = tuple(sorted(self.channel_cards))
+        target = tuple(channels)
+        if existing != target:
+            while self.cards_grid.count():
+                item = self.cards_grid.takeAt(0)
+                card_widget = item.widget() if item else None
+                if card_widget is not None:
+                    card_widget.deleteLater()
+            self.channel_cards.clear()
+            cols = 2 if len(target) > 1 else 1
+            for idx, ch in enumerate(target):
+                card = _ScopeChannelCard(ch, self.cards_frame)
+                card.selected.connect(self.channel_selected)
+                card.toggle_requested.connect(self.toggle_trace)
+                self.cards_grid.addWidget(card, idx // cols, idx % cols)
+                self.channel_cards[ch] = card
+            for col in range(cols):
+                self.cards_grid.setColumnStretch(col, 1)
+        self.cards_frame.setVisible(bool(target))
+        for ch, card in self.channel_cards.items():
+            vpp, rms, freq = self.channel_metrics.get(ch, ("—", "—", "—"))
+            spec = self.display_specs.get(ch)
+            scale_text = scales.get(ch) or (
+                f"{engineering(spec.units_per_div, spec.unit)}/格" if spec is not None else "—"
+            )
+            bottom_tip = ""
+            if spec is not None:
+                bottom_v = engineering(spec.reference_value - 4 * spec.units_per_div, spec.unit).replace(
+                    "-", "−"
+                )
+                bottom_tip = f"底边电压 {bottom_v}"
+            card.update_state(
+                enabled=ch in enabled_channels,
+                scale_text=scale_text,
+                vpp=vpp,
+                rms=rms,
+                freq=freq,
+                visible=ch not in self.hidden_channels,
+                selected=ch == selected_channel,
+                bottom_tip=bottom_tip,
+            )
 
     def show_bottom(self, values, preview=False):
         labels = []
@@ -227,7 +429,8 @@ class OscilloscopePlot(LivePlot):
             color = COLORS[(ch - 1) % len(COLORS)]
             labels.append(f'<span style="color:{color}">CH{ch} {number} {escape(scaled_unit)}</span>')
         self.bottom_voltage.setText(("预览 · " if preview else "") + "底边电压　" + "　".join(labels))
-        self.bottom_voltage.setVisible(bool(labels))
+        # Channel cards replace the inline text row in steady state; keep visible during preview.
+        self.bottom_voltage.setVisible(bool(labels) and (preview or not self.channel_cards))
 
     def update_shared_bottom(self, *_):
         if self.instrument_view or self.displayed_frame is None:
@@ -277,6 +480,9 @@ class OscilloscopePlot(LivePlot):
             self.plot.setMouseEnabled(x=True, y=True)
             self.plot.setMenuEnabled(True)
             super().show_frame(frame, source, channels)
+            for (ch, _), curve in self.curves.items():
+                if ch in self.hidden_channels:
+                    curve.hide()
             self.update_shared_bottom()
             return
         try:
@@ -340,8 +546,12 @@ class OscilloscopePlot(LivePlot):
         if not self.grid_lines:
             for angle, count in ((90, horizontal_lines), (0, 9)):
                 for index in range(count):
-                    alpha = 110 if index == count // 2 else 78
-                    pen = pg.mkPen((110, 113, 121, alpha), width=1, style=Qt.PenStyle.DashLine)
+                    is_center = index == count // 2
+                    pen = pg.mkPen(
+                        tk.BORDER_STRONG if is_center else tk.BORDER,
+                        width=1,
+                        style=Qt.PenStyle.SolidLine if is_center else Qt.PenStyle.DotLine,
+                    )
                     line = pg.InfiniteLine(angle=angle, pen=pen, movable=False)
                     line.setZValue(-10)
                     self.plot.addItem(line, ignoreBounds=True)
@@ -365,7 +575,7 @@ class OscilloscopePlot(LivePlot):
             key = (m.channel, m.quantity)
             color = COLORS[(m.channel - 1) % len(COLORS)]
             if key not in self.curves:
-                curve = self.plot.plot(pen=pg.mkPen(color, width=1.2))
+                curve = self.plot.plot(pen=pg.mkPen(color, width=1.4))
                 curve.setDownsampling(auto=True, method="peak")
                 curve.setClipToView(True)
                 self.curves[key] = curve
@@ -379,7 +589,7 @@ class OscilloscopePlot(LivePlot):
                 useCache=False,
                 symbolSize=5,
             )
-            curve.show()
+            curve.setVisible(m.channel not in self.hidden_channels)
             if update_legend:
                 legend.addItem(
                     curve,
@@ -391,6 +601,11 @@ class OscilloscopePlot(LivePlot):
                 curve.hide()
         self._place_tags({m.channel: spec for m, spec in zip(wanted, displays, strict=True)})
         self._show_measurements(wanted)
+        try:
+            stamp = datetime.fromisoformat(frame.batch.timestamp).astimezone()
+            self.last_frame_clock = f"{stamp:%H:%M:%S}"
+        except ValueError:
+            self.last_frame_clock = ""
         self.meta.setText(
             f"{engineering(first.seconds_per_div, 's')}/格 · "
             + " / ".join(f"CH{m.channel} {len(m.values)} 点" for m in wanted)
@@ -401,6 +616,7 @@ class OscilloscopePlot(LivePlot):
             )
         )
         self.meta.setToolTip(f"配置版本 {frame.configuration_version} · 校验 {frame.batch.validation}")
+        self.meta.hide()
         self.displayed_frame = candidate
         self.display_specs = {m.channel: s for m, s in zip(wanted, displays, strict=True)}
         self.show_bottom(
@@ -500,7 +716,7 @@ class OscilloscopePlot(LivePlot):
             except ValueError:
                 return
             specs.append((measurement, spec))
-            if (ch, "trigger_level") in targets:
+            if (ch, "trigger_level") in targets and ch not in self.hidden_channels:
                 level = targets[ch, "trigger_level"][0]
                 if self.trigger_preview is None:
                     self.trigger_preview = pg.InfiniteLine(
@@ -557,6 +773,7 @@ class OscilloscopePlot(LivePlot):
             if used
             else self.actual_meta
         )
+        self.meta.setVisible(used)
 
     def _tag_font(self) -> QFont:
         font = QFont(self.font())
@@ -582,6 +799,8 @@ class OscilloscopePlot(LivePlot):
         step = (right - left) * 0.024
         placed: list[float] = []
         for channel, spec in sorted(specs.items()):
+            if channel in self.hidden_channels:
+                continue
             level = (0 - spec.reference_value) / spec.units_per_div
             arrow = "▲" if level > 3.8 else "▼" if level < -3.8 else ""
             tag = self.ground_tags.get(channel)
@@ -608,7 +827,12 @@ class OscilloscopePlot(LivePlot):
                 tag.hide()
         trigger_channel, level, enabled = self.trigger_state
         spec = specs.get(trigger_channel) if trigger_channel is not None else None
-        if spec is None or level is None or trigger_channel is None:
+        if (
+            spec is None
+            or level is None
+            or trigger_channel is None
+            or trigger_channel in self.hidden_channels
+        ):
             if self.trigger_tag is not None:
                 self.trigger_tag.hide()
             return
@@ -650,15 +874,20 @@ class OscilloscopePlot(LivePlot):
 
     def _show_measurements(self, measurements) -> None:
         parts = []
+        self.channel_metrics.clear()
         for m in measurements:
             if m.axis is None:
                 continue
             vpp, rms, frequency = waveform_measurements(m.values, m.axis)
             if not np.isfinite(vpp):
                 continue
+            vpp_s = engineering(vpp, m.unit)
+            rms_s = engineering(rms, m.unit)
+            freq_s = engineering(frequency, "Hz") if frequency else "—"
+            self.channel_metrics[m.channel] = (vpp_s, rms_s, freq_s)
             color = COLORS[(m.channel - 1) % len(COLORS)]
-            values = [f"Vpp {engineering(vpp, m.unit)}", f"RMS {engineering(rms, m.unit)}"]
-            values.append(f"{engineering(frequency, 'Hz')}" if frequency else "频率 —")
+            values = [f"Vpp {vpp_s}", f"RMS {rms_s}"]
+            values.append(freq_s if frequency else "频率 —")
             text = "&nbsp;·&nbsp;".join(escape(value).replace(" ", "&nbsp;") for value in values)
             parts.append(
                 f'<span style="color:{color}; font-weight:600">CH{m.channel}</span>'
@@ -666,7 +895,7 @@ class OscilloscopePlot(LivePlot):
             )
         # Wrap only between channels, never inside a value.
         self.measurements.setText("&nbsp;&nbsp;&nbsp; ".join(parts))
-        self.measurements.setVisible(bool(parts))
+        self.measurements.setVisible(bool(parts) and not self.channel_cards)
 
     def restrict_channels(self, channels: tuple[int, ...]) -> None:
         """Drop explicitly disabled traces without changing the old frame's scales."""

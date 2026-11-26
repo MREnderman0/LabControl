@@ -90,7 +90,7 @@ class FspnPanel(QWidget):
             caption = QLabel(metric_name)
             caption.setObjectName("mutedText")
             self.metrics[key] = QLabel("—")
-            self.metrics[key].setStyleSheet("font-size: 16px; font-weight: 600")
+            self.metrics[key].setProperty("role", "value")
             summary.addWidget(caption, 0, col)
             summary.addWidget(self.metrics[key], 1, col)
             summary.setColumnStretch(col, 1)

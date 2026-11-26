@@ -13,7 +13,7 @@
 正式安装版提供相同的型号注册入口；先正常退出已运行的主程序，不能绕过进程锁：
 
 ```powershell
-& '<安装目录>\TF-LabControl.exe' --cli --resource '<设备 IP>' --adapter kplusk.fxe --transport kplusk `
+& '<安装目录>\LabControl.exe' --cli --resource '<设备 IP>' --adapter kplusk.fxe --transport kplusk `
   verify-readonly --duration 60 --input-condition '四路输入悬空，仅检查底噪数据链路' `
   --folder '<正式运行目录>\hardware-tests\<资产号>\<批次>'
 ```

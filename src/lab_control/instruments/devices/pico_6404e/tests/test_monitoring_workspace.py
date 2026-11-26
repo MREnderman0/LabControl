@@ -90,8 +90,8 @@ def test_pico_normal_workspace_prepares_inputs_once_and_saves_displayed_frame(
         assert len(measurement.axis) == len(measurement.values) == 32
         assert np.all(np.isfinite(measurement.values))
 
-        qtbot.waitUntil(scope.save_action.isEnabled)
-        scope.save_action.trigger()
+        qtbot.waitUntil(scope.save_button.isEnabled)
+        scope.save_button.click()
         qtbot.waitUntil(lambda: bool(list(frame_export_directory.rglob("*.csv"))))
 
         panel.checks[2].setChecked(True)

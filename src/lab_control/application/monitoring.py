@@ -284,6 +284,7 @@ class MonitoringService:
                     device_id,
                     (request,),
                     interval=interval,
+                    cadence="interval",
                     record_interval=None,
                     recording=recording,
                     background=True,
@@ -511,6 +512,7 @@ class MonitoringService:
                     task.recording_notice = ""
                     task.record_session = context.started_utc
                     task.last_record_at = task.next_record_at = 0
+                    task.recording_started_at = time.monotonic()
                     task.recording = True
             except Exception as exc:
                 error = exc
@@ -814,6 +816,9 @@ class MonitoringService:
                     "sequence": task.sequence,
                     "monitoring_context_id": task.monitoring_context_id,
                     "kinds": tuple(r.kind for r in task.requests),
+                    "channels": tuple(sorted({ch for r in task.requests for ch in r.channels})),
+                    "started_at": task.started_at,
+                    "recording_started_at": task.recording_started_at,
                     "recording_kinds": tuple(sorted(task.record_kinds or ()))
                     if task.running and (task.recording or task.recording_preparation is not None)
                     else (),

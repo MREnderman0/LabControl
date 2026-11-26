@@ -30,11 +30,12 @@ from lab_control.domain.instruments import DeviceError, Parameter, ValidationErr
 from lab_control.ui.kit import FieldBox, Switch
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.parameter_combo import ParameterComboBox
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget
+from lab_control.ui.widgets.plot_export import InstrumentMenuCanvas
 
 UNIT_CHOICES = {
     "rad": (("°", math.pi / 180), ("rad", 1)),
     "deg": (("°", 1),),
+    "degC": (("°C", 1),),
     "Hz": (("Hz", 1), ("kHz", 1e3), ("MHz", 1e6), ("GHz", 1e9)),
     "V": (("µV", 1e-6), ("mV", 1e-3), ("V", 1)),
     "Vpp": (("mVpp", 1e-3), ("Vpp", 1)),
@@ -107,7 +108,8 @@ class ParameterEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         outer.addLayout(layout)
         self.unit = ParameterComboBox(self)
-        self.unit.fit_contents(60)
+        self.unit.setProperty("fieldUnit", True)
+        self.unit.fit_contents(56)
         self.unit.installEventFilter(self)
         self.input: QCheckBox | QComboBox | QLineEdit
         if spec.kind == "boolean":
@@ -115,6 +117,8 @@ class ParameterEditor(QWidget):
             self.input.stateChanged.connect(self.changed)
         elif spec.kind == "enum" or spec.choices:
             self.input = ParameterComboBox(self)
+            if spec.kind in {"number", "integer"}:
+                self.input.setProperty("fieldValue", True)
             for value in spec.choices:
                 self.input.addItem(value, value if spec.kind == "enum" else float(value))
             self.input.currentIndexChanged.connect(self.changed)
@@ -125,7 +129,7 @@ class ParameterEditor(QWidget):
             self.input.setPlaceholderText("请输入" + (label.strip() or fallback))
             self.sync_input_style()
             self.input.textEdited.connect(self.changed)
-            self.input.textEdited.connect(lambda: self.feedback.clear())
+            self.input.textEdited.connect(self._clear_error)
             self.input.textChanged.connect(self.number_edited)
             self.input.textChanged.connect(self.sync_input_style)
             self.input.editingFinished.connect(lambda: QTimer.singleShot(0, self, self.finish_editing))
@@ -192,23 +196,32 @@ class ParameterEditor(QWidget):
             "unavailable": "未确认 / 已过期",
         }.get(self.spec.range_source, self.spec.range_source)
         readable = ""
-        if (
-            self.spec.unit == "Hz"
-            and factor == 1
-            and self.spec.minimum is not None
-            and self.spec.maximum is not None
-        ):
+        if self.spec.unit == "Hz" and self.spec.minimum is not None and self.spec.maximum is not None:
 
             def frequency_label(value: float) -> str:
+                if value == 0:
+                    return "0"
+                scales = (
+                    ("GHz", 1e9),
+                    ("MHz", 1e6),
+                    ("kHz", 1e3),
+                    ("Hz", 1.0),
+                    ("mHz", 1e-3),
+                    ("µHz", 1e-6),
+                )
                 label, scale = next(
-                    ((label, scale) for label, scale in reversed(UNIT_CHOICES["Hz"]) if abs(value) >= scale),
-                    ("Hz", 1),
+                    ((lbl, sc) for lbl, sc in scales if abs(value) >= sc),
+                    ("µHz", 1e-6),
                 )
                 return f"{value / scale:.12g} {label}"
 
-            readable = f"（{frequency_label(self.spec.minimum)} ～ {frequency_label(self.spec.maximum)}）"
-        details = f"可输入范围：{low} ～ {high} {self.unit.currentText()}{readable} · {source}"
-        short = f"{low} ～ {high} {self.unit.currentText()}"
+            hz_short = f"{frequency_label(self.spec.minimum)} ～ {frequency_label(self.spec.maximum)}"
+            readable = f"（{hz_short}）" if factor == 1 else ""
+        else:
+            hz_short = ""
+        unit_text = "°C" if self.unit.currentText() == "degC" else self.unit.currentText()
+        details = f"可输入范围：{low} ～ {high} {unit_text}{readable} · {source}"
+        short = hz_short or f"{low} ～ {high} {unit_text}"
         self.range_label.setText(short if self.simplified or self.range_compact else details)
         self.range_label.setToolTip(details)
         self.setToolTip(details)
@@ -256,6 +269,14 @@ class ParameterEditor(QWidget):
         except (TypeError, ValueError, OverflowError):
             return False
 
+    def _set_error(self, on: bool) -> None:
+        if self.box is not None:
+            self.box.set_state("error", on)
+
+    def _clear_error(self) -> None:
+        self.feedback.clear()
+        self._set_error(False)
+
     def finish_editing(self, *, force: bool = False) -> None:
         if not shiboken6.isValid(self) or not shiboken6.isValid(self.unit):
             return
@@ -272,18 +293,20 @@ class ParameterEditor(QWidget):
                 self.restore({"value": f"{value:.12g}", "factor": factor})
             elif isinstance(self.input, QLineEdit):
                 self.input.clear()
-            self.feedback.clear()
+            self._clear_error()
             self.changed.emit()
             return
         if isinstance(self.input, QComboBox) and self._readback_choice is not None:
             if self.input.currentData() == self._readback_choice:
-                self.feedback.clear()
+                self._clear_error()
                 return
         try:
             self.value()
             self._last_valid_draft = self.draft()
+            self._set_error(False)
         except DeviceError as exc:
             self.feedback.setText(str(exc))
+            self._set_error(True)
 
     def value(self) -> Any:
         if isinstance(self.input, QCheckBox):
@@ -374,6 +397,7 @@ class ParameterEditor(QWidget):
         if isinstance(self.input, QComboBox) and self.spec.kind in {"number", "integer"}:
             self._format_choices(self.input, self._last_factor)
         self._editing_number = False
+        self._set_error(False)
         self.update_range_label()
 
         if self.input_is_valid():
@@ -484,7 +508,7 @@ class ArrayEditor(QWidget):
         self.table.setMaximumHeight(210)
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
-        self.preview = PublicationPlotWidget(background=tk.CHART_BG)
+        self.preview = InstrumentMenuCanvas(background=tk.CHART_BG)
         self.preview.setMinimumHeight(140)
         self.preview.setMaximumHeight(180)
         self.preview.setLabel("bottom", "数据行 / 样点")

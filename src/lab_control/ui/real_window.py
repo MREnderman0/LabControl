@@ -28,8 +28,9 @@ from lab_control.application.runtime import ApplicationRuntime
 from lab_control.ui.controller import (
     WorkspaceController,
 )
-from lab_control.ui.kit.base import NavButton, Pill
+from lab_control.ui.kit.base import IconButton, NavButton, Pill
 from lab_control.ui.pages.monitoring.dashboard import MonitoringDashboard
+from lab_control.ui.pages.watch_runtime import WatchRuntime
 from lab_control.ui.widgets.brand_icon import BrandIcon
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool
@@ -111,8 +112,10 @@ class RealWindow(QMainWindow):
     connect_all_button: QPushButton
     stop_connect_button: QPushButton
     connection_results_button: QPushButton
-    address_list_button: QPushButton
-    device_list_button: QPushButton
+    address_list_button: QAction
+    device_list_button: QAction
+    more_tools_button: IconButton
+    more_tools_menu: WorkspaceMenu
     pool_close: QPushButton
     pool_more: QPushButton
     summary: QLabel
@@ -141,6 +144,7 @@ class RealWindow(QMainWindow):
         self._input_wheel_guard = install_input_wheel_guard()
         self.runtime = runtime
         self.controller = WorkspaceController(runtime, self)
+        self.watch_hub = WatchRuntime(self.controller, self)
         self.bridge = ServiceBridge(self)
         self.bridge.completed.connect(self._completed)
         self.bridge.failed.connect(self._failed)
@@ -436,6 +440,10 @@ class RealWindow(QMainWindow):
 
     def _sync_submenu(self) -> None:
         self._navigation._sync_submenu()
+
+    def open_watchlist(self, preset_id: str = "") -> None:
+        self._navigation.watchlists_page().select_id(preset_id)
+        self.navigate("监视列表")
 
     def navigate(self, module: str, category: str = "", device_id: str = "") -> None:
         self._navigation.navigate(module, category, device_id)

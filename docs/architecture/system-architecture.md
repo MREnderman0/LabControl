@@ -38,7 +38,7 @@ run.bat、Python 模块入口、lab-control 与安装版 EXE 统一调用 launch
 
 ## 数据流
 
-[MCP 接入](../guides/agent-collaboration.md)从系统设置启用，使用独立 asyncio 网络循环调用同一 Runtime 的 Qt 无关门面。按实验范围授权、设备 worker 内重新校验配置版本，GUI 与多个 Agent 共用原会话。桌面为已核验的设备签发自动授权；连接器不创建硬件 Runtime。任务/请求键持久保存，重启标记未知结果且不恢复执行权限。
+[MCP 接入](../guides/agent-collaboration.md)从系统设置启用，使用独立 asyncio 网络循环调用同一 Runtime 的 Qt 无关门面。按实验范围授权、设备 worker 内重新校验配置版本，GUI 与多个 Agent 共用原会话。桌面为已核验的设备签发自动全授权；连接器不创建硬件 Runtime。任务/请求键持久保存，重启标记未知结果且不恢复执行权限。
 
     UI / CLI / Python
       -> ApplicationRuntime

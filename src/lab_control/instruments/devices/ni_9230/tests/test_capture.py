@@ -150,7 +150,7 @@ def test_continuous_page_arms_once_and_releases_after_stop(qtbot, tmp_path, monk
             qtbot.waitUntil(page.start_button.isEnabled, timeout=5000)
             assert not drv.calls and page.channels() == (1, 2, 3)
             assert not any("单次" in b.text() for b in page.findChildren(QPushButton))
-            page.timing.interval.setValue(0.5)
+            page.timing.setValue(0.5)
             page.start_button.click()
             task = runtime.monitoring.tasks[key]
             qtbot.waitUntil(lambda: page.cards[1].status.text() == "IEPE 开路", timeout=12000)

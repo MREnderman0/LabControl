@@ -52,7 +52,8 @@ def test_four_model_only_meters_keep_slots_in_ui_and_after_restart(qtbot, tmp_pa
         assert len(runtime.inventory.all()) == 4
         assert len(runtime.sessions.sessions) == 4
         assert tuple(card.category for card in window.card_grid.cards) == ("optical_power_meter",)
-        assert window.cards["optical_power_meter"].online_count.text() == "04"
+        assert window.cards["optical_power_meter"].total_count.text() == "4"
+        assert window.cards["optical_power_meter"].counts["online"] == 4
         assert selector.combo.count() == 4
         for index, key in enumerate(ids, 1):
             text = selector.combo.itemText(selector.combo.findData(key))

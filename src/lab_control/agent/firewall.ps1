@@ -17,14 +17,14 @@ function Read-AgentRule {
         remote=@($address.RemoteAddress); interfaces=@($interface.InterfaceAlias)}
 }
 function Add-AgentRule {
-    New-NetFirewallRule -Name $p.rule -DisplayName 'TF LabControl Agent HTTPS' -Group 'TF-LabControl-Agent' `
+    New-NetFirewallRule -Name $p.rule -DisplayName 'LabControl Agent HTTPS' -Group $ruleGroup `
         -Direction Inbound -Action Allow -Enabled True -Protocol TCP -LocalPort $p.port `
         -Program $p.program -LocalAddress $p.address -RemoteAddress LocalSubnet `
         -InterfaceAlias $interfaceAlias -Profile Private,Domain | Out-Null
 }
 function Assert-AgentRule {
     param($Rule)
-    if (-not $Rule -or $Rule.group -ne 'TF-LabControl-Agent' -or $Rule.program -ne $p.program -or
+    if (-not $Rule -or $Rule.group -ne $ruleGroup -or $Rule.program -ne $p.program -or
         ($Rule.local -join ',') -ne $p.address -or ($Rule.port -join ',') -ne [string]$p.port -or
         ($Rule.remote -join ',') -ne 'LocalSubnet' -or ($Rule.interfaces -join ',') -ne $interfaceAlias -or
         $Rule.direction -ne 'Inbound' -or $Rule.action -ne 'Allow' -or $Rule.enabled -ne 'True' -or
@@ -42,7 +42,7 @@ try {
     if ($hash -ne $PlanHash) { throw 'Maintenance plan changed after approval' }
     $p = [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
     if ($p.schema_version -ne 1 -or $p.operation -notin @('add','remove') -or
-        $p.rule -notmatch '^TF-LabControl-Agent-[a-f0-9]{16}$' -or
+        $p.rule -notmatch '^LabControl-Agent-[a-f0-9]{16}$' -or
         [int]$p.port -lt 1024 -or [int]$p.port -gt 65535 -or
         -not (Test-Path -LiteralPath $p.program -PathType Leaf)) { throw 'Invalid maintenance plan' }
     $ip = [Net.IPAddress]::Parse($p.address)
@@ -52,7 +52,18 @@ try {
     if ($rows.Count -ne 1) { throw 'Address no longer belongs to one local interface' }
     $interfaceAlias = $rows[0].InterfaceAlias
     $result.plan = $p
+    $ruleGroup = 'LabControl-Agent'
     $result.before = Read-AgentRule $p.rule
+    $legacyName = 'TF-' + $p.rule
+    $legacy = Read-AgentRule $legacyName
+    if ($result.before -and $legacy) { throw 'Both legacy and current scoped firewall rules exist; resolve the duplicate before changing them.' }
+    if (-not $result.before) {
+        if ($legacy) {
+            $p.rule = $legacyName
+            $ruleGroup = 'TF-LabControl-Agent'
+            $result.before = $legacy
+        }
+    }
     if ($result.before) { Assert-AgentRule $result.before }
     if ($p.operation -eq 'add' -and -not $result.before) {
         Add-AgentRule

@@ -82,7 +82,7 @@ def render(output: Path, scale: str):
                 name = f"dho924-{width}x{height}-{scale}.png"
                 assert window.grab().save(str(output / name))
                 rows.append(name)
-            page.timing_action.trigger()
+            page.timing.setFocus()
             pump(0.2)
             assert window.grab().save(str(output / f"dho924-timing-{scale}.png"))
             runtime.monitoring.set_recording(key, True)
@@ -91,7 +91,6 @@ def render(output: Path, scale: str):
             assert window.grab().save(str(output / f"dho924-recording-{scale}.png"))
             runtime.monitoring.stop(key).result(10)
             pump(0.2)
-            page.pin()
             window.navigate("实时监测")
             pump(0.5)
             assert window.grab().save(str(output / f"dho924-overview-{scale}.png"))

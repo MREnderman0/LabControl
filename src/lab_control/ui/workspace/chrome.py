@@ -6,6 +6,7 @@ import importlib.metadata
 import shutil
 import time
 from collections import Counter
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QSortFilterProxyModel, QStringListModel, Qt
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -22,6 +24,7 @@ from lab_control.application.bulk_connection import device_label
 from lab_control.application.catalog import instrument_categories, instrument_category
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.discovery.presence import LIVE_CONNECTIONS
+from lab_control.domain.workspace import channel_label
 from lab_control.ui.kit import (
     Dot,
     ElideLabel,
@@ -51,6 +54,28 @@ def _gigabytes(path) -> str:
         return "—"
 
 
+PRIMARY_SIDEBAR_ORDER = (
+    "spectrum_analyzer",
+    "oscilloscope",
+    "power_supply",
+    "temperature_controller",
+    "optical_power_meter",
+    "signal_generator",
+)
+SIDEBAR_MAX_VISIBLE_ROWS = 7
+
+
+def _compact_path(path: Path) -> str:
+    text = str(path)
+    if len(text) <= 28:
+        return text
+    parts = path.parts
+    if len(parts) >= 3:
+        tail = Path(*parts[-2:])
+        return f"{parts[0]}…\\{tail}"
+    return "…" + text[-24:]
+
+
 class WorkspaceChrome:
     """Owns the parts of the window that are not a page; refreshed with the overview timer."""
 
@@ -63,14 +88,20 @@ class WorkspaceChrome:
 
     # ------------------------------------------------------------------ sidebar
     def build_categories(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setObjectName("sidebarCategoryScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         box = QWidget()
         box.setObjectName("sidebarCategories")
         self.category_layout = QVBoxLayout(box)
         self.category_layout.setContentsMargins(0, 1, 0, 3)
         self.category_layout.setSpacing(1)
-        self.category_box = box
-        box.hide()
-        return box
+        scroll.setWidget(box)
+        self.category_box = scroll
+        scroll.hide()
+        return scroll
 
     def build_runtime_badge(self) -> QFrame:
         badge = QFrame()
@@ -87,8 +118,12 @@ class WorkspaceChrome:
 
     def sync_categories(self) -> None:
         window = self.window
-        categories = window._submenu_categories(
+        raw_categories = window._submenu_categories(
             "仪器测控", window.controller.records, window.controller.states
+        )
+        priority = {name: index for index, name in enumerate(PRIMARY_SIDEBAR_ORDER)}
+        categories = tuple(
+            sorted(raw_categories, key=lambda c: (priority.get(c, len(priority)), raw_categories.index(c)))
         )
         counts = {category: 0 for category in categories}
         alerts = dict.fromkeys(categories, False)
@@ -111,6 +146,8 @@ class WorkspaceChrome:
                 button.clicked.connect(lambda _checked=False, c=category: self.open_category(c))
                 self.category_layout.addWidget(button)
                 self.category_buttons[category] = button
+            visible_rows = min(len(categories), SIDEBAR_MAX_VISIBLE_ROWS)
+            self.category_box.setFixedHeight(visible_rows * 31 + 4 if visible_rows else 0)
             self.sync_selection()
         for category, button in self.category_buttons.items():
             button.set_count(counts.get(category, 0), alerts.get(category, False))
@@ -139,7 +176,7 @@ class WorkspaceChrome:
     def build_header_tools(self, row: QHBoxLayout) -> None:
         window = self.window
         row.addStretch()
-        self.search = SearchBox("搜索设备、型号或功能槽位", parent=window)
+        self.search = SearchBox("搜索设备、通道或功能槽位", parent=window)
         self.search.setFixedWidth(300)
         self.search_model = QStringListModel(window)
         proxy = QSortFilterProxyModel(window)
@@ -206,6 +243,47 @@ class WorkspaceChrome:
         window.navigate("仪器测控", category, device_id)
 
     # ------------------------------------------------------------------ alerts and status bar
+    def watchlist_alarms(self) -> list[dict[str, str]]:
+        """Out-of-bounds rows from an active watchlist page, without creating new subscriptions."""
+        hub = self.window.watch_hub
+        alarms: list[dict[str, str]] = []
+        active = set(hub.views.values())
+        for preset in hub.presets.items:
+            if preset.id not in active:
+                continue
+            for row in preset.rows:
+                status = hub.status.get(row.id, "")
+                if status not in {"高于上限", "低于下限"}:
+                    continue
+                entry = hub.values.get(row.id)
+                if not entry:
+                    continue
+                device_id, reading = entry
+                slot_label, ch_names = hub.slot_details(row.slot) if row.slot else ("", {})
+                channel = channel_label(ch_names, row.channel)
+                title = row.label or channel
+                above = status == "高于上限"
+                limit = row.upper if above else row.lower
+                if limit is None:
+                    continue
+                limit_text = f"{'上限' if above else '下限'} {limit:.9g} {reading.unit}".strip()
+                value_text = f"{reading.value:.9g} {reading.unit}".replace("-", "−").strip()
+                detail = " · ".join((slot_label or preset.name, channel))
+                icon_name = "thermo" if "°" in reading.unit or "temp" in reading.quantity else "alert"
+                alarms.append(
+                    {
+                        "device_id": device_id,
+                        "preset_id": preset.id,
+                        "title": title,
+                        "detail": detail,
+                        "value": value_text,
+                        "limit": limit_text,
+                        "icon": icon_name,
+                        "summary": f"{title}：{value_text}（{limit_text}）",
+                    }
+                )
+        return alarms
+
     def _problems(self) -> list[tuple[str, str]]:
         window = self.window
         problems = []
@@ -221,6 +299,10 @@ class WorkspaceChrome:
         return problems
 
     def _open_alerts(self) -> None:
+        watch = self.watchlist_alarms()
+        if watch:
+            self.window.open_watchlist(watch[0]["preset_id"])
+            return
         problems = self._problems()
         if problems:
             window = self.window
@@ -249,12 +331,12 @@ class WorkspaceChrome:
         row.addWidget(self.status_tasks)
         self.status_storage = ElideLabel()
         self.status_storage.setObjectName("appStatusText")
-        row.addWidget(self.status_storage, 1)
+        row.addWidget(self.status_storage, 2)
         window.message.setParent(bar)
         window.message.setObjectName("commandStatusBar")
         window.message.setWordWrap(False)
         window.message.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(window.message, 2)
+        row.addWidget(window.message, 1)
         self.status_version = QLabel(f"LabControl {VERSION}".strip())
         self.status_version.setObjectName("appStatusText")
         row.addWidget(self.status_version)
@@ -284,18 +366,24 @@ class WorkspaceChrome:
         now = time.monotonic()
         if self._disk[0] != str(root) or now - self._disk[2] > 15:
             self._disk = (str(root), _gigabytes(root), now)
-        self.status_storage.setText(f"记录目录 {root} · 剩余 {self._disk[1]}")
+        self.status_storage.setText(f"记录目录 {_compact_path(root)} · 剩余 {self._disk[1]}")
+        self.status_storage.setToolTip(plain_tooltip(f"记录目录：{root}\n磁盘剩余：{self._disk[1]}"))
         # Give the actionable notice priority over the path and version on a narrow window.
         compact_error = window.message.property("kind") == "err" and window.status_bar.width() < 720
         self.status_storage.setVisible(not compact_error)
         self.status_version.setVisible(not compact_error)
         problems = self._problems()
-        self.alerts.set_badge(bool(problems))
+        watch_alarms = self.watchlist_alarms()
+        if watch_nav := window.nav_buttons.get("监视列表"):
+            watch_nav.set_badge(len(watch_alarms))
+        all_tips = [item["summary"] for item in watch_alarms[:3]] + [text for _, text in problems[:3]]
+        self.alerts.set_badge(bool(all_tips))
         self.alerts.setToolTip(
-            plain_tooltip("\n".join(text for _, text in problems[:5]))
-            if problems
-            else "没有设备告警 · 点击查看操作日志"
+            plain_tooltip("\n".join(all_tips)) if all_tips else "没有设备告警 · 点击查看操作日志"
         )
+        message = window.message.text()
+        idle_default = f"{kind} · 扫描不会自动连接或恢复输出"
+        window.message.setVisible(bool(message) and message != idle_default)
 
     def apply_collapsed(self, collapsed: bool) -> None:
         self.category_box.setVisible(bool(self.category_buttons) and not collapsed)

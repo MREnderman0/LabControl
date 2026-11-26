@@ -91,7 +91,7 @@ def test_scope_card_focus_depth_and_pico_frame(qtbot, tmp_path, monkeypatch):
         window.dashboard._open_device(device)
         page = window.stack.currentWidget()
         controls = page.controls
-        assert controls.channel_tabs.current() == 2
+        assert controls.focused_channel == 2
         assert controls.pages.currentWidget().layout() is controls.tab_pages["垂直"]
         qtbot.waitUntil(lambda: page.readouts.cells["points"].value.text() == "AUTO")
         assert not writes
@@ -106,7 +106,7 @@ def test_scope_card_focus_depth_and_pico_frame(qtbot, tmp_path, monkeypatch):
         history.viewer.group.addItem("波形", ("waveform", "V", "s"))
         history.open_device_button.click()
         assert window.stack.currentWidget() is page and page.device_id == device
-        assert controls.channel_tabs.current() == 2 and not writes
+        assert controls.focused_channel == 2 and not writes
         controls.set_points("12000")
         qtbot.waitUntil(lambda: page.readouts.cells["points"].value.text() == "12,000")
         assert [(cmd.operation, cmd.parameters) for cmd in writes] == [("record_length", {"value": "12000"})]

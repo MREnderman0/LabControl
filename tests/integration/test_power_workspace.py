@@ -2,7 +2,9 @@ import threading
 from dataclasses import replace
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QMessageBox
 
@@ -11,8 +13,9 @@ from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.domain.instruments import DeviceError
 from lab_control.ui.pages.monitoring.power import PowerMonitoringPage
-from lab_control.ui.pages.monitoring.timing import MonitoringTiming, monitoring_options
+from lab_control.ui.pages.monitoring.timing import MonitoringInterval, monitoring_options
 from lab_control.ui.real_window import RealWindow
+from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 
 @pytest.fixture
@@ -43,29 +46,28 @@ def power(qapp, qtbot, tmp_path):
 @pytest.mark.parametrize(
     "old", [{"cadence": "fastest", "interval": 0.5}, {"cadence": "interval", "interval": 60}]
 )
-def test_power_startup_restores_valid_presets_and_shared_values(tmp_path, qtbot, old):
+def test_power_startup_restores_numeric_and_legacy_fastest_intervals(tmp_path, qtbot, old):
     with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
         key = runtime.add(ConnectionConfig("mock://power-start", "gwinstek.gpd4303s", "mock"))
         pref = f"monitor-timing/general/{key}"
         runtime.repository.save_workspace(pref, old)
-    expected = old["interval"] if old["interval"] in (1, 5, 10, 60) else 1
+    expected = 0 if old["cadence"] == "fastest" else old["interval"]
     for _ in range(2):
         with ApplicationRuntime(root=tmp_path, hardware=False) as runtime:
             controller = SimpleNamespace(
                 runtime=runtime, records={r["id"]: r for r in runtime.inventory.all()}
             )
-            widget = MonitoringTiming(controller)
+            widget = MonitoringInterval(controller)
             qtbot.addWidget(widget)
             widget.bind(key, "general")
             assert widget.options() == dict(
                 interval=expected, cadence="interval", record_interval=None, csv_interval=5
             )
-            assert widget.cadence.isHidden() and widget.interval.isHidden()
-            assert [widget.presets.itemData(i) for i in range(widget.presets.count())] == [1, 5, 10, 60]
-            for seconds in (5, 10, 60, 1):
-                widget.presets.setCurrentIndex(widget.presets.findData(seconds))
+            assert widget.minimum() == 0 and widget.maximum() == 60
+            for seconds in (0.01, 1.27, 60, 1):
+                widget.setValue(seconds)
                 assert monitoring_options(controller, key, "general")["interval"] == seconds
-            widget.presets.setCurrentIndex(2)
+            widget.setValue(10)
             widget.bind("", "general")
             widget.bind(key, "general")
             assert widget.options()["interval"] == 10
@@ -88,6 +90,68 @@ def test_measured_voltage_and_current_columns_do_not_move_with_text_length(power
         if positions is None:
             positions = geometry
         assert geometry == positions
+
+
+def test_power_chart_menus_use_clicked_plot_and_opening_frame(power, qtbot, monkeypatch):
+    _, page, runtime, key, adapter = power
+    voltage, current = (page.plot.plots[q] for q in ("voltage", "current"))
+    for canvas, position in ((voltage, QPoint(2, 2)), (current, current.viewport().rect().center())):
+        qtbot.mouseClick(canvas.viewport(), Qt.MouseButton.RightButton, pos=position)
+        menu = next(m for m in canvas.findChildren(WorkspaceMenu) if m.isVisible())
+        actions = [a for a in menu.actions() if not a.isSeparator()]
+        assert [a.text() for a in actions] == ["恢复视图", "保存当前帧数据", "导出 PNG"]
+        assert all(not a.isEnabled() and a.menu() is None for a in actions)
+        qtbot.keyClick(menu, Qt.Key.Key_Escape)
+        assert not menu.isVisible()
+
+    saved, images = [], []
+    monkeypatch.setattr(page.controller, "save_displayed_frame", lambda *args: saved.append(args))
+    page.start()
+    qtbot.waitUntil(lambda: page.plot.displayed_frame is not None and page.save_button.isEnabled())
+    opening_frame = page.plot.displayed_frame
+    menus = []
+    for canvas in (voltage, current):
+        monkeypatch.setattr(canvas, "save_image", images.append)
+        menus.append(canvas.build_menu())
+    qtbot.waitUntil(lambda: page.plot.displayed_frame.sequence > opening_frame.sequence, timeout=5000)
+    runtime.monitoring.stop(key).result(5)
+    page.controller.poll()
+    page.refresh()
+    monkeypatch.setattr(adapter, "acquire", lambda *_: pytest.fail("a chart action read the instrument"))
+    monkeypatch.setattr(adapter, "apply", lambda *_: pytest.fail("a chart action wrote to the instrument"))
+    for chart, menu in zip((voltage, current), menus, strict=True):
+        fit, save, png = (a for a in menu.actions() if not a.isSeparator())
+        assert all(a.isEnabled() for a in (fit, save, png))
+        chart.setXRange(100, 105, padding=0)
+        for canvas in (voltage, current):
+            canvas.setYRange(100, 200, padding=0)
+        fit.trigger()
+        assert all(canvas.viewRange()[0] == pytest.approx((0, 600)) for canvas in (voltage, current))
+        assert all(canvas.viewRange()[1][0] < 100 for canvas in (voltage, current))
+        save.trigger()
+        png.trigger()
+        assert saved[-1] == (page, key, opening_frame, page.mode)
+        assert images[-1].ylabel.startswith(chart.getAxis("left").labelText)
+        expected = [
+            m
+            for m in opening_frame.batch.measurements
+            if m.quantity == ("voltage" if chart is voltage else "current")
+        ]
+        assert len(images[-1].curves) == len(expected)
+        for m in expected:
+            values = next(y for name, x, y in images[-1].curves if name == f"CH {m.channel}")
+            np.testing.assert_array_equal(values[-1:], m.values)
+            assert len(values) < len(page.plot.history[m.channel, m.quantity])
+    assert {m.quantity for m in saved[-1][2].batch.measurements} == {"voltage", "current"}
+
+    paused_frame = page.plot.displayed_frame
+    qtbot.mouseClick(current.viewport(), Qt.MouseButton.RightButton, pos=current.viewport().rect().center())
+    menu = next(m for m in current.findChildren(WorkspaceMenu) if m.isVisible())
+    menu.setActiveAction(menu.actions()[0])
+    qtbot.keyClick(menu, Qt.Key.Key_Down)
+    assert menu.activeAction().text() == "保存当前帧数据"
+    qtbot.keyClick(menu, Qt.Key.Key_Return)
+    assert not menu.isVisible() and saved[-1][2] is paused_frame
 
 
 def test_navigation_one_read_feeds_both_trends_and_no_parameter_polling(power, qtbot, monkeypatch):
@@ -114,10 +178,10 @@ def test_navigation_one_read_feeds_both_trends_and_no_parameter_polling(power, q
     assert len(page.plot.curves) == 8
     assert all(request.channels == (1, 2, 3, 4) and request.points == 1 for request in reads)
     assert not settings
-    assert page.timing.actual.toolTip() == ""
-    assert page.timing.isHidden() and page.actual.isVisible()
-    page.pin()
-    assert {s["source"] for s in window.dashboard.specs} == {"voltage", "current"}
+    assert page.actual.toolTip() == ""
+    assert page.timing.isVisible() and page.actual.isVisible()
+    window.dashboard.refresh()
+    assert set(window.dashboard.cards[key].spec["sources"]) == {"voltage", "current"}
     window.dashboard.start()
     assert len(runtime.monitoring.tasks[key].requests) == 1
 
@@ -278,7 +342,7 @@ def test_interval_in_run_and_hidden_plot_reconnect_session(power, qtbot, monkeyp
     page.start()
     qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
     old = page.plot.displayed_frame
-    page.timing.presets.setCurrentIndex(page.timing.presets.findData(5))
+    page.timing.setValue(5)
     assert runtime.monitoring.snapshots()[key]["interval"] == 5
     window.navigate("实时监测")
     assert not page.isVisible()
@@ -345,16 +409,14 @@ def test_global_output_confirmation_and_readback_continue_monitoring(power, qtbo
     assert all(page.controls.current_settings(ch) for ch in page.controls.panels)
 
 
-def test_interval_tool_defaults_collapsed_without_starting_or_writing(power, qtbot, monkeypatch):
+def test_header_interval_is_visible_without_starting_or_writing(power, qtbot, monkeypatch):
     _, page, runtime, key, adapter = power
     monkeypatch.setattr(adapter, "apply", lambda *_: pytest.fail("Interval tool wrote to instrument"))
     monkeypatch.setattr(adapter, "acquire", lambda *_: pytest.fail("Interval tool started acquisition"))
-    assert page.timing.isHidden() and not page.timing_action.isChecked()
+    assert page.timing.isVisible() and not hasattr(page, "timing_action")
     assert page.actual.isVisible() and page.actual.toolTip() == ""
-    page.timing_action.trigger()
     assert page.timing.isVisible() and page.actual.isVisible()
-    page.timing.presets.setCurrentIndex(page.timing.presets.findData(5))
-    page.timing_action.trigger()
-    assert page.timing.isHidden() and page.actual.isVisible()
+    page.timing.setValue(5)
+    assert page.timing.isVisible() and page.actual.isVisible()
     assert monitoring_options(page.controller, key, page.mode)["interval"] == 5
     assert not runtime.monitoring.snapshots().get(key, {}).get("running")

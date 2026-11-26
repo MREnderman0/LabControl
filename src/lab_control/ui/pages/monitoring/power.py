@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
     QSplitter,
     QToolButton,
@@ -14,36 +13,36 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from lab_control.application.config import config_from_record
-from lab_control.application.controls import data_sources
 from lab_control.domain.instruments import AcquisitionRequest
 from lab_control.ui.controller import state_label
+from lab_control.ui.kit import EmptyState, IconButton, PageHeader, icons
 from lab_control.ui.pages.monitoring.channel_selection import readable_power_channels
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.frame import (
     chart_card,
-    empty_label,
-    header_row,
+    displayed_frame_saver,
     page_layout,
     run_button,
     show_state,
 )
 from lab_control.ui.pages.monitoring.power_controls import PowerControls
-from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS, PowerPlot
+from lab_control.ui.pages.monitoring.power_plot import PowerPlot
 from lab_control.ui.pages.monitoring.recording_state import (
     RecordingButton,
     recording_phase,
     recording_save_notice,
     update_recording_frame,
 )
-from lab_control.ui.pages.monitoring.timing import MonitoringTiming
+from lab_control.ui.pages.monitoring.timing import MonitoringInterval, actual_interval_text
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.device_selector import DeviceSelector
+from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 
 class PowerMonitoringPage(QWidget):
-    def __init__(self, controller, add_card, parent=None):
+    def __init__(self, controller, add_card=None, parent=None):
         super().__init__(parent)
-        self.controller, self.add_card = controller, add_card
+        self.controller = controller
         self.device_id, self.mode = "", controller.mode
         self.controls: PowerControls | None = None
         self.channel_checks: dict[int, QCheckBox] = {}
@@ -54,18 +53,19 @@ class PowerMonitoringPage(QWidget):
         self.plot: PowerPlot
         layout = QVBoxLayout(self)
         page_layout(layout)
-        header = QHBoxLayout()
+        header = PageHeader(self)
         self.selector = DeviceSelector(controller, "power_supply", self, compact=True, surface="monitoring")
-        header.addWidget(self.selector, 1)
-        self.connection = QLabel()
+        header.add_left(self.selector, 1)
+        self.connection = QLabel(self)
         self.connection.setObjectName("sourceConnectionState")
-        header.addWidget(self.connection)
+        self.connection.hide()
         self.start_button = QPushButton("开始监测")
         self.start_button.clicked.connect(self.toggle_monitoring)
-        header.addWidget(self.start_button)
-        layout.addLayout(header)
-        self.empty = QLabel("请先从总览连接电源，再选择设备。")
-        empty_label(self.empty)
+        self.timing = MonitoringInterval(controller, self)
+        header.add_right(self.timing)
+        header.add_right(self.start_button)
+        layout.addWidget(header)
+        self.empty = EmptyState("未选择电源", "请先在首页连接电源，再从上方选择设备。", "zap", self)
         layout.addWidget(self.empty, 1)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
@@ -80,50 +80,54 @@ class PowerMonitoringPage(QWidget):
         self.record_button = RecordingButton()
         self.record_button.clicked.connect(self.record)
         toolbar.addWidget(self.record_button)
+        self.fit_button = IconButton("updown", "恢复视图")
+        self.fit_button.clicked.connect(lambda: self.plot.fit_current())
+        toolbar.addWidget(self.fit_button)
+        self.save_button = IconButton("download", "保存当前帧")
+        self.save_button.clicked.connect(self.save)
+        toolbar.addWidget(self.save_button)
         tools = QToolButton()
         tools.setObjectName("curveTools")
         tools.setProperty("buttonSize", "compact")
-        tools.setText("曲线工具")
+        tools.setToolTip("曲线工具（单次读取、保存、恢复视图）")
+        tools.setIcon(icons.icon("more", tk.TEXT_2))
+        tools.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        tools.setFixedWidth(30)
         tools.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(tools)
+        menu = WorkspaceMenu(tools)
         self.once_action = menu.addAction("单次读取", lambda: self.start(once=True))
         self.save_action = menu.addAction("保存当前帧", self.save)
         menu.addSeparator()
-        menu.addAction("适应曲线", lambda: self.plot.fit_current())
-        self.timing_action = menu.addAction("采集间隔")
-        self.timing_action.setCheckable(True)
+        menu.addAction("恢复视图", lambda: self.plot.fit_current())
         tools.setMenu(menu)
         toolbar.addWidget(tools)
         chart_layout.addLayout(toolbar)
-        self.timing = MonitoringTiming(controller)
-        self.timing.hide()
-        self.timing_action.toggled.connect(self.timing.setVisible)
-        chart_layout.addWidget(self.timing)
         self.channel_row = QHBoxLayout()
         chart_layout.addLayout(self.channel_row)
         self.plot = PowerPlot()
+        for canvas in self.plot.plots.values():
+            canvas.frame_save_provider = lambda: displayed_frame_saver(self, self.device_id, self.mode)
         chart_layout.addWidget(self.plot, 1)
         self.status = QLabel("未开始监测 · 仅查看不保存数据")
         self.status.setObjectName("mutedText")
         self.status.setWordWrap(True)
         footer = QHBoxLayout()
         footer.addWidget(self.status, 1)
-        self.actual = self.timing.actual
-        if timing_layout := self.timing.layout():
-            timing_layout.removeWidget(self.actual)
+        self.actual = QLabel("实际 — s/帧")
         footer.addWidget(self.actual)
         chart_layout.addLayout(footer)
         self.splitter.addWidget(self.chart)
         self.right = QWidget()
-        self.right.setMinimumWidth(350)
-        self.right.setMaximumWidth(410)
+        self.right.setMinimumWidth(340)
+        self.right.setMaximumWidth(390)
         self.right_layout = QVBoxLayout(self.right)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 1)
-        self.splitter.setSizes([800, 390])
+        self.splitter.setStretchFactor(1, 0)
+        self.splitter.setSizes([820, 360])
         run_button(self.start_button)
-        header_row(header, connection=self.connection, actions=(self.record_button,))
+        header.add_right(self.record_button)
         self.status_dot = chart_card(self.chart, status=self.status, footer_extra=(self.actual,))
         layout.addWidget(self.splitter, 1)
         self.selector.selected.connect(self.select_device)
@@ -177,11 +181,8 @@ class PowerMonitoringPage(QWidget):
                     )
             for ch in channels:
                 check = QCheckBox(f"CH {ch}")
-                color = CHANNEL_COLORS[(ch - 1) % len(CHANNEL_COLORS)]
-                check.setStyleSheet(
-                    f"QCheckBox {{ color: {color}; }} "
-                    f"QCheckBox::indicator:checked {{ background-color: {color}; border-color: {color}; }}"
-                )
+                check.setObjectName("channelToggle")
+                check.setProperty("channel", ((ch - 1) % 4) + 1)
                 check.setToolTip("勾选决定采集和记录范围，不改变仪器输出。")
                 check.setChecked(ch in selected)
                 check.toggled.connect(self.channels_changed)
@@ -255,7 +256,7 @@ class PowerMonitoringPage(QWidget):
                 return
             try:
                 self.controller.ensure_applicable(device)
-                self.timing.commit()
+                self.timing.interpretText()
                 self.controller.start_monitoring(
                     device,
                     (AcquisitionRequest("scalar", self.channels(), points=1),),
@@ -276,7 +277,7 @@ class PowerMonitoringPage(QWidget):
         service = self.controller.runtime.monitoring
         task = service.snapshots().get(self.device_id, {})
         try:
-            self.timing.commit()
+            self.timing.interpretText()
             self.controller.set_recording(self.device_id, not task.get("recording"), mode=self.mode)
         except Exception as exc:
             self.controller.message.emit(str(exc))
@@ -287,11 +288,6 @@ class PowerMonitoringPage(QWidget):
         if frame is not None:
             self.controller.save_displayed_frame(self, self.device_id, frame, self.mode)
         self.refresh()
-
-    def pin(self) -> None:
-        if self.device_id and self.channels():
-            for source in data_sources(config_from_record(self.controller.records[self.device_id])):
-                self.add_card(self.device_id, source.key, self.channels())
 
     def refresh(self) -> None:
         if not self.isVisible():
@@ -325,6 +321,7 @@ class PowerMonitoringPage(QWidget):
         for check in self.channel_checks.values():
             check.setEnabled(connected and not busy and not locked and not self.transition)
         self.timing.refresh(task)
+        self.actual.setText(actual_interval_text(task))
         refresh_reconnect_button(
             self.start_button,
             self.controller,
@@ -349,6 +346,10 @@ class PowerMonitoringPage(QWidget):
             and not task.get("display_saving")
             and not task.get("capture_saving")
         )
+        self.save_button.setEnabled(self.save_action.isEnabled())
+        self.fit_button.setEnabled(self.plot.displayed_frame is not None)
+        if self.plot.last_frame_clock:
+            self.actual.setText(f"最新帧 {self.plot.last_frame_clock} · {actual_interval_text(task)}")
         self.status.setText(
             task.get("error")
             or task.get("recording_notice")

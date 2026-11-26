@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
     QSplitter,
     QToolButton,
@@ -18,11 +17,11 @@ from PySide6.QtWidgets import (
 from lab_control.application.config import config_from_record
 from lab_control.application.controls import DataSource, data_sources
 from lab_control.ui.controller import state_label
+from lab_control.ui.kit import EmptyState, IconButton, PageHeader, icons
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.frame import (
     chart_card,
-    empty_label,
-    header_row,
+    displayed_frame_saver,
     page_layout,
     run_button,
     show_state,
@@ -36,19 +35,21 @@ from lab_control.ui.pages.monitoring.recording_state import (
     recording_save_notice,
     update_recording_frame,
 )
-from lab_control.ui.pages.monitoring.timing import MonitoringTiming
+from lab_control.ui.pages.monitoring.timing import MonitoringInterval, actual_interval_text
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.device_selector import DeviceSelector
+from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 
 class OpticalSpectrumMonitoringPage(MonitoringPage):
     """A four-parameter, wavelength/dBm view for optical spectrum analyzers."""
 
-    def __init__(self, controller, add_card, parent=None) -> None:
+    def __init__(self, controller, add_card=None, parent=None) -> None:
         # Skip the generic monitoring form while retaining its common page type
         # for workspace navigation and existing integrations.
         QWidget.__init__(self, parent)
         self.setObjectName("opticalSpectrumWorkspace")
-        self.controller, self.add_card = controller, add_card
+        self.controller = controller
         self.device_id = ""
         self.mode = "general"
         self.data_source: DataSource | None = None
@@ -58,18 +59,20 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
         self.form = type("_OpticalFormCompatibility", (), {"editors": {}})()
         layout = QVBoxLayout(self)
         page_layout(layout)
-        header = QHBoxLayout()
+        header = PageHeader(self)
         self.selector = DeviceSelector(controller, "optical_spectrometer", self, compact=True)
-        header.addWidget(self.selector, 1)
+        header.add_left(self.selector, 1)
         self.connection = QLabel(self)
         self.connection.setObjectName("sourceConnectionState")
-        header.addWidget(self.connection)
+        self.connection.hide()
+        self.timing = MonitoringInterval(controller, self)
+        self.actual = QLabel("实际 — s/帧")
+        header.add_right(self.timing)
         self.start_button = QPushButton("开始监测", self)
         self.start_button.clicked.connect(self.toggle_monitoring)
-        header.addWidget(self.start_button)
-        layout.addLayout(header)
-        self.empty = QLabel("请先从总览连接光谱仪，再选择设备。", self)
-        empty_label(self.empty)
+        header.add_right(self.start_button)
+        layout.addWidget(header)
+        self.empty = EmptyState("未选择光谱仪", "请先在首页连接光谱仪，再从上方选择设备。", "prism", self)
         layout.addWidget(self.empty, 1)
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.splitter.setChildrenCollapsible(False)
@@ -86,44 +89,53 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
         self.record_button = RecordingButton(chart)
         self.record_button.clicked.connect(self.record)
         toolbar.addWidget(self.record_button)
+        self.fit_button = IconButton("updown", "恢复视图")
+        self.fit_button.clicked.connect(self.fit_plot)
+        toolbar.addWidget(self.fit_button)
+        self.save_button = IconButton("download", "保存当前帧")
+        self.save_button.clicked.connect(self.save)
+        toolbar.addWidget(self.save_button)
         tools = QToolButton(chart)
         tools.setObjectName("curveTools")
         tools.setProperty("buttonSize", "compact")
-        tools.setText("曲线工具")
+        tools.setToolTip("曲线工具")
+        tools.setIcon(icons.icon("more", tk.TEXT_2))
+        tools.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        tools.setFixedWidth(30)
         tools.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(tools)
+        menu = WorkspaceMenu(tools)
         self.save_action = menu.addAction("保存当前帧", self.save)
-        menu.addAction("适应曲线", self.fit_plot)
+        menu.addAction("恢复视图", self.fit_plot)
         tools.setMenu(menu)
         toolbar.addWidget(tools)
         plot_layout.addLayout(toolbar)
-        self.timing = MonitoringTiming(controller, self)
-        self.timing.set_fixed_interval(True)
-        plot_layout.addWidget(self.timing)
         self.plot = LivePlot(chart)
+        self.plot.plot.frame_save_provider = lambda: displayed_frame_saver(self, self.device_id, self.mode)
+        self.plot.plot.setBackground(tk.CHART_BG)
+        self.plot.plot.getPlotItem().legend.hide()
+        self.plot.value.hide()
+        self.plot.meta.hide()
         plot_layout.addWidget(self.plot, 1)
         self.status = QLabel("监测未开始", chart)
         self.status.setObjectName("mutedText")
         self.status.setWordWrap(True)
         footer = QHBoxLayout()
         footer.addWidget(self.status, 1)
-        self.actual = QLabel("实际 — s/帧")
-        self.actual.setObjectName("rangeHint")
         footer.addWidget(self.actual)
         plot_layout.addLayout(footer)
         self.splitter.addWidget(chart)
         self.right = QWidget(self.splitter)
-        self.right.setMinimumWidth(360)
-        self.right.setMaximumWidth(430)
+        self.right.setMinimumWidth(340)
+        self.right.setMaximumWidth(380)
         self.right_layout = QVBoxLayout(self.right)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
-        self.splitter.setSizes([800, 400])
+        self.splitter.setSizes([830, 352])
         layout.addWidget(self.splitter, 1)
         run_button(self.start_button)
-        header_row(header, connection=self.connection, actions=(self.record_button,))
+        header.add_right(self.record_button)
         self.status_dot = chart_card(chart, status=self.status, footer_extra=(self.actual,))
         self.selector.selected.connect(self.select_device)
         controller.refreshed.connect(self.refresh)
@@ -189,7 +201,7 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
             return
         try:
             self.controller.ensure_applicable(self.device_id, workspace_mode=self.mode)
-            self.timing.commit()
+            self.timing.interpretText()
             self.controller.start_monitoring(
                 self.device_id,
                 (self.data_source.request((1,), points=2000, initiate=True, confirmed=True),),
@@ -201,7 +213,7 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
 
     def record(self) -> None:
         try:
-            self.timing.commit()
+            self.timing.interpretText()
             task = self.controller.runtime.monitoring.snapshots().get(self.device_id, {})
             self.controller.set_recording(self.device_id, not task.get("recording"), mode=self.mode)
             self.refresh()
@@ -216,10 +228,6 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
     def fit_plot(self) -> None:
         self.plot.fit_current()
 
-    def pin(self) -> None:
-        if self.data_source:
-            self.add_card(self.device_id, self.data_source.key, (1,))
-
     def refresh(self) -> None:
         if self.device_id != self.selector.device_id and not (self.controls and self.controls.running):
             self.select_device(self.selector.device_id)
@@ -228,7 +236,7 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
         service = self.controller.runtime.monitoring
         task = service.snapshots().get(self.device_id, {})
         self.timing.refresh(task)
-        self.actual.setText(self.timing.actual.text())
+        self.actual.setText(actual_interval_text(task))
         connected = state.get("connectionState") in {"connected", "busy"}
         self.connection.setText(
             "已连接" if connected else state_label(state.get("connectionState", "disconnected"))
@@ -258,6 +266,8 @@ class OpticalSpectrumMonitoringPage(MonitoringPage):
             and not task.get("display_saving")
             and not task.get("capture_saving")
         )
+        self.save_button.setEnabled(self.save_action.isEnabled())
+        self.fit_button.setEnabled(self.plot.displayed_frame is not None)
         self.status.setText(
             task.get("error")
             or task.get("notice")

@@ -83,6 +83,16 @@ def test_declared_scope_writes_select_controls_independently_of_readback(scope, 
     assert counts == [2]
 
 
+def test_scope_sync_status_tracks_partial_and_failed_readback(scope, monkeypatch):
+    _, page, runtime, _, _ = scope
+    for status in ("待同步", "同步异常", "正常"):
+        monkeypatch.setattr(
+            runtime.monitoring, "settings_status", lambda *_, status=status: (status, "回读状态")
+        )
+        page.controls.refresh()
+        assert page.controls.health.text() == ("已同步" if status == "正常" else status)
+
+
 def test_navigation_keeps_card_and_only_monitoring_route(scope):
     window, page, _, key, _ = scope
     window.navigate("设备管理", "oscilloscope", key)
@@ -199,18 +209,14 @@ def test_smaller_point_limit_clamps_once_in_control_group_and_preserves_monitor_
     assert not runtime.sessions.snapshots()[0]["controlGroup"]
 
 
-def test_both_curve_tool_menus_default_closed_and_keep_cadence_local(scope, qtbot, monkeypatch):
+def test_scope_and_spectrum_expose_header_interval_without_instrument_writes(scope, qtbot, monkeypatch):
     window, page, runtime, _, adapter = scope
     monkeypatch.setattr(adapter, "apply", lambda cmd: pytest.fail("Cadence must not write to instrument"))
-    assert not page.timing.isVisible()
-    assert page.timing.cadence.currentData() == "interval"
-    assert page.timing.interval.value() == 0.5 and page.timing.interval.isEnabled()
-    page.timing_action.trigger()
-    assert page.timing.isVisible()
-    page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
-    page.timing.interval.setValue(0.7)
-    page.timing.commit()
-    assert page.timing.interval.minimum() == 0.5 and page.timing.interval.maximum() == 60
+    assert page.timing.isVisible() and not hasattr(page, "timing_action")
+    assert page.timing.value() == 0.5 and page.timing.isEnabled()
+    page.timing.setValue(0.7)
+    page.timing.interpretText()
+    assert page.timing.minimum() == 0 and page.timing.maximum() == 60
     spec_key = runtime.add(ConnectionConfig("mock://spectrum-menu", "rigol.dsa815", "mock"))
     runtime.connect(spec_key).result()
     window.controller.poll()
@@ -411,7 +417,6 @@ def test_overview_is_control_only_and_keeps_scope_plot_on_detail_page(scope, qtb
     window, page, _, _, _ = scope
     page.start()
     qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
-    page.pin()
     window.navigate("实时监测")
     card = next(iter(window.dashboard.cards.values()))
     assert not hasattr(card, "plot")
@@ -449,9 +454,51 @@ def test_stop_recording_retains_ui_lock_through_blocked_binary_write(scope, qtbo
         assert runtime.sessions.snapshots()[0]["controlsLocked"]
         assert not page.controls.checks[1].isEnabled() and not page.controls.gear.isEnabled()
         assert not page.controls.points.isEnabled()
-        assert not page.refresh_action.isEnabled()
+        assert not page.controls.refresh_button.isEnabled()
     finally:
         release.set()
     qtbot.waitUntil(lambda: not runtime.sessions.snapshots()[0]["controlsLocked"])
     window.controller.poll()
     assert page.controls.checks[1].isEnabled() and runtime.monitoring.snapshots()[key]["running"]
+
+
+def test_scope_chart_menu_and_header_follow_displayed_frame(scope, qtbot, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QToolButton
+
+    from lab_control.ui.widgets.popup_surface import WorkspaceMenu
+
+    window, page, runtime, key, adapter = scope
+    assert page.findChild(QToolButton, "singleButton") is None
+    assert page.findChild(QToolButton, "curveTools") is None
+    assert isinstance(page.start_button.menu(), WorkspaceMenu)
+    assert [a.text() for a in page.start_button.menu().actions() if a.isVisible()] == ["单次采集"]
+    assert not page.fit_button.isEnabled() and not page.save_button.isEnabled()
+    canvas = page.plot.plot
+    qtbot.mouseClick(canvas.viewport(), Qt.MouseButton.RightButton, pos=canvas.viewport().rect().center())
+    qtbot.waitUntil(lambda: any(m.isVisible() for m in canvas.findChildren(WorkspaceMenu)))
+    menu = next(m for m in canvas.findChildren(WorkspaceMenu) if m.isVisible())
+    actions = [a for a in menu.actions() if not a.isSeparator()]
+    assert [a.text() for a in actions] == ["恢复视图", "保存当前帧数据", "导出 PNG"]
+    assert all(not a.isEnabled() and a.menu() is None for a in actions)
+    qtbot.keyClick(menu, Qt.Key.Key_Escape)
+    assert not menu.isVisible()
+    page.toggle_monitoring()
+    qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
+    page.toggle_monitoring()
+    qtbot.waitUntil(lambda: not runtime.monitoring.snapshots()[key]["running"])
+    page.refresh()
+    frame = page.plot.displayed_frame
+    saved = []
+    monkeypatch.setattr(page, "save_frame", lambda device, mode, selected: saved.append(selected))
+    menu = page.plot.build_menu()
+    actions = [a for a in menu.actions() if not a.isSeparator()]
+    assert all(a.isEnabled() for a in actions)
+    page.fit_button.click()
+    assert page.plot.plot.viewRange()[1] == [-4, 4]
+    actions[1].trigger()
+    page.save_button.click()
+    assert saved == [frame, frame]
+    image = tmp_path / "示波器当前帧.png"
+    monkeypatch.setattr("lab_control.ui.widgets.plot_export.choose_frame_destination", lambda *a, **kw: image)
+    actions[2].trigger()
+    assert image.read_bytes().startswith(bytes.fromhex("89504e470d0a1a0a"))

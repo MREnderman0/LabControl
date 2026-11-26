@@ -1,7 +1,6 @@
 """Only categories with current device evidence appear in the overview."""
 
 import pytest
-from PySide6.QtCore import Qt
 
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.discovery.inventory import Inventory
@@ -54,10 +53,11 @@ def test_empty_categories_are_hidden_and_history_remains_accessible(workspace, q
     assert window.overview_empty.isVisible()
     for card in window.cards.values():
         assert card.isHidden()
-        assert card.visible_count.text() == "可见 0 台"
-        assert card.online_count.text() == "00"
-        assert all(value.text() == "0" for value in card.metrics.values())
-    qtbot.mouseClick(window.device_list_button, Qt.MouseButton.LeftButton)
+        assert card.total_count.text() == "0"
+        assert card.counts["visible"] == 0
+        assert card.counts["online"] == 0
+        assert all(value == 0 for value in card.counts.values())
+    window.device_list_button.trigger()
     assert window.device_pool.isVisible()
     assert window.pool_empty.isVisible()
     window.presence_filter.setCurrentIndex(window.presence_filter.findData("history"))
@@ -89,13 +89,15 @@ def test_all_categories_follow_current_presence_without_inflating_counts(workspa
     assert not window.overview_empty.isVisible()
     card = window.cards[category]
     assert card.isVisible()
-    assert card.visible_count.text() == "可见 1 台"
-    assert card.online_count.text() == "00"
-    assert card.metrics["disconnected"].text() == "1"
+    assert card.total_count.text() == "1"
+    assert card.counts["visible"] == 1
+    assert card.counts["online"] == 0
+    assert card.counts["disconnected"] == 1
     runtime.inventory.merge(candidate, "later", error="fixture unplugged", reason="probe_failed")
     window.refresh()
     assert window.card_grid.cards == ()
     assert window.overview_empty.isVisible()
     assert card.isHidden()
-    assert card.visible_count.text() == "可见 0 台"
+    assert card.total_count.text() == "0"
+    assert card.counts["visible"] == 0
     assert len(runtime.inventory.all()) == 1

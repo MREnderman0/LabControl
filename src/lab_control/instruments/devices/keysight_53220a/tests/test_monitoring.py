@@ -76,7 +76,7 @@ def test_overview_interval_selects_custom_cadence_and_survives_restart(qtbot, tm
                 page.select_device(device)
                 dashboard = MonitoringDashboard(controller, parent=parent)
                 qtbot.wait(1)
-                assert page.timing.options()["cadence"] == ("fastest" if launch == 0 else "interval")
+                assert page.timing.options()["cadence"] == "interval"
                 if running:
                     page.toggle_monitoring()
                     assert runtime.monitoring.snapshots()[device]["running"]
@@ -84,7 +84,7 @@ def test_overview_interval_selects_custom_cadence_and_survives_restart(qtbot, tm
                     dashboard.cards[device].interval.setValue(1)
                 # Verify the mode immediately, before a periodic page refresh.
                 assert page.timing.options()["cadence"] == "interval"
-                assert page.timing.interval.isEnabled() and page.timing.interval.value() == 1
+                assert page.timing.isEnabled() and page.timing.value() == 1
                 saved = runtime.repository.load_workspace(f"monitor-timing/general/{device}")
                 assert (saved["cadence"], saved["interval"]) == ("interval", 1)
                 if running:

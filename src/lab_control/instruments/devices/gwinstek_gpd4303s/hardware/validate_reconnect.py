@@ -69,7 +69,7 @@ def verify_reconnect(config: ConnectionConfig, folder: Path, *, cycles: int = 3)
     app = None
     stage = "connection"
     try:
-        lock = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TF-LabControl/hardware.lock"
+        lock = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "LabControl/hardware.lock"
         if (
             lock.resolve() != lock
             or folder.resolve() != folder

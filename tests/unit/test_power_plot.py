@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import numpy as np
+import pytest
 
 from lab_control.application.monitoring import MonitorFrame
 from lab_control.domain.instruments import AcquisitionRequest, DeviceIdentity, Measurement, MeasurementBatch
@@ -67,22 +68,34 @@ def test_invalid_frame_keeps_displayed_snapshot_and_new_session_resets(qtbot):
     assert all(not curve.isVisible() for curve in plot.curves.values())
 
 
-def test_manual_fit_uses_visible_history_and_preserves_shared_time_range(qtbot):
+@pytest.mark.parametrize("pan, zoom", [(True, False), (False, True), (True, True)])
+def test_restore_shared_time_and_both_y_ranges_after_pan_or_zoom(qtbot, pan, zoom):
     plot = PowerPlot()
     qtbot.addWidget(plot)
     plot.show()
     plot.show_frame(frame(1, 100, voltage=100), (1,))
-    plot.show_frame(frame(2, 200, voltage=2), (1,))
-    plot.plots["voltage"].setXRange(50, 110, padding=0)
-    plot.fit_current()
-    assert plot.plots["voltage"].viewRange()[0] == [50, 110]
-    assert plot.plots["current"].viewRange()[0] == [50, 110]
-    assert 1 < plot.plots["voltage"].viewRange()[1][0] < 2
-    assert 2 < plot.plots["voltage"].viewRange()[1][1] < 3
-    fitted = plot.plots["voltage"].viewRange()[1]
-    plot.show_frame(frame(3, 210, voltage=2), (1,))
-    assert plot.plots["voltage"].viewRange()[1] == fitted
-    assert plot.plots["voltage"].viewRange()[0] == [50, 110]
+    plot.show_frame(frame(2, 650, voltage=2), (1,))
+    voltage, current = plot.plots["voltage"], plot.plots["current"]
+    box = current.getViewBox()
+    if pan:
+        box.translateBy(x=250)
+    if zoom:
+        box.scaleBy(x=0.25)
+    manual = voltage.viewRange()[0]
+    assert manual != [0, 600]
+    plot.show_frame(frame(3, 800, voltage=4), (1,))
+    assert voltage.viewRange()[0] == pytest.approx(manual)
+    for canvas in (voltage, current):
+        canvas.setYRange(70, 90, padding=0)
+
+    current.build_menu().actions()[0].trigger()
+    for canvas in (voltage, current):
+        assert canvas.viewRange()[0] == pytest.approx([100, 700])
+    assert voltage.viewRange()[1] == pytest.approx([1.8, 4.2])
+    assert current.viewRange()[1] == pytest.approx([0.198, 0.202])
+    plot.show_frame(frame(4, 851, voltage=3), (1,))
+    for canvas in (voltage, current):
+        assert canvas.viewRange()[0] == pytest.approx([151, 751])
 
 
 def test_time_origin_starts_at_first_valid_frame_and_never_rebases(qtbot):

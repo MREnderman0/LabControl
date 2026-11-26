@@ -120,7 +120,7 @@ def run(resource: str, asset_name: str) -> Path:
     }
     atomic_json(folder / "results.json", report)
     try:
-        lock_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TF-LabControl"
+        lock_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "LabControl"
         paths = {
             "runtime": root,
             "inventory": root / "inventory.sqlite3",

@@ -4,6 +4,7 @@ import time
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from lab_control.application.acquisition_pipeline import stamp_host_read
 from lab_control.application.acquisition_recovery import identify_for_connection
 from lab_control.domain.instruments import (
     AcquisitionRequest,
@@ -84,15 +85,19 @@ class SessionOperations:
                 raise
         completed = time.perf_counter()
         completed_utc = utc_now()
-        performance = {
-            **batch.performance,
-            **capture.summary(),
-            "acquisition_seconds": completed - started,
-            "received_at_monotonic": completed,
-            "queue_seconds": max(0, started - submitted_at) if submitted_at is not None else 0,
-        }
+        batch = stamp_host_read(
+            batch,
+            started,
+            started_utc,
+            completed,
+            completed_utc,
+            {
+                **capture.summary(),
+                "queue_seconds": max(0, started - submitted_at) if submitted_at is not None else 0,
+            },
+        )
         with manager.lock:
-            summary = session.acquisition_statistics.add(performance, batch.validation)
+            summary = session.acquisition_statistics.add(batch.performance, batch.validation)
         if summary is not None:
             manager.audit.try_record("acquisition_statistics", device_id=session.device_id, summary=summary)
         if capture.details:
@@ -101,16 +106,6 @@ class SessionOperations:
             )
         return replace(
             batch,
-            timestamp=completed_utc,
-            time_basis="host_utc_at_read_completed; waveform axes from instrument",
-            timing={
-                "version": 1,
-                "host_read_started_at": started_utc,
-                "host_read_completed_at": completed_utc,
-                "read_duration_seconds": completed - started,
-                "clock_source": "host_utc; durations=monotonic",
-            },
-            performance=performance,
             configuration={
                 **batch.configuration,
                 "_session_configuration_version": session.configuration_version,

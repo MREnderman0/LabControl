@@ -258,7 +258,8 @@ def test_history_filter_and_counts_share_current_presence(workspace):
     window.open_category("signal_generator")
     assert not window.rows[key].isHidden()
     assert window.rows[old["id"]].isHidden()
-    assert window.cards["signal_generator"].visible_count.text() == "可见 1 台"
+    assert window.cards["signal_generator"].total_count.text() == "1"
+    assert window.cards["signal_generator"].counts["visible"] == 1
     assert "发现 1 台" in window.summary.text()
     window.presence_filter.setCurrentIndex(window.presence_filter.findData("history"))
     assert window.rows[key].isHidden() and not window.rows[old["id"]].isHidden()

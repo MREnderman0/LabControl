@@ -3,10 +3,9 @@
 import math
 
 import pyqtgraph as pg
-from PySide6.QtCore import QPoint, Qt, Signal
 
 from lab_control.ui.pages.monitoring.trace_view import TraceView
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget, apply_axis_theme
+from lab_control.ui.widgets.plot_export import InstrumentMenuCanvas, apply_axis_theme
 
 
 class SpectrumAmplitudeAxis(pg.AxisItem):
@@ -49,9 +48,7 @@ class SpectrumAmplitudeAxis(pg.AxisItem):
         return super().boundingRect().adjusted(0, -self.label_margin, 0, self.label_margin)
 
 
-class SpectrumCanvas(PublicationPlotWidget):
-    menu_requested = Signal(QPoint)
-
+class SpectrumCanvas(InstrumentMenuCanvas):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         margin = math.ceil(self.fontMetrics().height() / 2) + 1
@@ -59,41 +56,34 @@ class SpectrumCanvas(PublicationPlotWidget):
         self.plotItem.layout.setContentsMargins(1, margin, 1, 1)
         apply_axis_theme(self)  # Visual only: the replaced axis gets the same tick font and colors.
 
-    def mousePressEvent(self, event):  # noqa: N802
-        if event.button() == Qt.MouseButton.RightButton:
-            event.accept()
-        else:
-            super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event):  # noqa: N802
-        if event.button() == Qt.MouseButton.RightButton:
-            self.menu_requested.emit(event.position().toPoint())
-            event.accept()
-        else:
-            super().mouseReleaseEvent(event)
-
-    def contextMenuEvent(self, event):  # noqa: N802
-        event.accept()
-
 
 class SpectrumView(TraceView):
     def __init__(self, plot):
+        self.on_follow_changed = None
         super().__init__(plot)
         box = plot.getViewBox()
         box.setMouseMode(box.PanMode)
         box.setMouseEnabled(x=False, y=True)
         box.sigRangeChangedManually.connect(self._manual_zoom)
 
+    def _set_follow(self, follow: bool) -> None:
+        if getattr(self, "follow_panel", None) != follow:
+            self.follow_panel = follow
+            if callable(self.on_follow_changed):
+                self.on_follow_changed(follow)
+
     def reset(self):
         super().reset()
         self.follow_panel = True
+        if callable(self.on_follow_changed):
+            self.on_follow_changed(True)
         self.panel_y = None
         self.default_dbm: tuple[float | None, float | None] = (None, None)
         self.unit_key = None
 
     def _manual_zoom(self, axes):
         if axes[1]:
-            self.follow_panel = False
+            self._set_follow(False)
 
     def update(self, frame, source_key, channels, points, *, waveform=False):
         if not points:
@@ -105,7 +95,7 @@ class SpectrumView(TraceView):
         display = trace.metadata.get("spectrum_display") or {}
         unit_key = (frame.batch.identity.key, trace.unit, display.get("unit", trace.unit))
         if unit_key != self.unit_key:
-            self.follow_panel = True
+            self._set_follow(True)
             self.unit_key = unit_key
 
         start, stop = config.get("start_frequency"), config.get("stop_frequency")
@@ -133,7 +123,7 @@ class SpectrumView(TraceView):
     def fit(self):
         """Fit once to the complete frame, including narrow peaks."""
         if self.points:
-            self.follow_panel = False
+            self._set_follow(False)
             self._fit_data()
 
     def _fit_data(self):
@@ -142,7 +132,7 @@ class SpectrumView(TraceView):
             self.plot.setYRange(*self.padded(bounds[2], bounds[3], 0.1), padding=0)
 
     def restore(self):
-        self.follow_panel = True
+        self._set_follow(True)
         if self.panel_y is None:
             self._fit_data()
             return

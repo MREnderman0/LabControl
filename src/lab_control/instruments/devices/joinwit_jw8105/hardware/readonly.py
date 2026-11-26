@@ -102,7 +102,7 @@ def run(resource: str, asset_name: str) -> Path:
         raise ValueError("Specify one explicit COM port")
     asset_name = _safe_asset_name(asset_name)
     root = application_home()
-    lock_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TF-LabControl"
+    lock_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "LabControl"
     stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
     folder = root / "hardware-tests" / asset_name / f"{stamp}-readonly-{uuid4().hex[:8]}"
     folder.mkdir(parents=True, exist_ok=False)

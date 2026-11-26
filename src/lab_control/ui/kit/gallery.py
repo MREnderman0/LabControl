@@ -42,8 +42,10 @@ from lab_control.ui.kit import (
     SubNavButton,
     Switch,
     button,
+    label,
     paint_device_card,
 )
+from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 
@@ -83,8 +85,9 @@ def _field(value: str, unit: str | None, *, state: str = "") -> FieldBox:
     box.add(edit, 1)
     if unit:
         combo = WorkspaceComboBox()
+        combo.setProperty("fieldUnit", True)
         combo.addItems([unit, "kHz", "Hz"])
-        combo.fit_contents(52)
+        combo.fit_contents(56)
         box.add(combo)
     if state:
         box.set_state(state, True)
@@ -126,22 +129,39 @@ def build() -> QWidget:
     disabled = button("应用修改", "primary")
     disabled.setEnabled(False)
     buttons.body.addLayout(
-        _row(disabled, IconButton("download", "保存"), IconButton("bell", "告警", badge=True))
+        _row(
+            disabled,
+            IconButton("updown", "恢复视图"),
+            IconButton("download", "保存当前帧"),
+            IconButton("pin", "固定纵轴"),
+            IconButton("more", "更多曲线操作"),
+            IconButton("bell", "告警", badge=True),
+        )
     )
     grid.addWidget(buttons, 0, 0)
 
-    status = Card("状态")
+    status = Card("状态与排版")
     status.body.addLayout(
         _row(
             Pill("已连接", "ok", dot=True),
             Pill("采集中", "accent", dot=True),
-            Pill("等待同步", "warn", dot=True),
+            Pill("采集中 · 参数已锁定", "warn", icon="lock"),
         )
     )
     live = Pill("记录中", "err", dot=True)
     live.set_kind("err", live=True)
     status.body.addLayout(_row(live, Pill("未连接", "neutral", dot=True), Pill("1 项", "err")))
-    status.body.addLayout(_row(Dot("ok", 8, live=True), Dot("warn", 8), Dot("err", 8), Dot("idle", 8)))
+    status.body.addLayout(
+        _row(
+            Dot("ok", 8, live=True),
+            Dot("warn", 8),
+            Dot("err", 8),
+            Dot("idle", 8),
+            *(Dot(tk.channel_color(ch), 8) for ch in range(1, 5)),
+            label("1.000 MHz", "mono"),
+            label("−30.09 dBm", "value"),
+        )
+    )
     grid.addWidget(status, 0, 1)
 
     inputs = Card("输入")
@@ -159,12 +179,11 @@ def build() -> QWidget:
     chips = DeviceChips()
     chips.set_devices(
         [
-            ("N9030A", "a", "ok", ""),
-            ("4959E", "b", "ok", ""),
-            ("FPH K13", "c", "warn", ""),
-            ("DSA815", "d", "err", ""),
+            ("信号源", "generator", "ok", ""),
+            ("示波器", "scope", "ok", ""),
+            ("频谱仪", "spectrum", "ok", ""),
         ],
-        "d",
+        "spectrum",
     )
     chips.setMinimumWidth(chips.sizeHint().width())
     device.body.addLayout(_row(chips))
@@ -192,8 +211,8 @@ def build() -> QWidget:
     instruments.set_parent_active(True)
     nav.body.addWidget(home)
     nav.body.addWidget(instruments)
-    for label, count, checked in (("频谱仪", 5, True), ("示波器", 3, False), ("电源", 3, False)):
-        item = SubNavButton(label, count)
+    for nav_label, count, checked in (("频谱仪", 5, True), ("示波器", 3, False), ("电源", 3, False)):
+        item = SubNavButton(nav_label, count)
         item.setChecked(checked)
         nav.body.addWidget(item)
     watch = NavButton("监视列表", "eye")

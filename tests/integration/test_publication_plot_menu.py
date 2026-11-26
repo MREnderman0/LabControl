@@ -1,9 +1,10 @@
 import numpy as np
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QMenu
 
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget
+from lab_control.ui.widgets.plot_export import InstrumentMenuCanvas, PublicationPlotWidget
+from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 from lab_control.ui.widgets.publication_figure import COLORS
 
 
@@ -47,3 +48,26 @@ def test_right_click_exports_frozen_visible_curves_on_white(qtbot, tmp_path, mon
     assert np.count_nonzero(pixels == 0xFFFFFFFF) > pixels.size * 0.9
     assert np.any(pixels == (int(COLORS[0][1:], 16) | 0xFF000000))
     assert not plot.scene().contextMenu
+
+
+def test_preview_plot_offers_only_local_view_and_png_on_axis_or_curve(qtbot):
+    plot = InstrumentMenuCanvas()
+    qtbot.addWidget(plot)
+    plot.resize(480, 280)
+    plot.show()
+    plot.plot([0, 1, 2], [1, 1, 1])
+    plot.autoRange()
+    vb = plot.getViewBox()
+    positions = [
+        QPoint(2, 2),
+        plot.mapFromScene(plot.getAxis("bottom").sceneBoundingRect().center()),
+        plot.mapFromScene(vb.mapViewToScene(QPointF(1, 1))),
+    ]
+    for position in positions:
+        qtbot.mouseClick(plot.viewport(), Qt.MouseButton.RightButton, pos=position)
+        menu = next(m for m in plot.findChildren(WorkspaceMenu) if m.isVisible())
+        actions = [a for a in menu.actions() if not a.isSeparator()]
+        assert [a.text() for a in actions] == ["恢复视图", "导出 PNG"]
+        assert all(a.isEnabled() and a.menu() is None for a in actions)
+        qtbot.keyClick(menu, Qt.Key.Key_Escape)
+        assert not menu.isVisible()

@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from lab_control.domain.instruments import DeviceCommand, DeviceError
-from lab_control.domain.oscilloscope import COLORS, engineering
+from lab_control.domain.oscilloscope import engineering
 from lab_control.ui.kit import Segmented
 from lab_control.ui.pages.monitoring.oscilloscope_controls import gear_icon
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
@@ -150,11 +150,8 @@ class PicoScopeControls(QFrame):
         for ch in caps.channels:
             channel = controller.declared_capabilities(device_id, ch).get("channel").parameters
             check = QCheckBox(f"CH {ch}")
-            color = COLORS[(ch - 1) % len(COLORS)]
-            check.setStyleSheet(
-                f"QCheckBox {{ color: {color}; font-weight: 600; }}"
-                f"QCheckBox::indicator:checked {{ background: {color}; border-color: {color}; }}"
-            )
+            check.setObjectName("channelToggle")
+            check.setProperty("channel", str(((ch - 1) % 8) + 1))
             check.setChecked(ch == 1)
             self.checks[ch] = check
             box = section(check)

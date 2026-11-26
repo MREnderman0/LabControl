@@ -41,6 +41,7 @@ class Preset:
     name: str
     rows: tuple[WatchRow, ...] = ()
     id: str = field(default_factory=new_id)
+    pinned: bool = False
 
 
 class Presets:
@@ -49,12 +50,23 @@ class Presets:
     def __init__(self, repository):
         self.repository = repository
         self.items = tuple(
-            Preset(p["name"], tuple(WatchRow(**r) for r in p["rows"]), p["id"])
+            Preset(p["name"], tuple(WatchRow(**r) for r in p["rows"]), p["id"], p.get("pinned", False))
             for p in repository.load_workspace(self.key, [])
         )
 
+    @property
+    def pinned(self) -> Preset | None:
+        return next((preset for preset in self.items if preset.pinned), None)
+
+    def pin(self, key):
+        if key and self.get(key) is None:
+            raise ValidationError("监视预设不存在")
+        self.save(replace(p, pinned=p.id == key) for p in self.items)
+
     def save(self, items):
         items = tuple(items)
+        if sum(p.pinned for p in items) > 1:
+            raise ValidationError("首页只能置顶一个监视预设")
         for p in items:
             if not p.name.strip():
                 raise ValidationError("请输入预设名称")

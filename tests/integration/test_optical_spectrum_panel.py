@@ -68,16 +68,15 @@ def test_optical_page_has_four_instrument_settings_and_fixed_interval(
         page = window.stack.currentWidget()
         assert isinstance(page, OpticalSpectrumMonitoringPage)
         assert set(page.controls.editors) == {"start_wavelength", "stop_wavelength", "rbw", "sensitivity"}
-        assert page.timing.fixed_interval
-        assert page.timing.interval.value() == 10.0
-        assert page.timing.cadence.isHidden()
+        assert page.timing.minimum() == 0
+        assert page.timing.value() == 10.0
         assert page.selector.device_id
         assert window.controller.mode == "general"
         window.controller.ensure_applicable(page.device_id)
         with pytest.raises(DeviceError):
             window.controller.ensure_applicable(page.device_id, workspace_mode="invalid")
-        page.timing.interval.setValue(2.5)
-        page.timing.commit()
+        page.timing.setValue(2.5)
+        page.timing.interpretText()
         assert runtime.monitoring_preferences[page.timing.key]["interval"] == 2.5
         assert runtime.repository.load_workspace(page.timing.key)["interval"] == 2.5
         qtbot.waitUntil(lambda: len(page.controls.current()) == 4, timeout=3000)
@@ -111,6 +110,45 @@ def test_optical_page_has_four_instrument_settings_and_fixed_interval(
         shutdown(window)
 
 
+def test_pending_optical_sync_and_failed_refresh_are_visible(qtbot, tmp_path, monkeypatch):
+    runtime = create_demo_runtime(tmp_path)
+    window = RealWindow(runtime)
+    qtbot.addWidget(window)
+    window.show()
+    try:
+        window.navigate("仪器测控", "optical_spectrometer")
+        controls = window.stack.currentWidget().controls
+        qtbot.waitUntil(lambda: len(controls.current()) == 4 and not controls.running)
+        monkeypatch.setattr(runtime.monitoring, "settings_status", lambda *_: ("待同步", "等待有效读回"))
+        controls.refresh()
+        assert controls.health.text() == "待同步"
+        from concurrent.futures import Future
+
+        failed = Future()
+        failed.set_exception(DeviceError("模拟读取超时"))
+        submit = runtime.sessions.submit
+        monkeypatch.setattr(
+            runtime.sessions,
+            "submit",
+            lambda key, op, *args, **kw: failed if op == "read_settings" else submit(key, op, *args, **kw),
+        )
+        controls.refresh_button.click()
+        qtbot.waitUntil(lambda: not controls.running and "模拟读取超时" in controls.status.text())
+        assert controls.status.isVisible()
+        partial = Future()
+        partial.set_result(())
+        monkeypatch.setattr(
+            runtime.sessions,
+            "submit",
+            lambda key, op, *args, **kw: partial if op == "read_settings" else submit(key, op, *args, **kw),
+        )
+        controls.refresh_button.click()
+        qtbot.waitUntil(lambda: not controls.running and "读回不完整" in controls.status.text())
+        assert controls.status.isVisible()
+    finally:
+        shutdown(window)
+
+
 def test_overview_and_optical_page_share_device_interval(qtbot, tmp_path):
     runtime = create_demo_runtime(tmp_path)
     window = RealWindow(runtime)
@@ -129,13 +167,13 @@ def test_overview_and_optical_page_share_device_interval(qtbot, tmp_path):
         window.navigate("实时监测", "optical_spectrometer", optical_id)
         page = window.stack.currentWidget()
         assert isinstance(page, OpticalSpectrumMonitoringPage)
-        page.timing.interval.setValue(4.0)
+        page.timing.setValue(4.0)
         assert card.interval.value() == 4.0
         assert runtime.repository.load_workspace(f"monitor-timing/general/{optical_id}")["interval"] == 4.0
 
         window.navigate("实时监测")
         card.interval.setValue(7.5)
-        assert page.timing.interval.value() == 7.5
+        assert page.timing.value() == 7.5
         assert runtime.repository.load_workspace(f"monitor-timing/general/{optical_id}")["interval"] == 7.5
     finally:
         shutdown(window)

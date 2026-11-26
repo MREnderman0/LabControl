@@ -9,7 +9,7 @@
 在项目根目录运行，配置保存在运行目录，不能把真实资源和序列号提交到源码：
 
 ```powershell
-$cfg = "$env:LOCALAPPDATA\TF-LabControl\config\afg-bench.toml"
+$cfg = "$env:LOCALAPPDATA\LabControl\config\afg-bench.toml"
 .venv-dev\Scripts\python.exe -m lab_control.instruments.devices.tek_afg31252.hardware.validate_usb --config $cfg --preflight-only
 .venv-dev\Scripts\python.exe -m lab_control.instruments.devices.tek_afg31252.hardware.validate_usb --config $cfg
 .venv-dev\Scripts\python.exe -m lab_control.instruments.devices.tek_afg31252.hardware.validate_ranges --config $cfg

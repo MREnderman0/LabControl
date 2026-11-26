@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QSplitter,
     QToolButton,
     QVBoxLayout,
@@ -23,7 +22,7 @@ from lab_control.domain.oscilloscope import ScopeDisplay, engineering
 from lab_control.domain.waveform_coverage import mark_coverage
 from lab_control.instruments.scope_single import SingleCapture
 from lab_control.ui.controller import state_label
-from lab_control.ui.kit import Dot, EmptyState, IconButton, ReadoutStrip, icons
+from lab_control.ui.kit import Dot, EmptyState, IconButton, PageHeader, ReadoutStrip, icons
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.oscilloscope_controls import OscilloscopeControls, ScopeSlider
 from lab_control.ui.pages.monitoring.oscilloscope_plot import OscilloscopePlot
@@ -34,10 +33,11 @@ from lab_control.ui.pages.monitoring.recording_state import (
     recording_save_notice,
     update_recording_frame,
 )
-from lab_control.ui.pages.monitoring.timing import MonitoringTiming
+from lab_control.ui.pages.monitoring.timing import MonitoringInterval, actual_interval_text
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.device_selector import DeviceSelector
 from lab_control.ui.widgets.plot_export import PlotExport
+from lab_control.ui.widgets.popup_surface import WorkspaceMenu
 
 
 @dataclass(frozen=True)
@@ -52,9 +52,9 @@ class TagDrag:
 
 
 class OscilloscopeMonitoringPage(QWidget):
-    def __init__(self, controller, add_card, parent=None) -> None:
+    def __init__(self, controller, add_card=None, parent=None) -> None:
         super().__init__(parent)
-        self.controller, self.add_card = controller, add_card
+        self.controller = controller
         self.device_id, self.mode = "", controller.mode
         self.pico_drafts: dict[tuple[str, str], dict] = {}
         self.controls: OscilloscopeControls | PicoScopeControls | None = None
@@ -65,14 +65,12 @@ class OscilloscopeMonitoringPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(14)
-        header = QHBoxLayout()
-        header.setSpacing(8)
+        header = PageHeader(self)
         self.selector = DeviceSelector(controller, "oscilloscope", self, compact=True)
-        header.addWidget(self.selector, 1)
-        self.connection = QLabel()
+        header.add_left(self.selector, 1)
+        self.connection = QLabel(self)
         self.connection.setObjectName("sourceConnectionState")
-        self.connection.hide()  # The device card shows the connection state.
-        header.addWidget(self.connection)
+        self.connection.hide()
         self.single_job: SingleCapture | None = None
         self.single_notice = ""
         self.pausing_for_single: object | None = None
@@ -84,24 +82,22 @@ class OscilloscopeMonitoringPage(QWidget):
         self.start_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.start_button.setIcon(icons.icon("play", tk.TEXT))
         self.start_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        actions = QMenu(self.start_button)
+        actions = WorkspaceMenu(self.start_button)
         self.single_action = actions.addAction("单次采集", self.request_single)
         self.single_action.setToolTip("Single：仪器采集一帧后停止，软件读取这一帧")
         self.cancel_action = actions.addAction("取消本次采集", self.cancel_single)
+        self.memory_action = actions.addAction("读取完整存储波形", self.read_memory)
+        self.memory_action.setVisible(False)
         self.start_button.setMenu(actions)
         self.start_button.clicked.connect(self.toggle_monitoring)
         self.single_action.setIcon(icons.icon("single", tk.TEXT))
-        self.single_button = QToolButton()
-        self.single_button.setObjectName("singleButton")
-        self.single_button.setProperty("buttonSize", "compact")
-        self.single_button.setDefaultAction(self.single_action)
-        self.single_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        header.addWidget(self.start_button)
-        header.addWidget(self.single_button)
+        self.timing = MonitoringInterval(controller, self)
+        header.add_right(self.timing)
+        header.add_right(self.start_button)
         self.record_button = RecordingButton(self)
         self.record_button.clicked.connect(self.record)
-        header.addWidget(self.record_button)
-        layout.addLayout(header)
+        header.add_right(self.record_button)
+        layout.addWidget(header)
         self.empty = EmptyState("未选择示波器", "请先在首页连接示波器，再从上方选择设备。", "scope")
         layout.addWidget(self.empty, 1)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -121,50 +117,32 @@ class OscilloscopeMonitoringPage(QWidget):
             {
                 "timebase": "时基",
                 "rate": "采样率",
-                "points": "设定深度",
-                "actual_points": "本帧点数",
+                "points": "记录深度",
+                "actual_points": "实际点数",
                 "trigger": "触发",
             },
             highlight=("trigger",),
             embedded=True,
         )
         tools_row.addWidget(self.readouts, 1)
+        self.fit_button = IconButton("updown", "恢复视图（按当前时基、通道档位和偏移显示）")
+        self.fit_button.clicked.connect(lambda: self.plot.fit_current())
+        tools_row.addWidget(self.fit_button)
         self.save_button = IconButton("download", "保存当前帧")
         self.save_button.clicked.connect(lambda: self.save())
         tools_row.addWidget(self.save_button)
-        tools = QToolButton()
-        tools.setObjectName("curveTools")
-        tools.setProperty("buttonSize", "compact")
-        tools.setText("曲线工具")
-        tools.setIcon(icons.icon("more", tk.TEXT_2))
-        tools.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        tools.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(tools)
-        self.save_action = menu.addAction("保存当前帧", self.save)
-        self.memory_action = menu.addAction("读取完整存储波形", self.read_memory)
-        self.memory_action.setVisible(False)
-        menu.addSeparator()
-        self.refresh_action = menu.addAction("刷新参数", self.refresh_parameters)
-        self.fit_action = menu.addAction("恢复仪器视图", lambda: self.plot.clear_preview())
-        self.timing_action = menu.addAction("采集节奏")
-        self.timing_action.setCheckable(True)
-        tools.setMenu(menu)
-        tools_row.addWidget(tools)
         chart_layout.addWidget(head)
         body = QVBoxLayout()
         body.setContentsMargins(10, 8, 12, 6)
         body.setSpacing(6)
         chart_layout.addLayout(body, 1)
-        self.timing = MonitoringTiming(controller)
-        self.timing.hide()
-        self.timing_action.toggled.connect(self.timing.setVisible)
-        body.addWidget(self.timing)
         self.plot = OscilloscopePlot()
         self.plot.plot.snapshot_provider = self.export_snapshot
         self.plot.tag_pressed.connect(self.begin_tag_drag)
         self.plot.tag_cancelled.connect(self.cancel_tag_drag)
         self.plot.ground_dragged.connect(self.drag_offset)
         self.plot.trigger_dragged.connect(self.drag_trigger)
+        self.plot.channel_selected.connect(self._select_channel_card)
         body.addWidget(self.plot, 1)
         foot = QFrame(chart)
         foot.setObjectName("cardFoot")
@@ -183,13 +161,14 @@ class OscilloscopeMonitoringPage(QWidget):
         chart_layout.addWidget(foot)
         self.splitter.addWidget(chart)
         self.right = QWidget()
-        self.right.setMinimumWidth(320)
+        self.right.setMinimumWidth(340)
         self.right.setMaximumWidth(380)
         self.right_layout = QVBoxLayout(self.right)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 1)
-        self.splitter.setSizes([850, 330])
+        self.splitter.setStretchFactor(1, 0)
+        self.splitter.setSizes([830, 352])
         layout.addWidget(self.splitter, 1)
         self.selector.selected.connect(self.select_device)
         controller.refreshed.connect(self.refresh)
@@ -214,6 +193,7 @@ class OscilloscopeMonitoringPage(QWidget):
         self.frozen_at = 0.0
         self.device_id, self.mode = device_id, self.controller.mode
         self.timing.bind(device_id, self.mode)
+        self.plot.hidden_channels.clear()
         self.plot.reset()
         if self.controls:
             self.controls.hide()
@@ -225,7 +205,6 @@ class OscilloscopeMonitoringPage(QWidget):
         self.empty.setVisible(not device_id)
         self.frozen_at = 0.0
         self.single_notice = ""
-        self.refresh_action.setVisible(True)
         if device_id:
             config = config_from_record(self.controller.records[device_id])
             self.source = next((s for s in data_sources(config) if s.kind == "waveform"), None)
@@ -235,7 +214,6 @@ class OscilloscopeMonitoringPage(QWidget):
                 )
                 self.controls.source_changed.connect(self.select_pico_source)
                 self.select_pico_source()
-                self.refresh_action.setVisible(False)
             else:
                 self.controls = OscilloscopeControls(self.controller, device_id, self.start, self.right)
                 self.controls.preview_requested.connect(self.plot.preview_parameter)
@@ -354,10 +332,6 @@ class OscilloscopeMonitoringPage(QWidget):
     def focus_settings(self) -> None:
         self.controller.focus_settings(self.device_id, self.controls.keys() if self.controls else ())
 
-    def refresh_parameters(self) -> None:
-        if isinstance(self.controls, OscilloscopeControls):
-            self.controls.refresh_parameters()
-
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         self.focus_settings()
@@ -407,7 +381,7 @@ class OscilloscopeMonitoringPage(QWidget):
             return
         try:
             self.controller.ensure_applicable(self.device_id)
-            self.timing.commit()
+            self.timing.interpretText()
             if isinstance(self.controls, PicoScopeControls):
                 request = self.source.request(
                     self.controls.channels(), self.controls.points.value(), initiate=True, confirmed=True
@@ -543,6 +517,8 @@ class OscilloscopeMonitoringPage(QWidget):
             frame = replace(frame, batch=batch)
         curves, partial = [], []
         for m in batch.measurements:
+            if m.channel in self.plot.hidden_channels:
+                continue
             info = m.metadata["coverage"]
             curves.append((f"CH{m.channel}", m.axis, m.values))
             if info["partial"]:
@@ -584,10 +560,6 @@ class OscilloscopeMonitoringPage(QWidget):
         except Exception as exc:
             self.controller.message.emit(str(exc))
 
-    def pin(self) -> None:
-        if self.source and self.controls and self.controls.channels():
-            self.add_card(self.device_id, self.source.key, self.controls.channels())
-
     def refresh(self) -> None:
         if (self.device_id, self.mode) != (self.selector.device_id, self.controller.mode) and not (
             self.memory_busy or self.controls and self.controls.running
@@ -624,6 +596,10 @@ class OscilloscopeMonitoringPage(QWidget):
         self.memory_action.setEnabled(
             connected
             and not busy
+            and not self.single_job
+            and not self.pausing_for_single
+            and not task.get("stopping")
+            and recording_phase(task) == "idle"
             and not state.get("controlsLocked")
             and bool(self.controls and self.controls.channels())
         )
@@ -650,9 +626,9 @@ class OscilloscopeMonitoringPage(QWidget):
             busy=busy,
             can_cancel=bool(self.controls and self.controls.running and self.controls.restart),
         )
-        if self.single_job:
+        if self.single_job or self.pausing_for_single:
             self.start_button.setEnabled(True)
-            self.start_button.setText(self.single_job.phase)
+            self.start_button.setText(self.single_job.phase if self.single_job else "准备单次采集")
         run_icon = "pause" if task.get("running") else "play"
         if self.start_button.property("kitIcon") != run_icon:
             self.start_button.setProperty("kitIcon", run_icon)
@@ -662,25 +638,31 @@ class OscilloscopeMonitoringPage(QWidget):
         )
         self.refresh_tag_state(state)
         update_recording_frame(self.chart, task)
-        self.save_action.setEnabled(
+        self.save_button.setEnabled(
             self.plot.displayed_frame is not None
             and not task.get("display_saving")
             and not task.get("capture_saving")
         )
-        self.save_button.setEnabled(self.save_action.isEnabled())
+        self.fit_button.setEnabled(self.plot.displayed_frame is not None)
+        self.plot.save_enabled = self.save_button.isEnabled()
         self.update_readouts()
-        self.refresh_action.setEnabled(bool(connected and not busy and not state.get("controlsLocked")))
         self.timing.refresh(task)
-        self.actual.setText(self.timing.actual.text())
+        actual_text = actual_interval_text(task)
+        clock = self.plot.last_frame_clock
+        self.actual.setText(f"最新帧 {clock} · {actual_text}" if clock else actual_text)
+        self._sync_channel_cards()
         old = self.plot.displayed_frame
         frozen = old is not None and old.batch.performance.get("instrument_running") is False
         waiting = old is not None and not self.frame_is_current(state)
         self.status.setText(
-            (self.single_job.phase if self.single_job else self.single_notice)
+            ("未连接" if not connected else "")
+            or ("准备单次采集" if self.pausing_for_single else "")
+            or (self.single_job.phase if self.single_job else "")
             or task.get("error")
             or task.get("notice")
             or task.get("recording_notice")
             or recording_save_notice(task)
+            or (self.single_notice if not task.get("running") and not waiting else "")
             or (
                 "完整波形读取中 · 完成后自动续采"
                 if self.memory_busy
@@ -723,7 +705,12 @@ class OscilloscopeMonitoringPage(QWidget):
         ):
             frame = None
         counts = {len(m.values) for m in frame.batch.measurements} if frame else set()
-        self.readouts.set("actual_points", " / ".join(f"{n:,}" for n in sorted(counts)) or "—")
+        actual_pts = " / ".join(f"{n:,}" for n in sorted(counts)) if counts else ""
+        extent = ""
+        if frame and frame.batch.measurements:
+            extent = {"screen": "屏幕", "memory": "存储"}.get(
+                frame.batch.measurements[0].metadata.get("waveform_extent", ""), ""
+            )
         if not isinstance(controls, OscilloscopeControls):
             config = frame.batch.configuration if frame else {}
             interval = config.get("sample_interval_s")
@@ -740,6 +727,10 @@ class OscilloscopeMonitoringPage(QWidget):
             )
             self.readouts.set("timebase", timebase_text)
             self.readouts.set("points", f"{frame.request.points:,}" if frame else "—")
+            self.readouts.set(
+                "actual_points",
+                f"{actual_pts} · {extent}" if actual_pts and extent else (actual_pts or "—"),
+            )
             self.readouts.set("trigger", "—")
             return
         values = controls.values
@@ -753,13 +744,17 @@ class OscilloscopeMonitoringPage(QWidget):
         points = values.get((1, "record_length"))
         if isinstance(points, str) and points.strip().isdigit():
             points = int(points.strip())
-        self.readouts.set(
-            "points",
+        target_pts = (
             f"{points:,.0f}"
             if isinstance(points, (int, float))
             else "AUTO"
             if str(points).strip().upper() == "AUTO"
-            else "—",
+            else ""
+        )
+        self.readouts.set("points", target_pts or "—")
+        self.readouts.set(
+            "actual_points",
+            f"{actual_pts} · {extent}" if actual_pts and extent else (actual_pts or "—"),
         )
         channel, level, _enabled = controls.trigger_state()
         source = values.get((1, "trigger_source"))
@@ -768,12 +763,20 @@ class OscilloscopeMonitoringPage(QWidget):
         arrow = {"POS": "↑", "POSITIVE": "↑", "RISE": "↑", "NEG": "↓", "NEGATIVE": "↓", "FALL": "↓"}.get(
             str(slope).upper(), ""
         )
-        parts = [
-            f"CH{channel}" if channel else (str(source) if source else ""),
-            (arrow + " " if arrow else "") + (engineering(float(level), "V") if level is not None else ""),
-            str(mode).title() if mode else "",
-        ]
-        self.readouts.set("trigger", " · ".join(p.strip() for p in parts if p.strip()) or "—")
+        head_part = " ".join(
+            p
+            for p in (
+                f"CH{channel}" if channel else (str(source) if source else ""),
+                (arrow + " " if arrow else "")
+                + (engineering(float(level), "V") if level is not None else ""),
+            )
+            if p
+        )
+        mode_part = str(mode).title() if mode else ""
+        self.readouts.set("trigger", head_part or mode_part or "—")
+        if "trigger" in self.readouts.cells:
+            full_tip = " · ".join(p for p in (head_part, mode_part) if p)
+            self.readouts.cells["trigger"].setToolTip(full_tip)
 
     def refresh_tag_state(self, state: dict) -> None:
         drag = self.tag_drag
@@ -788,6 +791,34 @@ class OscilloscopeMonitoringPage(QWidget):
         trigger_enabled = bool(enabled and channel and self.tag_context(channel, "trigger_level", state))
         self.plot.set_drag_state(offsets, (channel, level, trigger_enabled))
 
+    def _select_channel_card(self, channel: int) -> None:
+        if isinstance(self.controls, OscilloscopeControls):
+            self.controls.show_tab("垂直")
+            self.controls.show_channel(channel)
+            self._sync_channel_cards()
+
+    def _sync_channel_cards(self) -> None:
+        controls = self.controls
+        if controls is None:
+            self.plot.sync_channel_cards((), set(), {})
+            return
+        all_channels = tuple(controls.instrument_channels)
+        enabled = set(controls.channels())
+        scales: dict[int, str] = {}
+        selected_ch: int | None = None
+        if isinstance(controls, OscilloscopeControls):
+            for ch in all_channels:
+                val = controls.values.get((ch, "scale"))
+                if isinstance(val, (int, float)):
+                    scales[ch] = f"{engineering(float(val), 'V')}/格"
+            selected_ch = controls.focused_channel
+        self.plot.sync_channel_cards(
+            all_channels,
+            enabled,
+            scales,
+            selected_channel=selected_ch,
+        )
+
     def refresh_frame(self, device_id: str) -> None:
         if device_id != self.device_id or not self.isVisible() or not self.source or not self.controls:
             return
@@ -797,7 +828,16 @@ class OscilloscopeMonitoringPage(QWidget):
             pico = isinstance(self.controls, PicoScopeControls)
             channels = frame.request.channels if pico else self.controls.channels()
             self.plot.show_frame(frame, self.source, channels)
-            self.refresh_tag_state(self.controller.states.get(device_id, {}))
+            state = self.controller.states.get(device_id, {})
+            self.refresh_tag_state(state)
+            self._sync_channel_cards()
+            clock = self.plot.last_frame_clock
+            if clock:
+                task = service.snapshots().get(device_id, {})
+                self.fit_button.setEnabled(True)
+                self.plot.save_enabled = not (task.get("display_saving") or task.get("capture_saving"))
+                self.save_button.setEnabled(self.plot.save_enabled)
+                self.actual.setText(f"最新帧 {clock} · {actual_interval_text(task)}")
             if isinstance(self.controls, PicoScopeControls):
                 self.controls.show_sample_rate(frame)
             self.update_readouts()

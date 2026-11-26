@@ -9,7 +9,7 @@ from lab_control.app import load_stylesheet, load_ui_font
 from lab_control.application.config import ConnectionConfig
 from lab_control.application.runtime import ApplicationRuntime
 from lab_control.domain.instruments import ApplyResult, Capability, DeviceCommand, DeviceError
-from lab_control.domain.spectrum import SpectrumMarker
+from lab_control.domain.spectrum import MarkerReading, SpectrumMarker
 from lab_control.ui.pages.monitoring.spectrum import SpectrumMonitoringPage
 from lab_control.ui.real_window import RealWindow
 
@@ -87,6 +87,20 @@ def test_recording_locks_parameters_and_auto_but_monitoring_keeps_them_editable(
     runtime.monitoring.stop(key).result(3)
 
 
+def test_marker_precision_and_pending_sync(spectrum, monkeypatch):
+    _, page, runtime, _, _ = spectrum
+    monkeypatch.setattr(runtime.monitoring, "settings_status", lambda *_: ("待同步", "等待最新有效读回"))
+    page.controls.refresh()
+    assert page.controls.health.text() == "待同步"
+    page.markers = [SpectrumMarker(1, 1e6)]
+    page.plot.amplitude_unit = "W"
+    page.plot.readings = {1: MarkerReading("正常", 1e6, 1e6, 0.0012345678)}
+    page.update_marker_list()
+    page.update_readouts()
+    assert "0.0012345678 W" in page.marker_list.item(0).text()
+    assert page.readouts.cells["marker"].value.text() == "0.0012345678 W"
+
+
 def menu_actions(page):
     menu = page.plot.build_menu(QPoint(0, 0))
     return {a.text(): a for a in menu.actions() if not a.isSeparator()}
@@ -117,7 +131,7 @@ def test_save_displayed_frame_without_reading_and_preserve_draft(
     actions = menu_actions(page)
     assert list(actions) == [
         "适应 Y 轴",
-        "恢复 Y 轴（全部）",
+        "恢复视图",
         "在此频率添加标记",
         "保存当前帧数据",
         "导出 PNG",
@@ -158,7 +172,10 @@ def test_save_old_display_after_parameter_change_and_single_row(
     from PySide6.QtWidgets import QDoubleSpinBox
 
     # One interval control, in the page header with the run and record buttons.
-    assert page.findChildren(QDoubleSpinBox) == [page.interval] and page.interval.parentWidget() is page
+    assert (
+        page.findChildren(QDoubleSpinBox) == [page.interval]
+        and page.interval.parentWidget() is page.start_button.parentWidget()
+    )
     assert not menu_actions(page)["保存当前帧数据"].isEnabled()
     page.toggle_monitoring()
     qtbot.waitUntil(lambda: page.plot.displayed_frame is not None)
@@ -400,7 +417,7 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     assert runtime.repository.load_workspace(page.interval.key) == {
         "interval": 0.75,
         "record_interval": None,
-        "cadence": "spectrum_interval",
+        "cadence": "interval",
         "csv_interval": 5,
     }
     second = runtime.add(ConnectionConfig("mock://timing-second", "rs.fph", "mock"))
@@ -408,7 +425,7 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     qtbot.waitUntil(lambda: second in window.controller.records)
     page.selector.select(second)
     assert page.interval.value() == 0.5
-    assert page.interval.options()["cadence"] == "spectrum_interval"
+    assert page.interval.options()["cadence"] == "interval"
     page.selector.select(key)
     assert page.interval.value() == 0.75
     window.controller.set_mode("optical")
@@ -433,7 +450,7 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     # Overview start must not reset either an active cadence or a saved preference.
     window.dashboard.start()
     assert runtime.monitoring.snapshots()[key]["interval"] == 0.5
-    assert runtime.monitoring.snapshots()[key]["cadence"] == "spectrum_interval"
+    assert runtime.monitoring.snapshots()[key]["cadence"] == "interval"
     assert runtime.monitoring.snapshots()[key]["record_interval"] is None
     runtime.monitoring.stop(key).result(3)
     window.dashboard.start()

@@ -34,11 +34,10 @@ from lab_control.domain.power import power_to_watts as power_to_watts
 from lab_control.domain.power import watts_to_dbm
 from lab_control.domain.workspace import channel_label
 from lab_control.ui.controller import WorkspaceController, state_label
+from lab_control.ui.kit import Dot, EmptyState, IconButton, PageHeader, icons
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.frame import (
     chart_card,
-    empty_label,
-    header_row,
     page_layout,
     run_button,
     show_state,
@@ -51,10 +50,10 @@ from lab_control.ui.pages.monitoring.recording_state import (
     recording_save_notice,
     update_recording_frame,
 )
-from lab_control.ui.pages.monitoring.timing import MonitoringTiming
+from lab_control.ui.pages.monitoring.timing import MonitoringInterval, actual_interval_text
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.device_selector import DeviceSelector
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget
+from lab_control.ui.widgets.plot_export import InstrumentMenuCanvas
 
 
 def _scalar(value: Any) -> float | None:
@@ -74,12 +73,13 @@ class OpticalPowerPlot(QWidget):
     display_unit = "W"
     axis_label = "功率"
     nonnegative = True
+    minimum_y_margin = 1e-15
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.plot = PublicationPlotWidget(background=tk.CHART_BG)
+        self.plot = InstrumentMenuCanvas(background=tk.CHART_BG, restore_view=self.fit_current)
         self.plot.showGrid(x=True, y=True, alpha=0.16)
         self.plot.setLabel("left", self.axis_label, units=self.display_unit)
         self.plot.getAxis("left").enableAutoSIPrefix(False)
@@ -170,9 +170,7 @@ class OpticalPowerPlot(QWidget):
         if self.time_origin is None:
             self.time_origin = frame.received_at
         elapsed = frame.received_at - self.time_origin
-        if np.allclose(self.plot.viewRange()[0], self.follow_range, rtol=0, atol=1e-6):
-            self.follow_range = self.time_range(elapsed)
-            self.plot.setXRange(*self.follow_range, padding=0)
+        self.update_time_window(self.time_range(elapsed))
         self.channels = tuple(channels)
         for channel, value in watts.items():
             self.history.setdefault(channel, deque(maxlen=1200)).append((frame.received_at, value))
@@ -197,17 +195,7 @@ class OpticalPowerPlot(QWidget):
                     symbolSize=5,
                 )
             self.curves[channel].setVisible(channel in self.channels)
-        values = [
-            value
-            for channel, history in self.history.items()
-            if channel in self.channels
-            for _, value in history
-            if math.isfinite(value)
-        ]
-        if values:
-            low, high = min(values), max(values)
-            margin = max((high - low) * 0.1, abs(low) * 0.05, 1e-15)
-            self.plot.setYRange(self.lower_limit(low - margin), high + margin, padding=0)
+        self.fit_y()
         self.displayed_frame = candidate
         return True
 
@@ -220,7 +208,17 @@ class OpticalPowerPlot(QWidget):
     def lower_limit(self, value: float) -> float:
         return max(0.0, value) if self.nonnegative else value
 
+    def update_time_window(self, bounds: tuple[float, float]) -> None:
+        following = np.allclose(self.plot.viewRange()[0], self.follow_range, rtol=0, atol=1e-6)
+        self.follow_range = bounds
+        if following:
+            self.plot.setXRange(*bounds, padding=0)
+
     def fit_current(self) -> None:
+        self.plot.setXRange(*self.follow_range, padding=0)
+        self.fit_y()
+
+    def fit_y(self) -> None:
         values = [
             value
             for channel, history in self.history.items()
@@ -230,7 +228,7 @@ class OpticalPowerPlot(QWidget):
         ]
         if values:
             low, high = min(values), max(values)
-            margin = max((high - low) * 0.1, abs(low) * 0.05, 1e-15)
+            margin = max((high - low) * 0.1, abs(low) * 0.05, self.minimum_y_margin)
             self.plot.setYRange(self.lower_limit(low - margin), high + margin, padding=0)
 
 
@@ -254,6 +252,7 @@ class RollingPowerPlot(OpticalPowerPlot):
     def set_display_unit(self, unit: str) -> None:
         self.display_unit = unit
         self.nonnegative = unit == "W"
+        self.minimum_y_margin = 1e-15 if self.nonnegative else 0.01
         self.plot.setLabel("left", "功率", units=unit)
 
     def show_window(self, window: PowerWindowSnapshot, channels: tuple[int, ...]) -> None:
@@ -265,9 +264,7 @@ class RollingPowerPlot(OpticalPowerPlot):
         self.channels = channels
         if window.origin is not None:
             elapsed = (window.now - window.origin) / 60.0
-            if np.allclose(self.plot.viewRange()[0], self.follow_range, rtol=0, atol=1e-6):
-                self.follow_range = (max(0.0, elapsed - 30), max(30.0, elapsed))
-                self.plot.setXRange(*self.follow_range, padding=0)
+            self.update_time_window((max(0.0, elapsed - 30), max(30.0, elapsed)))
         key = (window.context_id, window.revision, channels, self.display_unit)
         if self.render_key == key:
             return
@@ -297,24 +294,11 @@ class RollingPowerPlot(OpticalPowerPlot):
                 x, y, connect="finite", symbol="o" if len(x) == 1 else None, symbolSize=5
             )
             self.curves[channel].setVisible(channel in channels)
-        self.fit_current()
+        self.fit_y()
         self.displayed_frame = window.frame
         if window.frame:
             self.session_id = window.frame.session_id
             self.last_token = (window.frame.session_id, window.frame.sequence, window.frame.received_at)
-
-    def fit_current(self) -> None:
-        values = [
-            value
-            for channel, history in self.history.items()
-            if channel in self.channels
-            for _, value in history
-            if math.isfinite(value)
-        ]
-        if values:
-            low, high = min(values), max(values)
-            margin = max((high - low) * 0.1, abs(low) * 0.05, 1e-15 if self.nonnegative else 0.01)
-            self.plot.setYRange(self.lower_limit(low - margin), high + margin, padding=0)
 
 
 class PowerMeterReadoutCard(QFrame):
@@ -335,6 +319,9 @@ class PowerMeterReadoutCard(QFrame):
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(2)
         heading = self.heading = QHBoxLayout()
+        heading.setSpacing(6)
+        color = CHANNEL_COLORS[(channel - 1) % len(CHANNEL_COLORS)]
+        heading.addWidget(Dot(color, 7, box=10))
         self.channel_label = QLabel(f"CH {channel}")
         self.channel_label.setObjectName("powerMeterChannel")
         heading.addWidget(self.channel_label)
@@ -352,8 +339,6 @@ class PowerMeterReadoutCard(QFrame):
         self.meta = QLabel("尚未采集")
         self.meta.setObjectName("powerMeterMeta")
         layout.addWidget(self.meta)
-        color = CHANNEL_COLORS[(channel - 1) % len(CHANNEL_COLORS)]
-        self.channel_label.setStyleSheet(f"color: {color};")
 
     def display_value(self, value: float, unit: str) -> float | None:
         return power_to_watts(value, unit)
@@ -407,10 +392,10 @@ class OpticalPowerMonitoringPage(QWidget):
     card_type = PowerMeterReadoutCard
 
     def __init__(
-        self, controller: WorkspaceController, add_card, parent=None, *, manage_selection=True
+        self, controller: WorkspaceController, add_card=None, parent=None, *, manage_selection=True
     ) -> None:
         super().__init__(parent)
-        self.controller, self.add_card = controller, add_card
+        self.controller = controller
         self.device_id, self.mode = "", "general"
         self.transition = False
         self.generation = 0
@@ -433,21 +418,25 @@ class OpticalPowerMonitoringPage(QWidget):
         self.monitoring_context_id = ""
         layout = self.main_layout = QVBoxLayout(self)
         page_layout(layout)
-        header = QHBoxLayout()
+        header = PageHeader(self)
         self.selector = DeviceSelector(controller, self.category, self, compact=True)
-        header.addWidget(self.selector, 1)
-        self.connection = QLabel()
+        header.add_left(self.selector, 1)
+        self.connection = QLabel(self)
         self.connection.setObjectName("sourceConnectionState")
-        header.addWidget(self.connection)
-        self.timing = MonitoringTiming(controller, self)
-        self.timing.set_fixed_interval(True)
-        header.addWidget(self.timing)
+        self.connection.hide()
+        self.timing = MonitoringInterval(controller, self)
+        self.actual = QLabel("实际 — s/帧")
+        header.add_right(self.timing)
         self.start_button = QPushButton("开始监测")
         self.start_button.clicked.connect(self.toggle_monitoring)
-        header.addWidget(self.start_button)
-        layout.addLayout(header)
-        self.empty = QLabel(f"请先从总览连接{self.category_name}，再选择设备。")
-        empty_label(self.empty)
+        header.add_right(self.start_button)
+        layout.addWidget(header)
+        self.empty = EmptyState(
+            f"未选择{self.category_name}",
+            f"请先在首页连接{self.category_name}，再从上方选择设备。",
+            icons.CATEGORY_ICONS.get(self.category, "target"),
+            self,
+        )
         layout.addWidget(self.empty, 1)
         self.channel_bar = QWidget(self)
         self.channel_row = QHBoxLayout(self.channel_bar)
@@ -471,12 +460,12 @@ class OpticalPowerMonitoringPage(QWidget):
         self.record_button = RecordingButton(chart)
         self.record_button.clicked.connect(self.record)
         title_row.addWidget(self.record_button)
-        fit = QPushButton("适应曲线")
-        fit.clicked.connect(self._fit)
-        title_row.addWidget(fit)
+        self.fit_button = IconButton("updown", "恢复视图")
+        self.fit_button.clicked.connect(self._fit)
+        title_row.addWidget(self.fit_button)
         chart_layout.addLayout(title_row)
         run_button(self.start_button)
-        header_row(header, connection=self.connection, actions=(self.record_button,))
+        header.add_right(self.record_button)
         self.plot = self.plot_type()
         if isinstance(self.plot, RollingPowerPlot):
             self.plot.set_display_unit(self.display_unit)
@@ -486,23 +475,40 @@ class OpticalPowerMonitoringPage(QWidget):
         self.status.setObjectName("mutedText")
         self.status.setWordWrap(True)
         chart_layout.addWidget(self.status)
-        self.status_dot = chart_card(chart, status=self.status)
+        self.status_dot = chart_card(chart, status=self.status, footer_extra=(self.actual,))
         self.splitter.addWidget(chart)
         right = QFrame()
         right.setObjectName("powerMeterReadoutList" if self.rolling_power else "powerMeterReadoutPanel")
         right_layout = QVBoxLayout(right)
         if self.rolling_power:
-            right_layout.setContentsMargins(10, 8, 10, 8)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(0)
+            r_head = QFrame(right)
+            r_head.setObjectName("cardHead")
+            r_head.setFixedHeight(52)
+            r_head_layout = QHBoxLayout(r_head)
+            r_head_layout.setContentsMargins(16, 0, 12, 0)
+            readout_title = QLabel("实时光功率", r_head)
+            readout_title.setObjectName("cardTitle")
+            r_head_layout.addWidget(readout_title, 1)
+            right_layout.addWidget(r_head)
+            r_body = QVBoxLayout()
+            r_body.setContentsMargins(10, 8, 10, 8)
+            r_body.setSpacing(4)
+            right_layout.addLayout(r_body, 1)
+            target_right_layout = r_body
         else:
             right_layout.setContentsMargins(8, 0, 0, 0)
-        right_layout.setSpacing(4)
-        readout_title = QLabel("实时光功率" if self.rolling_power else "实时读数")
-        readout_title.setObjectName("powerMeterTitle")
-        right_layout.addWidget(readout_title)
+            right_layout.setSpacing(6)
+            readout_title = QLabel("实时读数")
+            readout_title.setObjectName("powerMeterTitle")
+            right_layout.addWidget(readout_title)
+            target_right_layout = right_layout
         self.readout_heading = readout_header(right) if self.rolling_power else None
         if self.readout_heading is not None:
-            right_layout.addWidget(self.readout_heading)
-            right.setMinimumWidth(360)
+            target_right_layout.addWidget(self.readout_heading)
+            right.setMinimumWidth(340)
+            right.setMaximumWidth(400)
         self.readout_scroll = QScrollArea()
         self.readout_scroll.setWidgetResizable(True)
         self.readout_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -515,11 +521,11 @@ class OpticalPowerMonitoringPage(QWidget):
         self.readout_scroll.setWidget(self.readout_body)
         self.readout_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.readout_scroll.viewport().installEventFilter(self)
-        right_layout.addWidget(self.readout_scroll, 1)
+        target_right_layout.addWidget(self.readout_scroll, 1)
         self.splitter.addWidget(right)
         self.splitter.setStretchFactor(0, 3)
         self.splitter.setStretchFactor(1, 0 if self.rolling_power else 2)
-        self.splitter.setSizes([850, 380])
+        self.splitter.setSizes([830, 352])
         layout.addWidget(self.splitter, 1)
         if manage_selection:
             self.selector.selected.connect(self.select_device)
@@ -709,7 +715,7 @@ class OpticalPowerMonitoringPage(QWidget):
                 raise DeviceError("此设备不支持监测", "unsupported")
             if not self.confirm_acquisition():
                 return
-            self.timing.commit()
+            self.timing.interpretText()
             options = self.timing.options()
             self.controller.start_monitoring(
                 self.device_id,
@@ -840,6 +846,7 @@ class OpticalPowerMonitoringPage(QWidget):
         draining = recording_phase(task) == "draining"
         self.timing.bind(device_id, "general")
         self.timing.refresh(task)
+        self.actual.setText(actual_interval_text(task))
         connected = state.get("connectionState") in {"connected", "busy"}
         applicable = bool(
             self.controller.records.get(device_id)

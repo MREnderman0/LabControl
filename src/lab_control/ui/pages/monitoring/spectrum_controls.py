@@ -29,8 +29,9 @@ from lab_control.domain.spectrum import (
     frequency_draft,
     prepare_changes,
 )
-from lab_control.ui.kit import Section, set_property, style_button
+from lab_control.ui.kit import Pill, Section, set_property, style_button
 from lab_control.ui.pages.device_control.form import OperationEditor
+from lab_control.ui.pages.monitoring.frame import show_sync_health
 from lab_control.ui.pages.monitoring.spectrum_markers import frequency_text
 
 SECTIONS = {
@@ -80,9 +81,7 @@ class SpectrumControls(QFrame):
         title = QLabel("参数", head)
         title.setObjectName("cardTitle")
         heading.addWidget(title)
-        self.health = QLabel("同步中", self)
-        self.health.setObjectName("spectrumHealth")
-        self.health.setFixedHeight(22)
+        self.health = Pill("同步中", "warn", dot=True)
         heading.addWidget(self.health)
         heading.addStretch(1)
         self.refresh_button = QPushButton("刷新参数", self)
@@ -109,6 +108,10 @@ class SpectrumControls(QFrame):
             grid.setColumnStretch(0, 1)
             grid.setColumnStretch(1, 1)
             section.layout_.addLayout(grid)
+            if name == "带宽":
+                note = QLabel("自动时显示仪器实际采用的值", section)
+                note.setObjectName("rangeHint")
+                section.layout_.addWidget(note)
             section.hide()
             self.body_layout.addWidget(section)
             self.sections[name] = (section, grid)
@@ -122,11 +125,12 @@ class SpectrumControls(QFrame):
         foot = QFrame(self)
         foot.setObjectName("cardFoot")
         foot_layout = QVBoxLayout(foot)
-        foot_layout.setContentsMargins(14, 10, 14, 12)
+        foot_layout.setContentsMargins(14, 12, 14, 12)
         foot_layout.setSpacing(8)
         self.status = QLabel(self)
         self.status.setObjectName("inputFeedback")
         self.status.setWordWrap(True)
+        self.status.hide()
         foot_layout.addWidget(self.status)
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
@@ -134,9 +138,10 @@ class SpectrumControls(QFrame):
         self.apply_button.setObjectName("primaryButton")
         self.auto_button = QPushButton("自动设置", self)
         style_button(self.auto_button, "", "wand")
-        for button in (self.auto_button, self.apply_button):
-            button.setProperty("buttonSize", "panel")
-            buttons.addWidget(button, 1)
+        self.auto_button.setProperty("buttonSize", "panel")
+        self.apply_button.setProperty("buttonSize", "panel")
+        buttons.addWidget(self.auto_button, 10)
+        buttons.addWidget(self.apply_button, 14)
         foot_layout.addLayout(buttons)
         layout.addWidget(foot)
         self.apply_button.clicked.connect(self.apply)
@@ -183,9 +188,17 @@ class SpectrumControls(QFrame):
             if name in NUMERIC:
                 title = op.findChild(QLabel, "controlTitle")
                 if title:
-                    title.setMinimumHeight(22)
-                if title and name in {"rbw", "vbw", "span"}:
-                    title.setText({"rbw": "RBW", "vbw": "VBW", "span": "扫宽"}[name])
+                    title.setMinimumHeight(20)
+                short_names = {
+                    "start_frequency": "起始",
+                    "stop_frequency": "终止",
+                    "center_frequency": "中心",
+                    "span": "扫宽",
+                    "rbw": "RBW",
+                    "vbw": "VBW",
+                }
+                if title and name in short_names:
+                    title.setText(short_names[name])
             if name in FREQUENCY:
                 if isinstance(field.input, QLineEdit):
                     field.input.textEdited.connect(lambda _text, n=name: self.frequency_started(n))
@@ -324,17 +337,23 @@ class SpectrumControls(QFrame):
                     ):
                         value = boolean_value(frame.reading.value)
                     self._auto_readings[automatic] = value
-                enabled = not self._automatic(name) and self.editors[name].cap.writable
-                self.editors[name].editors["value"].setEnabled(enabled and not self.running)
-                if self._automatic(name) and self._auto_readings.get(automatic, True) is not None:
+                is_auto = self._automatic(name)
+                enabled = not is_auto and self.editors[name].cap.writable
+                field = self.editors[name].editors["value"]
+                field.setEnabled(enabled and not self.running)
+                if field.box is not None:
+                    set_property(field.box, "autoControlled", is_auto)
+                if is_auto and self._auto_readings.get(automatic, True) is not None:
                     op = self.editors[name]
-                    if op._reading_valid:
+                    op.readback.hide()
+                    if op._reading_valid and field.box is not None:
                         value = op.current_value["value"]
                         unit_field = op.editors["value"]
-                        op.readback.setText(
+                        field.box.setToolTip(
                             f"自动采用：{value / (unit_field.unit.currentData() or 1):.8g} {unit_field.unit.currentText()}"
                         )
-                        op.readback.show()
+                elif field.box is not None and not is_auto:
+                    field.box.setToolTip("")
         for op in self.editors.values():
             field = op.editors["value"]
             spec = field.spec
@@ -346,7 +365,9 @@ class SpectrumControls(QFrame):
             def bound(value):
                 if value is None:
                     return "未确认"
-                return frequency_text(value) if spec.unit == "Hz" else f"{value / factor:g}"
+                if spec.unit == "Hz":
+                    return "0" if value == 0 else frequency_text(value)
+                return f"{value / factor:g}".replace("-", "−")
 
             source = {
                 "model": "型号范围",
@@ -354,41 +375,29 @@ class SpectrumControls(QFrame):
                 "experiment": "实验限制",
                 "unavailable": "未确认 / 已过期",
             }.get(spec.range_source, spec.range_source)
-            text = f"{bound(spec.minimum)} ～ {bound(spec.maximum)}" + (
-                "" if spec.unit == "Hz" else " " + unit
-            )
+            text = f"{bound(spec.minimum)} – {bound(spec.maximum)}"
+            full_text = text + ("" if spec.unit == "Hz" else f" {unit}")
             if field.range_label.text() != text:
                 field.range_label.setText(text)
-                field.range_label.setToolTip(f"可输入范围：{text} · {source}")
+                field.range_label.setToolTip(f"可输入范围：{full_text} · {source}")
         health, reason = self.controller.runtime.monitoring.settings_status(
             self.device_id, tuple((1, k) for k in self.editors)
         )
-        self.health.setText(
-            "采集中 · 参数已锁定"
-            if state.get("controlsLocked") and health != "同步异常"
-            else "正在自动设置…"
-            if self.running and self.auto_running
-            else "正在读取…"
-            if self.running and self.refresh_only
-            else "正在应用…"
-            if self.running
-            else "待应用"
-            if self.dirty()
-            else health
-        )
+        if health == "同步异常":
+            show_sync_health(self.health, health)
+        elif state.get("controlsLocked"):
+            self.health.set("采集中 · 参数已锁定", "warn", icon="lock", dot=False)
+        elif self.running and self.auto_running:
+            self.health.set("正在自动设置…", "warn", icon="", dot=True, live=True)
+        elif self.running and self.refresh_only:
+            self.health.set("正在读取…", "warn", icon="", dot=True, live=True)
+        elif self.running:
+            self.health.set("正在应用…", "warn", icon="", dot=True, live=True)
+        elif self.dirty():
+            self.health.set("待应用", "accent", icon="", dot=True)
+        else:
+            show_sync_health(self.health, health)
         self.health.setToolTip(reason)
-        text = self.health.text()
-        set_property(
-            self.health,
-            "kind",
-            "err"
-            if "异常" in text or "失败" in text
-            else "warn"
-            if text.startswith("正在") or "同步中" in text
-            else "accent"
-            if "待应用" in text or "锁定" in text
-            else "ok",
-        )
         self.refresh_buttons()
 
     def dirty(self) -> bool:
@@ -404,6 +413,7 @@ class SpectrumControls(QFrame):
     def refresh_buttons(self) -> None:
         state = self.controller.states.get(self.device_id, {})
         locked = bool(state.get("controlsLocked"))
+        set_property(self, "locked", locked)
         self.scroller.setEnabled(not self.running)
         for op in self.editors.values():
             op.setEnabled(not locked)
@@ -452,6 +462,7 @@ class SpectrumControls(QFrame):
                 self.next_command()
         except Exception as exc:
             self.status.setText(str(exc))
+            self.status.setVisible(bool(str(exc)))
 
     def refresh_parameters(self) -> None:
         try:
@@ -461,6 +472,7 @@ class SpectrumControls(QFrame):
             self.read_next()
         except DeviceError as exc:
             self.status.setText(str(exc))
+            self.status.setVisible(bool(str(exc)))
 
     def auto_setup(self) -> None:
         if self.running:
@@ -483,6 +495,7 @@ class SpectrumControls(QFrame):
             self.next_command()
         except DeviceError as exc:
             self.status.setText(str(exc))
+            self.status.setVisible(bool(str(exc)))
 
     def begin(self, auto: bool) -> None:
         self.controller.ensure_applicable(self.device_id)
@@ -631,4 +644,5 @@ class SpectrumControls(QFrame):
             remaining = "、".join(c.operation for c in self.pending if c.operation != failed) or "无"
             text += f" · 已完成：{done} · 失败：{failed} · 未执行：{remaining}"
         self.status.setText(text)
+        self.status.setVisible(bool(text))
         self.refresh()

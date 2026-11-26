@@ -229,6 +229,18 @@ class WorkspaceNavigation:
         window._rebuild_submenu(module, category)
         self.show_page(device_id=device_id)
 
+    def watchlists_page(self):
+        from lab_control.ui.pages.watchlists import WatchlistsPage
+
+        window = self.window
+        key = ("监视列表", "")
+        page = window.page_map.get(key)
+        if page is None:
+            page = WatchlistsPage(window.watch_hub, window)
+            window.page_map[key] = page
+            window.stack.addWidget(page)
+        return page
+
     def show_page(self, *_args, device_id: str = "") -> None:
         window = self.window
         window.device_pool.hide()
@@ -257,13 +269,7 @@ class WorkspaceNavigation:
         elif module == "仪器测控" and not category:
             page = window.dashboard
         elif module == "监视列表":
-            from lab_control.ui.pages.watchlists import WatchlistsPage
-
-            page = window.page_map.get((module, ""))
-            if page is None:
-                page = WatchlistsPage(window.controller, window)
-                window.page_map[(module, "")] = page
-                window.stack.addWidget(page)
+            page = self.watchlists_page()
         elif module == "系统设置":
             page = window.settings_page
         elif module == "操作日志":
@@ -311,21 +317,21 @@ class WorkspaceNavigation:
                     )
                 elif module == "实时监测":
                     page = (
-                        SpectrumMonitoringPage(window.controller, window.dashboard.add)
+                        SpectrumMonitoringPage(window.controller)
                         if category == "spectrum_analyzer"
-                        else OscilloscopeMonitoringPage(window.controller, window.dashboard.add)
+                        else OscilloscopeMonitoringPage(window.controller)
                         if category == "oscilloscope"
-                        else PowerMonitoringPage(window.controller, window.dashboard.add)
+                        else PowerMonitoringPage(window.controller)
                         if category == "power_supply"
-                        else OpticalPowerMonitoringPage(window.controller, window.dashboard.add)
+                        else OpticalPowerMonitoringPage(window.controller)
                         if category == "optical_power_meter"
-                        else AccelerationMonitoringPage(window.controller, window.dashboard.add)
+                        else AccelerationMonitoringPage(window.controller)
                         if category == "accelerometer"
-                        else OpticalSpectrumMonitoringPage(window.controller, window.dashboard.add)
+                        else OpticalSpectrumMonitoringPage(window.controller)
                         if category == "optical_spectrometer"
-                        else FrequencyCounterMonitoringPage(window.controller, window.dashboard.add)
+                        else FrequencyCounterMonitoringPage(window.controller)
                         if category == "frequency_counter"
-                        else MonitoringPage(window.controller, category, window.dashboard.add)
+                        else MonitoringPage(window.controller, category)
                     )
                 else:
                     page = QWidget()

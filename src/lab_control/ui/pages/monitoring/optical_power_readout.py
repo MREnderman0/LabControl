@@ -7,9 +7,7 @@ from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QPushButto
 
 from lab_control.application.power_window import PowerChannelSnapshot
 from lab_control.domain.power import power_span, watts_to_dbm
-from lab_control.ui.pages.monitoring.power_plot import CHANNEL_COLORS
 from lab_control.ui.pages.monitoring.readout_columns import add_readout_column
-from lab_control.ui.styles import tokens as tk
 
 
 def set_columns(widget: QWidget, fields: tuple[QWidget, ...]) -> None:
@@ -52,6 +50,7 @@ class PowerMeterReadoutRow(QFrame):
         self.check.setToolTip("参与此通道的监测与记录；取消后保留最近 30 分钟历史")
         self.channel_label = QLabel(f"CH {channel}")
         self.channel_label.setObjectName("powerReadoutChannel")
+        self.channel_label.setProperty("channel", str(((channel - 1) % 8) + 1))
         self.value = QPushButton("— W")
         self.value.setObjectName("powerReadoutValue")
         self.value.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -67,9 +66,7 @@ class PowerMeterReadoutRow(QFrame):
             return
         self.selected = selected
         self.setProperty("participating", selected)
-        color = CHANNEL_COLORS[(self.channel - 1) % len(CHANNEL_COLORS)] if selected else tk.TEXT_3
-        self.channel_label.setStyleSheet(f"color: {color};")
-        for widget in (self, self.value, self.peak):
+        for widget in (self, self.channel_label, self.value, self.peak):
             widget.style().unpolish(widget)
             widget.style().polish(widget)
             widget.update()

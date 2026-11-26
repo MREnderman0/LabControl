@@ -17,7 +17,7 @@ from lab_control.domain.instruments import DeviceError
 from lab_control.ui.pages.monitoring.scalar_readouts import ScalarReadouts
 from lab_control.ui.pages.monitoring.trace_view import TraceView
 from lab_control.ui.styles import tokens as tk
-from lab_control.ui.widgets.plot_export import PublicationPlotWidget, PublicationViewBox
+from lab_control.ui.widgets.plot_export import InstrumentMenuCanvas, PublicationViewBox
 
 
 class MonitoringPlotItem(pg.PlotItem):
@@ -35,7 +35,7 @@ class MonitoringPlotItem(pg.PlotItem):
 
 class LivePlot(QWidget):
     y_axis_label: str | None = None
-    canvas_type = PublicationPlotWidget
+    canvas_type = InstrumentMenuCanvas
     trace_view_type = TraceView
 
     def __init__(self, parent=None) -> None:
@@ -46,7 +46,9 @@ class LivePlot(QWidget):
         layout.addWidget(self.value)
         self.plot_item = MonitoringPlotItem(viewBox=PublicationViewBox())
         self.plot_item.fit_requested.connect(self.fit_current)
-        self.plot = self.canvas_type(background=tk.CHART_BG, plotItem=self.plot_item)
+        self.plot = self.canvas_type(
+            background=tk.CHART_BG, plotItem=self.plot_item, restore_view=self.fit_current
+        )
         self.plot.showGrid(x=True, y=True, alpha=0.16)
         self.plot.addLegend(
             offset=(8, 8),

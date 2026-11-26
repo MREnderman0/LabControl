@@ -131,7 +131,10 @@ def test_spectrum_panel_follow_zoom_fit_and_restore(qtbot):
     assert plot.plot.viewRange()[1] == pytest.approx([-98, -2])
     show(-40)
     assert plot.plot.viewRange()[1] == pytest.approx([-98, -2])
-    plot.trace_view.restore()
+    fixed_x = plot.plot.viewRange()[0]
+    restore = next(a for a in plot.build_menu(pos).actions() if a.text() == "恢复视图")
+    restore.trigger()
+    assert plot.plot.viewRange()[0] == pytest.approx(fixed_x)
     assert plot.plot.viewRange()[1] == pytest.approx([-140, -40])
     show(None)
     assert plot.trace_view.panel_y is None

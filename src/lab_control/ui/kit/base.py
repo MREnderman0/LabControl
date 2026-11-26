@@ -154,42 +154,71 @@ class Pill(QFrame):
         self.setObjectName("statusPill")
         self.setFixedHeight(22)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        layout = QHBoxLayout(self)
+        self._layout = layout = QHBoxLayout(self)
         layout.setContentsMargins(7 if dot or icon else 9, 0, 9, 0)
         layout.setSpacing(5)
-        self.dot = Dot(kind if kind != "neutral" else "idle", 6, box=10) if dot else None
-        if self.dot:
-            layout.addWidget(self.dot)
+        self.dot = Dot(kind if kind != "neutral" else "idle", 6, box=10)
+        layout.addWidget(self.dot)
+        self.dot.setVisible(dot and not icon)
         self.icon_name = icon
-        self.icon_view = QLabel() if icon else None
-        if self.icon_view is not None:
-            self.icon_view.setFixedSize(13, 13)
-            layout.addWidget(self.icon_view)
-        self.label = QLabel(text)
+        self.icon_view = QLabel(self)
+        self.icon_view.setFixedSize(13, 13)
+        layout.addWidget(self.icon_view)
+        self.icon_view.setVisible(bool(icon))
+        self.label = QLabel(text, self)
         self.label.setTextFormat(Qt.TextFormat.PlainText)
         self.label.setObjectName("statusPillText")
         layout.addWidget(self.label)
         self.kind = ""
+        self._has_dot = dot
         self.set_kind(kind)
 
+    def _sync_leading(self) -> None:
+        show_icon = bool(self.icon_name)
+        show_dot = self._has_dot and not show_icon
+        self.icon_view.setVisible(show_icon)
+        self.dot.setVisible(show_dot)
+        self._layout.setContentsMargins(7 if (show_icon or show_dot) else 9, 0, 9, 0)
+        if show_icon:
+            color = tk.ACCENT_TEXT if self.kind == "accent" else tk.STATUS.get(self.kind, tk.TEXT_2)
+            self.icon_view.setPixmap(icons.icon(self.icon_name, color).pixmap(QSize(13, 13)))
+
     def set_kind(self, kind: str, *, live: bool = False) -> None:
-        if self.dot:
-            self.dot.set_status(kind if kind != "neutral" else "idle", live)
+        self.dot.set_status(kind if kind != "neutral" else "idle", live)
         if kind != self.kind:
             self.kind = kind
-            if self.icon_view is not None:
-                color = tk.ACCENT_TEXT if kind == "accent" else tk.STATUS.get(kind, tk.TEXT_2)
-                self.icon_view.setPixmap(icons.icon(self.icon_name, color).pixmap(QSize(13, 13)))
+            self._sync_leading()
             self.setProperty("kind", kind)
             repolish(self)
             repolish(self.label)
+
+    def set_icon(self, icon: str = "", *, dot: bool | None = None) -> None:
+        changed = icon != self.icon_name or (dot is not None and dot != self._has_dot)
+        self.icon_name = icon
+        if dot is not None:
+            self._has_dot = dot
+        if changed:
+            self._sync_leading()
+
+    def text(self) -> str:
+        return self.label.text()
 
     def set_text(self, text: str) -> None:
         if self.label.text() != text:
             self.label.setText(text)
 
-    def set(self, text: str, kind: str, *, live: bool = False) -> None:
+    def set(
+        self,
+        text: str,
+        kind: str,
+        *,
+        live: bool = False,
+        icon: str | None = None,
+        dot: bool | None = None,
+    ) -> None:
         self.set_text(text)
+        if icon is not None or dot is not None:
+            self.set_icon(self.icon_name if icon is None else icon, dot=dot)
         self.set_kind(kind, live=live)
 
 

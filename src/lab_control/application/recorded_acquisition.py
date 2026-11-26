@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from lab_control.application.acquisition_pipeline import (
     immutable_batch,
+    stamp_host_read,
     validate_displayed_batch,
     validate_recorded_batch,
 )
@@ -15,6 +16,7 @@ from lab_control.application.acquisition_recovery import Recovery, recoverable
 from lab_control.domain.instruments import (
     AcquisitionRequest,
     DeviceError,
+    utc_now,
 )
 from lab_control.domain.recording import RecordingError
 from lab_control.storage.recording import Recording
@@ -104,9 +106,15 @@ class RecordedAcquisitionRunner:
                 try:
                     io_started = True
                     with acquisition_read_wait(transport=getattr(session.adapter, "transport", None)):
-                        batch = immutable_batch(
-                            next(run) if run is not None else manager._acquire(session, stream_request)
-                        )
+                        if run is None:
+                            batch = manager._acquire(session, stream_request)
+                        else:
+                            read_started, read_started_utc = time.perf_counter(), utc_now()
+                            batch = next(run)
+                            batch = stamp_host_read(
+                                batch, read_started, read_started_utc, time.perf_counter(), utc_now()
+                            )
+                        batch = immutable_batch(batch)
                     validate_displayed_batch(batch)
                     if save_due:
                         validate_recorded_batch(batch)
@@ -154,9 +162,7 @@ class RecordedAcquisitionRunner:
                 index += 1
                 now = time.monotonic()
                 due = started + interval
-                if run is None and session.stop.wait(
-                    0 if cadence == "fastest" else (due - now if due > now else interval)
-                ):
+                if run is None and session.stop.wait(0 if cadence == "fastest" else max(0.0, due - now)):
                     break
             recording.finish()
             recording.thread.join()

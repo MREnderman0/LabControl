@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from PySide6.QtCore import Qt
 
 from lab_control.application.acquisition_pipeline import immutable_batch
 from lab_control.application.controls import DataSource
@@ -50,6 +51,22 @@ def plot(qtbot):
     qtbot.addWidget(widget)
     widget.show()
     return widget
+
+
+def test_empty_scope_starts_at_top_before_acquisition_and_after_reset(plot):
+    assert plot.plot.y() == 0
+    plot.show_frame(frame(channels=(1,)), SOURCE, (1,))
+    plot.layout().activate()
+    assert plot.plot.y() == 0
+
+    # A single-point legacy trace can temporarily show a numeric readout.
+    sample = frame(n=1, channels=(1,))
+    plain = replace(sample.batch.measurements[0], metadata={})
+    plot.show_frame(replace(sample, batch=replace(sample.batch, measurements=(plain,))), SOURCE, (1,))
+    assert plot.value.isVisible()
+    plot.reset()
+    plot.layout().activate()
+    assert plot.plot.y() == 0
 
 
 def test_pico_known_voltage_and_each_stream_batch_replaces_previous(plot):
@@ -178,7 +195,10 @@ def test_builtin_fit_and_autorange_cannot_collapse_grid(plot, qtbot):
         assert plot.plot.viewRange()[0] == pytest.approx([-5e-6, 5e-6])
         assert sum(-4 < line.value() < 4 for line in plot.grid_lines[11:]) == 7
         assert all(line.isVisible() and line.pen.color().alpha() >= 76 for line in plot.grid_lines[11:])
-        assert plot.grid_lines[15].pen.color().alpha() > plot.grid_lines[14].pen.color().alpha()
+        # The Graphite palette uses a brighter solid center line over dotted divisions.
+        center, division = plot.grid_lines[15].pen, plot.grid_lines[14].pen
+        assert center.color().lightness() > division.color().lightness()
+        assert center.style() == Qt.PenStyle.SolidLine and division.style() == Qt.PenStyle.DotLine
         assert len(plot.curves[1, "waveform"].getData()[0]) > 1
         assert not plot.plot.plotItem.autoBtn.isVisible()
         np.testing.assert_array_equal(plot.displayed_frame.batch.measurements[0].values, changed.values)
