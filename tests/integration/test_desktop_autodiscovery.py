@@ -116,6 +116,10 @@ def test_first_discovery_during_recording_aliases_and_operator_disconnect(tmp_pa
         app.discovery.scan().result(3)
         assert target in app.connections.suppressed_devices()
         assert len(opened) == 2
+        app.discovery.scan(
+            (Observations("lan", (advertised("192.0.2.21"),)),), preserve_presence=True, scope="address_retry"
+        ).result(3)
+        wait(lambda: len(opened) == 3 and target not in app.connections.suppressed_devices())
         app.monitoring.stop(old).result(3)
 
 
@@ -157,6 +161,23 @@ def test_dhcp_move_preserves_asset_and_manual_alias(tmp_path):
             {"general": "oscilloscopes:1"},
         )
         assert row["candidates"]["TCPIP0::192.0.2.31::5777::SOCKET"]["presenceState"] == "not_seen"
+
+
+def test_lease_precedes_instrument_web_service(tmp_path):
+    with ApplicationRuntime(root=tmp_path, hardware=False) as app:
+        host = "192.0.2.51"
+        app.discovery.providers = (Observations("dhcp_leases", (advertised(host, "lease_hint"),)),)
+        responses = iter((None, metadata("DHO-SLOW")))
+        app.discovery.enrich_candidates = lambda cs: enrich_candidates(cs, lambda _: next(responses))
+        app.discovery.probe = lambda c: metadata("DHO-SLOW")[:2]
+        app.discovery.on_complete = app.device_changes.resolved
+        app.device_changes.poll()
+        assert not app.inventory.all()
+        app.device_changes.retry_hosts[host] = (0, 0)
+        app.device_changes.poll()
+        assert app.inventory.all()[0]["identity"]["serial"] == "DHO-SLOW"
+        wait(lambda: host not in app.device_changes.retry_hosts)
+        app.device_changes.poll()
 
 
 def test_lease_and_static_model_conflicts_are_not_overwritten():

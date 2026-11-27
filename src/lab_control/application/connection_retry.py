@@ -364,14 +364,20 @@ class ConnectionRetry:
             return
         desktop = getattr(self.runtime, "device_changes", None)
         auto = desktop is not None and desktop.enabled and not desktop.stop.is_set()
+        if auto:
+            desktop.resolved(report)
         records = {r["id"]: r for r in self.runtime.inventory.all()} if auto else {}
+        explicit_retry = report.get("scope") == "address_retry"
         for result in report["items"]:
             if auto:
                 key = result.get("device_id")
                 if not key:
                     continue
                 row = records.get(key, {})
-                known = row.get("identityKey") and result["reason"] == "identified"
+                known = row.get("identityKey") and (
+                    result["reason"] == "identified"
+                    or (explicit_retry and result["reason"] == "cached_session_unconfirmed")
+                )
                 descriptor = row.get("candidates", {}).get(result["resource"], {})
                 sdk = (
                     any(name.startswith("sdk:") for name in descriptor.get("sources", {}))
@@ -383,12 +389,17 @@ class ConnectionRetry:
                     and row.get("adapterId")
                     and not row.get("identityConflict")
                     and not requires_manual_connection(row["adapterId"])
-                    and not self.owns(key)
-                    and not self._state(key)
-                    and key not in self.suppressed_devices()
+                    and (
+                        (
+                            explicit_retry
+                            and self._state(key).get("connectionState")
+                            not in {"connected", "busy", "connecting"}
+                        )
+                        or (not self.owns(key) and not self._state(key))
+                    )
                 ):
                     try:
-                        self.request(key, configure=None, hotplug=True)
+                        self.request(key, configure=None, hotplug=not explicit_retry)
                     except DeviceError as exc:
                         if exc.code not in {"recovery_cancelled", "runtime_closing"}:
                             self.runtime.repository.audit(

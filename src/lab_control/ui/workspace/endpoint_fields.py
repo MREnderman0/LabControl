@@ -7,6 +7,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QLabel, QLineEdit, QSpinBox
 
 from lab_control.discovery.lxi import identify_endpoint
+from lab_control.discovery.presence import identity_review_reason
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 
 
@@ -195,6 +196,8 @@ def scan_result_text(runtime, report):
             result = "已连接"
         elif key in runtime.connections.suppressed_devices():
             result = "已手动断开"
+        elif review := identity_review_reason(record):
+            result = f"待核对：{review}"
         elif item.get("reason") in {"identified", "sdk_identity_requires_explicit_connection"}:
             result = retry.get(key, {}).get("label") or ("正在连接" if retry.get(key) else "已识别")
         elif item.get("reason") == "deferred_possible_alias_of_active_device":

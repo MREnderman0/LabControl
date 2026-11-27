@@ -7,10 +7,11 @@ address-range or port sweep. Only changed observations enter the probe worker.
 from __future__ import annotations
 
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
-from lab_control.domain.connections import canonical_resource
+from lab_control.domain.connections import canonical_resource, network_host
 from lab_control.domain.instruments import DeviceError
 
 
@@ -32,15 +33,37 @@ class DiscoveryChanges:
         self.generation = 0
         self.previous = {}
         self.enabled = False
+        self.retry_hosts: dict[str, tuple[int, float]] = {}
 
     @staticmethod
     def snapshot(items):
         return {(c.source, canonical_resource(c.config.resource)): c for c in items}
 
+    def note_arrivals(self, name, batch):
+        for key, candidate in batch.items():
+            if (
+                candidate.source in {"lan", "lease_hint", "dhcp_leases"}
+                and self.previous.get(name, {}).get(key) != candidate
+            ):
+                host = network_host(candidate.config.resource)
+                if host:
+                    self.retry_hosts.setdefault(host, (0, time.monotonic() + 5))
+
+    def resolved(self, report):
+        with self.lock:
+            for item in report["items"]:
+                if item.get("reason") in {"identified", "cached_active_session"} or item.get("errorCode") in {
+                    "identity_conflict",
+                    "model_mismatch",
+                }:
+                    self.retry_hosts.pop(network_host(item["resource"]), None)
+
     def observed(self, provider, items):
         with self.lock:
             self.generation += 1
-            self.previous[provider] = self.snapshot(items)
+            batch = self.snapshot(items)
+            self.note_arrivals(provider, batch)
+            self.previous[provider] = batch
 
     def run(self):
         while not self.stop.wait(4):
@@ -89,11 +112,15 @@ class DiscoveryChanges:
             removed = {
                 key for name, now in batches.items() for key in self.previous.get(name, {}) if key not in now
             }
+            for name, batch in batches.items():
+                self.note_arrivals(name, batch)
+            due = {host for host, (_, deadline) in self.retry_hosts.items() if deadline <= time.monotonic()}
             changed = {
                 key[1]
                 for name, now in batches.items()
                 for key, candidate in now.items()
                 if self.previous.get(name, {}).get(key) != candidate
+                or network_host(candidate.config.resource) in due
             }
         if changed:
             # Keep other observations of the same endpoint together for admission.
@@ -118,6 +145,20 @@ class DiscoveryChanges:
             if generation != self.generation:
                 return
             self.previous.update(batches)
+            # An instrument can obtain its IP before its HTTP and SCPI services start.
+            # Retry that same announcement briefly; a new observation can rearm it.
+            announced = {
+                network_host(c.config.resource)
+                for batch in self.previous.values()
+                for c in batch.values()
+                if c.source in {"lan", "lease_hint", "dhcp_leases"}
+            }
+            for host in tuple(self.retry_hosts):
+                attempts, _ = self.retry_hosts[host]
+                if host not in announced or (host in due and attempts >= 2):
+                    del self.retry_hosts[host]
+                elif host in due and any(network_host(endpoint) == host for endpoint in changed):
+                    self.retry_hosts[host] = (attempts + 1, time.monotonic() + (15, 45)[attempts])
             if removed:
                 seen = {key for batch in self.previous.values() for key in batch}
                 app.inventory.withdraw_observations(removed - seen, seen)

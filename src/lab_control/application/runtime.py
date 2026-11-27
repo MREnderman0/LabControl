@@ -387,7 +387,9 @@ class ApplicationRuntime:
     def connect_all_discovered(self) -> Future[dict[str, Any]]:
         return self.bulk_connection.start()
 
-    def scan_static_addresses(self, ids: tuple[str, ...] | list[str] | set[str]) -> Future[dict[str, Any]]:
+    def scan_static_addresses(
+        self, ids: tuple[str, ...] | list[str] | set[str], *, retry: bool = False
+    ) -> Future[dict[str, Any]]:
         """Run one scan for selected saved addresses without changing other presence state."""
         from lab_control.domain.instruments import DeviceError
 
@@ -397,7 +399,9 @@ class ApplicationRuntime:
         if not selected:
             raise ValidationError("至少选择一个静态地址")
         provider = self.static_address_provider.for_ids(selected)
-        return self.discovery.scan((provider,), preserve_presence=True, scope="address_list")
+        return self.discovery.scan(
+            (provider,), preserve_presence=True, scope="address_retry" if retry else "address_list"
+        )
 
     def cancel_connect_all(self) -> None:
         self.bulk_connection.cancel()

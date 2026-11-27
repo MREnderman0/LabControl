@@ -28,6 +28,17 @@ def is_current(record: dict[str, Any], session: dict[str, Any] | None = None) ->
     )
 
 
+def identity_review_reason(record: dict[str, Any]) -> str:
+    reason = record.get("probeReason")
+    if reason == "identity_needs_review":
+        return "串口描述缺少可区分的仪器身份"
+    if reason == "deferred_possible_alias_of_active_device":
+        return "当前地址可能属于正在使用的仪器，缺少独立身份"
+    if reason == "identified" and record.get("identity") and not record.get("identityKey"):
+        return "已核对型号，但仪器未回报有效序列号，无法区分同型号设备"
+    return ""
+
+
 def presence_label(record: dict[str, Any], session: dict[str, Any] | None = None) -> str:
     if (session or {}).get("connectionState") in LIVE_CONNECTIONS:
         return "当前会话"

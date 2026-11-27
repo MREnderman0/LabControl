@@ -159,7 +159,7 @@ class ConnectionDialogs:
         editing = ""
         edit = QPushButton("修改选中")
         remove = QPushButton("删除选中")
-        scan_selected = QPushButton("扫描选中")
+        scan_selected = QPushButton("重试连接")
         scan_all = QPushButton("扫描全部")
         actions.addWidget(save_scan)
         actions.addWidget(edit)
@@ -220,13 +220,13 @@ class ConnectionDialogs:
         def selected_ids() -> tuple[str, ...]:
             return tuple(str(item.data(Qt.ItemDataRole.UserRole)) for item in address_list.selectedItems())
 
-        def scan_addresses(ids: tuple[str, ...]) -> None:
+        def scan_addresses(ids: tuple[str, ...], *, retry=False) -> None:
             status.setProperty("scanReport", None)
             if not ids:
                 status.setText("请先选择至少一个设备地址。")
                 return
             try:
-                window.bridge.watch(window.runtime.scan_static_addresses(ids), "address_scan")
+                window.bridge.watch(window.runtime.scan_static_addresses(ids, retry=retry), "address_scan")
                 status.setText("正在扫描所选设备地址…")
                 refresh_addresses()
             except (DeviceError, ValueError) as exc:
@@ -270,7 +270,7 @@ class ConnectionDialogs:
                             address_list.setCurrentItem(item)
                             address_list.scrollToItem(item)
                             break
-                    status.setText("已定位到已有地址，可点击「扫描选中」重试或「修改选中」更正。")
+                    status.setText("已定位到已有地址，可点击「重试连接」或「修改选中」更正。")
                     return
                 entry = window.runtime.static_addresses.add(
                     value,
@@ -321,7 +321,7 @@ class ConnectionDialogs:
             refresh_addresses()
 
         remove.clicked.connect(remove_selected)
-        scan_selected.clicked.connect(lambda: scan_addresses(selected_ids()))
+        scan_selected.clicked.connect(lambda: scan_addresses(selected_ids(), retry=True))
         scan_all.clicked.connect(
             lambda: scan_addresses(tuple(entry.id for entry in window.runtime.static_addresses.entries()))
         )

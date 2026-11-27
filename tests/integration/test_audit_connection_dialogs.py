@@ -82,8 +82,8 @@ def test_address_selection_survives_refresh_and_drives_selected_actions(qtbot, t
     scanned = []
     from concurrent.futures import Future
 
-    def scan(ids):
-        scanned.append(ids)
+    def scan(ids, *, retry=False):
+        scanned.append((ids, retry))
         return Future()
 
     monkeypatch.setattr(runtime, "scan_static_addresses", scan)
@@ -101,9 +101,9 @@ def test_address_selection_survives_refresh_and_drives_selected_actions(qtbot, t
             window._refresh_static_address_dialog()
             assert [i.data(Qt.ItemDataRole.UserRole) for i in listing.selectedItems()] == [first.id]
             buttons = {b.text(): b for b in dialog.findChildren(QPushButton)}
-            assert buttons["扫描选中"].isEnabled() and buttons["删除选中"].isEnabled()
-            buttons["扫描选中"].click()
-            assert scanned == [(first.id,)]
+            assert buttons["重试连接"].isEnabled() and buttons["删除选中"].isEnabled()
+            buttons["重试连接"].click()
+            assert scanned == [((first.id,), True)]
             buttons["删除选中"].click()
             assert [e.id for e in runtime.static_addresses.entries()] == [second.id]
         finally:
