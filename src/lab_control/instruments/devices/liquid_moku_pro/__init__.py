@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from lab_control.domain.processing import ProcessingProfile
+from lab_control.domain.voltage_waveform_metrics import WAVEFORM_MEAN_VPP_WATCH_PROFILE
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation, DeviceModel
 
 from .adapter import ROLES, Adapter, schema
@@ -49,6 +50,7 @@ DEFINITION = DeviceDefinition(
     role_categories=tuple(ROLES),
     acquisition_kinds=("waveform", "spectrum"),
     acquisition_channel_selection="single",
+    watch_only_profiles=(WAVEFORM_MEAN_VPP_WATCH_PROFILE,),
     offline_processing=ProcessingProfile("frames"),
     deployment_components=("liquid-moku-desktop",),
 )

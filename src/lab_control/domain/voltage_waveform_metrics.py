@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
+from functools import partial
 
 import numpy as np
 
@@ -18,7 +20,7 @@ from lab_control.domain.metrics import (
 
 
 def process_voltage_waveform_statistics(
-    source: MetricInput, _parameters: MetricParameters
+    source: MetricInput, _parameters: MetricParameters, *, include_rms_std: bool = True
 ) -> dict[str, MetricValue]:
     result: dict[str, MetricValue] = {}
     frames = source.frames()
@@ -50,19 +52,19 @@ def process_voltage_waveform_statistics(
             raise ValidationError("电压波形样本必须为有限值")
         with np.errstate(over="ignore", invalid="ignore"):
             mean = float(np.mean(values, dtype=np.float64))
-        scale = max(abs(minimum), abs(maximum))
-        rms = std = 0.0
-        if scale:
-            # Scale before squaring to keep finite amplitudes within the float range.
-            normalized = values.astype(np.float64, copy=False) / scale
-            rms = scale * math.sqrt(float(np.dot(normalized, normalized)) / values.size)
-            std = scale * float(np.std(normalized, ddof=0))
         metrics = {
             "mean": mean,
             "peak_to_peak": maximum - minimum if values.size >= 2 else None,
-            "rms": rms,
-            "std": std,
         }
+        if include_rms_std:
+            scale = max(abs(minimum), abs(maximum))
+            rms = std = 0.0
+            if scale:
+                # Scale before squaring to keep finite amplitudes within the float range.
+                normalized = values.astype(np.float64, copy=False) / scale
+                rms = scale * math.sqrt(float(np.dot(normalized, normalized)) / values.size)
+                std = scale * float(np.std(normalized, ddof=0))
+            metrics.update(rms=rms, std=std)
         for name, value in metrics.items():
             result[channel_metric_name(channel, name)] = (
                 MetricValue(value)
@@ -89,4 +91,12 @@ VOLTAGE_WAVEFORM_STATISTICS_PROFILE = MetricProfile(
     watch_sources=("waveform",),
     process=process_voltage_waveform_statistics,
     per_channel_metrics=True,
+)
+
+WAVEFORM_MEAN_VPP_WATCH_PROFILE = replace(
+    VOLTAGE_WAVEFORM_STATISTICS_PROFILE,
+    metrics=tuple(
+        m for m in VOLTAGE_WAVEFORM_STATISTICS_PROFILE.metrics if m.name in {"mean", "peak_to_peak"}
+    ),
+    process=partial(process_voltage_waveform_statistics, include_rms_std=False),
 )
