@@ -260,7 +260,7 @@ def test_frame_interval_and_deadline_use_worker_read_times(tmp_path, monkeypatch
         request = AcquisitionRequest("spectrum")
         batch = replace(
             runtime.sessions.sessions[key].adapter.acquire(request),
-            performance={"received_at_monotonic": 12.25},
+            performance={"received_at_monotonic": 1012.25},
             timing={"read_duration_seconds": 0.25},
         )
         future = Future()
@@ -273,11 +273,13 @@ def test_frame_interval_and_deadline_use_worker_read_times(tmp_path, monkeypatch
             pending=future,
             pending_request=request,
             last_started_at=11.50,
-            last_frame_at=11.0,
+            last_frame_at=1011.0,
         )
         with runtime.monitoring.lock, monkeypatch.context() as patch:
-            patch.setattr("lab_control.application.monitor_scheduler.time.monotonic", lambda: 12.6)
+            patch.setattr("lab_control.application.monitor_scheduler.time.monotonic", lambda: 12.625)
+            patch.setattr("lab_control.application.monitor_scheduler.time.perf_counter", lambda: 1012.625)
             runtime.monitoring._finish_batch(key, task)
+            assert task.frames[("spectrum", "")].received_at == 1012.25
             assert task.frame_interval == 1.25
             assert task.acquisition_seconds == 0.25
             assert task.next_at == 13.0
