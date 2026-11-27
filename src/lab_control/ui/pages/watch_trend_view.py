@@ -8,10 +8,11 @@ from math import isfinite
 
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from lab_control.storage.watch_trends import chart_data, history
 from lab_control.ui.widgets.plot_export import PublicationPlotWidget
+from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
 
 class WatchTrendDialog(QDialog):
@@ -30,7 +31,7 @@ class WatchTrendDialog(QDialog):
         layout = QVBoxLayout(self)
         bar = QHBoxLayout()
         bar.addWidget(QLabel("记录批次"))
-        self.batches = QComboBox()
+        self.batches = WorkspaceComboBox()
         bar.addWidget(self.batches, 1)
         self.follow = QCheckBox("跟随最新")
         self.follow.setChecked(True)
