@@ -236,6 +236,9 @@ class WorkspaceActions:
 
     def _completed(self, label: str, result: Any) -> None:
         window = self.window
+        if window._shutdown_started:
+            # The shutdown handler owns completion after the repository starts closing.
+            return
         window.message.setText(f"{label} 完成")
         if label == "connect_all":
             window.message.setText(window.connection_result_text(result))
