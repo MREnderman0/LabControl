@@ -48,7 +48,7 @@ def test_scope_page_and_overview_fit_current_frame_without_instrument_io(qtbot, 
         page.select_device(key)
         qtbot.waitUntil(lambda: page.plot.displayed_frame is not None, timeout=3000)
         assert len(calls) == reads_after_stop
-        assert page.timing.interval.minimum() == 0.5 and page.timing.interval.maximum() == 60
+        assert page.timing.interval.minimum() == 0 and page.timing.interval.maximum() == 60
         page.plot.plot.setXRange(-1, 1, padding=0)
         page.fit_action.trigger()
         assert page.plot.plot.viewRange()[0][1] < 1e-5
