@@ -25,7 +25,7 @@ class WatchTrendDialog(QDialog):
         self.pending = None
         self.loaded = None
         self.batch_state = None
-        self.points = ([], [], "")
+        self.points: tuple[list[float], list[float], str] = ([], [], "")
         self.limits = None
         layout = QVBoxLayout(self)
         bar = QHBoxLayout()
@@ -46,8 +46,8 @@ class WatchTrendDialog(QDialog):
         self.note = QLabel()
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
-        self.cursor = QLabel("移动指针查看采集时间和数值")
-        layout.addWidget(self.cursor)
+        self.cursor_label = QLabel("移动指针查看采集时间和数值")
+        layout.addWidget(self.cursor_label)
         self.plot.scene().sigMouseMoved.connect(self.hover)
         self.plot.getViewBox().sigRangeChangedManually.connect(self.moved)
         self.batches.currentIndexChanged.connect(self.selected)
@@ -62,7 +62,7 @@ class WatchTrendDialog(QDialog):
     def selected(self):
         self.points = ([], [], "")
         self.curve.clear()
-        self.cursor.setText("移动指针查看采集时间和数值")
+        self.cursor_label.setText("移动指针查看采集时间和数值")
         self.full()
 
     def full(self):
@@ -89,6 +89,8 @@ class WatchTrendDialog(QDialog):
         state = (root, run.path if run else None, run.done.is_set() if run else None)
         if state != self.batch_state:
             previous = self.batches.currentData()
+            latest_selected = self.batches.currentIndex() == 0
+            new_batch = self.batch_state is not None and self.batch_state[1] != state[1]
             try:
                 matches = history(root, self.key, self.row.id)
                 if run and root != run.path.parents[3]:
@@ -112,7 +114,7 @@ class WatchTrendDialog(QDialog):
                 self.batches.setItemData(
                     self.batches.count() - 1, error or str(path.parent), Qt.ItemDataRole.ToolTipRole
                 )
-            if previous and (not self.follow.isChecked() or not run or previous == run.path):
+            if previous and not (new_batch and latest_selected and self.follow.isChecked()):
                 idx = self.batches.findData(previous)
                 if idx >= 0:
                     self.batches.setCurrentIndex(idx)
@@ -152,7 +154,7 @@ class WatchTrendDialog(QDialog):
         i = bisect_left(x, target)
         i = min((j for j in (i - 1, i) if 0 <= j < len(x)), key=lambda j: abs(x[j] - target))
         value = f"{y[i]:.9g} {unit}" if isfinite(y[i]) else "记录间断"
-        self.cursor.setText(
+        self.cursor_label.setText(
             f"{datetime.fromtimestamp(x[i]).isoformat(sep=' ', timespec='milliseconds')}   {value}"
         )
 

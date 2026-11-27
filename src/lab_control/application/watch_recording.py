@@ -8,6 +8,7 @@ from collections import deque
 from contextlib import closing
 from dataclasses import dataclass
 
+from lab_control.application.monitoring_state import MonitorFrame
 from lab_control.application.watch_measurements import compute_metric, scalar, select_sample
 from lab_control.application.watchlists import SignalSpec, WatchRow, bounds_status
 from lab_control.domain.instruments import DeviceError, utc_now
@@ -42,6 +43,9 @@ def metric_window(history, optical, channel):
     return ((snap.minimum,) if snap.count == 1 else (snap.minimum, snap.maximum)), snap.unit
 
 
+QueuedItem = tuple[tuple[Route, ...], MonitorFrame | None, dict | tuple[str, str]]
+
+
 class WatchRecording:
     max_entries = 256
     max_bytes = 64 * 1024 * 1024
@@ -50,7 +54,7 @@ class WatchRecording:
         self.preset = preset
         self.path = create_batch(root, preset)
         self.condition = threading.Condition()
-        self.queue = deque()
+        self.queue: deque[tuple[QueuedItem, int]] = deque()
         self.queued_bytes = 0
         self.routes = {}
         self.bindings = {}
@@ -81,7 +85,7 @@ class WatchRecording:
         with self.condition:
             if not self.accepting:
                 return
-            targets = {}
+            targets: dict[str, list[Route]] = {}
             for route in routes:
                 key = route.row.id
                 previous = self.bindings.get(key)

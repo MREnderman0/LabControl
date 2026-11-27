@@ -125,7 +125,8 @@ def chart_data(path: Path, row_id: str, limits=None, pixels=1200):
         width = max((hi - lo) / max(1, pixels), 1e-9)
         x, y, unit, note = [], [], "", ""
         bucket = None
-        first = low = high = last = None
+        first = None
+        low = high = last = (0, 0.0, 0.0)
 
         def flush():
             if first is not None:

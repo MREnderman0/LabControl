@@ -26,6 +26,7 @@ class WatchRuntime(QObject):
 
     def __init__(self, controller, parent):
         super().__init__(parent)
+        self.page = parent
         self.ctl = controller
         self.service = controller.runtime.monitoring
         self.presets = Presets(controller.runtime.repository)
@@ -42,7 +43,7 @@ class WatchRuntime(QObject):
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="watch-metrics")
         self.recordings = {}
         self.trends = {}
-        self.listeners = ()
+        self.listeners: tuple[WatchRecording, ...] = ()
         self.reported_errors = set()
         self.unsubscribe_samples = self.service.subscribe_samples(self._monitor_sample)
         self.unsubscribe_direct = controller.runtime.sessions.subscribe(self._direct_sample)
@@ -99,7 +100,7 @@ class WatchRuntime(QObject):
         token = key, row.id
         dialog = self.trends.get(token)
         if dialog is None:
-            dialog = WatchTrendDialog(self, key, row, self.parent().window())
+            dialog = WatchTrendDialog(self, key, row, self.page.window())
             self.trends[token] = dialog
             dialog.finished.connect(lambda _: self.trends.pop(token, None))
         dialog.showNormal()
