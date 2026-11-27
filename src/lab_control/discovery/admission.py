@@ -35,16 +35,19 @@ def probe_claims(candidate: DiscoveryCandidate, inventory: Inventory) -> ProbeCl
         if serial and record.get("adapterId"):
             resources += (f"asset:{record['adapterId']}:{serial}",)
     if record and (record.get("identityConflict") or record.get("discoveryState") == "conflict"):
+        bound_lease = (
+            candidate.source == "dhcp_leases"
+            and expected == key
+            and candidate.descriptor.get("dhcpMac") == record.get("dhcpBinding", {}).get("mac")
+        )
         if (
             can_recheck_network_conflict(record)
-            and candidate.safe_scpi
-            and config.transport == "visa"
+            and (bound_lease or (candidate.safe_scpi and config.transport == "visa"))
             and network_host(config.resource)
             and not config.aliases
         ):
-            # Permit only an identity read under the normal probe/session leases.
-            # Connection remains barred until a complete scan reconciles the endpoints.
-            return ProbeClaims(resources, "network_identity_recheck")
+            independent = bound_lease or candidate.descriptor.get("lxiIdentityKey") == key
+            return ProbeClaims(resources, "network_identity_recheck", trusted=independent)
         return ProbeClaims(resources, "identity_conflict", conflict=True)
     lxi_key = candidate.descriptor.get("lxiIdentityKey")
     if lxi_key and expected == lxi_key and config.adapter and config.expected_serial:

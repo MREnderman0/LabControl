@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -6,6 +7,7 @@ import pytest
 from lab_control.application.leases import ResourceLeases
 from lab_control.application.sessions import SessionManager
 from lab_control.discovery.addresses import verified_connection
+from lab_control.discovery.changes import DiscoveryChanges, Observations
 from lab_control.discovery.dhcp import DhcpLease, DhcpLeaseDiscoveryProvider, read_tftpd_leases
 from lab_control.discovery.inventory import Inventory
 from lab_control.discovery.lan import LanDiscoverySettings, RememberedLanDiscoveryProvider
@@ -127,6 +129,129 @@ def test_duplicate_host_recheck_needs_one_fresh_identity_and_one_matching_mac(
         with pytest.raises(DeviceError, match=detail) as error:
             verified_connection(after_restart)
         assert error.value.code == "identity_conflict"
+
+
+@pytest.mark.parametrize("bad_reply", [False, True])
+def test_dhcp_delta_rechecks_legacy_conflict_with_online_reassigned_host(store, monkeypatch, bad_reply):
+    inventory, sessions, leases, original, instrument = store
+    other = DeviceIdentity("RIGOL TECHNOLOGIES", "DHO924", "OTHER-SCOPE", "TEST")
+    adapter = original["adapterId"]
+    other_mac = "02:00:00:00:00:22"
+
+    def endpoint(host, protocol):
+        return DiscoveryCandidate(
+            ConnectionConfig(f"TCPIP0::192.0.2.{host}::{protocol}"), "lan", safe_scpi=True
+        )
+
+    previous = endpoint(10, "5555::SOCKET")
+    historical_alias = endpoint(10, "inst8::INSTR")
+    peer = endpoint(10, "inst0::INSTR")
+    current = endpoint(42, "5555::SOCKET")
+    for candidate in (historical_alias, current):
+        inventory.merge(
+            candidate, "history-" + candidate.config.resource, instrument, adapter, reason="identified"
+        )
+    original["identityConflict"] = asdict(other)  # Format persisted by earlier installations.
+    original["discoveryState"] = "conflict"
+    original["dhcpBinding"] = {"identityKey": instrument.key, "mac": MAC}
+    original["slots"] = {"general": "oscilloscopes:2"}
+    inventory.edit(original["id"], display_name="bench scope")
+    second = inventory.merge(peer, "other-asset", other, adapter, reason="identified")
+    second["dhcpBinding"] = {"identityKey": other.key, "mac": other_mac}
+    inventory.repository.save(second)
+    inventory = Inventory(inventory.repository)
+    active_leases = [DhcpLease(MAC, "192.0.2.42"), DhcpLease(other_mac, "192.0.2.10")]
+    monkeypatch.setattr("lab_control.discovery.dhcp.local_dhcp_leases", lambda: tuple(active_leases))
+    monkeypatch.setattr(
+        "lab_control.discovery.lan.conflict_peer_macs",
+        lambda hosts: {lease.address: lease.mac for lease in active_leases if lease.address in hosts},
+    )
+    dhcp = DhcpLeaseDiscoveryProvider(inventory, SETTINGS)
+    lan = Observations("lan", (peer, current))
+    calls = []
+
+    def probe(candidate):
+        calls.append(candidate.config.resource)
+        return (
+            other if bad_reply or candidate.config.resource == peer.config.resource else instrument
+        ), adapter
+
+    scanner = DiscoveryService((dhcp, lan), sessions, leases, inventory, probe)
+    watcher = DiscoveryChanges(SimpleNamespace(discovery=scanner, sessions=sessions, inventory=inventory))
+    # Only the lease and observation of the moved device changed. The peer on the former IP is still online.
+    watcher.previous = {
+        "lan": watcher.snapshot((peer,)),
+        "dhcp_leases": watcher.snapshot(
+            c for c in dhcp.enumerate() if c.descriptor["expectedIdentityKey"] == other.key
+        ),
+    }
+    sessions.sessions["unrelated"] = SimpleNamespace(identity=None)
+    leases.acquire("unrelated", ("independent-instrument",), identified=True)
+    try:
+        watcher.poll()
+        restored = inventory.by_resource(current.config.resource)
+        assert restored["id"] == original["id"]
+        assert set(calls) == {peer.config.resource, current.config.resource}
+        assert leases.owns_resources("unrelated")
+        if bad_reply:
+            with pytest.raises(DeviceError, match="身份冲突"):
+                verified_connection(restored)
+            assert restored["dhcpBinding"]["mac"] == MAC
+            return
+        assert verified_connection(restored).resource == current.config.resource
+        assert (
+            restored["slots"] == {"general": "oscilloscopes:2"} and restored["displayName"] == "bench scope"
+        )
+        assert restored["config"]["limits"] == {"fixture_limit": 0.5}
+        assert not restored["lastError"]
+        assert all(restored["candidates"][c.config.resource]["retired"] for c in (previous, historical_alias))
+        assert inventory.by_resource(peer.config.resource)["id"] == second["id"]
+        active_leases[0] = DhcpLease(MAC, "192.0.2.73")
+        newest = endpoint(73, "5555::SOCKET")
+        lan.items = (peer, newest)
+        watcher.poll()
+        again = inventory.by_resource(newest.config.resource)
+        assert again["id"] == original["id"] and not again.get("identityConflict")
+        assert verified_connection(again).resource == newest.config.resource
+        assert len(inventory.all()) == 2
+    finally:
+        sessions.sessions.pop("unrelated")
+        leases.release("unrelated")
+        scanner.close()
+
+
+def test_same_model_devices_swapping_leases_keep_distinct_assets(store, monkeypatch):
+    inventory, _, _, first, identity = store
+    adapter = first["adapterId"]
+    other = DeviceIdentity(identity.manufacturer, identity.model, "TEST-B", "TEST")
+    second_config = ConnectionConfig(
+        "TCPIP0::192.0.2.20::5555::SOCKET", adapter, expected_serial=other.serial
+    )
+    second = inventory.merge(
+        DiscoveryCandidate(second_config, "configured"), "before", other, adapter, reason="identified"
+    )
+    other_mac = "02:00:00:00:00:22"
+    for record, instrument, mac, slot in ((first, identity, MAC, "1"), (second, other, other_mac, "2")):
+        record["dhcpBinding"] = {"mac": mac, "identityKey": instrument.key}
+        record["slots"] = {"general": slot}
+        inventory.repository.save(record)
+    monkeypatch.setattr(
+        "lab_control.discovery.dhcp.local_dhcp_leases",
+        lambda: (DhcpLease(MAC, "192.0.2.20"), DhcpLease(other_mac, "192.0.2.10")),
+    )
+    provider = DhcpLeaseDiscoveryProvider(inventory, SETTINGS)
+
+    def probe(candidate):
+        return (identity if "192.0.2.20" in candidate.config.resource else other), adapter
+
+    result = scan(store, [provider], probe)
+    assert [i["reason"] for i in result["items"]] == ["identified", "identified"]
+    assert len(inventory.all()) == 2
+    for old, serial, addr, slot in ((first, identity.serial, 20, "1"), (second, other.serial, 10, "2")):
+        route = f"TCPIP0::192.0.2.{addr}::5555::SOCKET"
+        row = inventory.by_resource(route)
+        assert row["id"] == old["id"] and row["slots"] == {"general": slot}
+        assert verified_connection(row).resource == route and row["identity"]["serial"] == serial
 
 
 def test_recheck_cancelled_during_network_io_cannot_release_conflict(store, monkeypatch):

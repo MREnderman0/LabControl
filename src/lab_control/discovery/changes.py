@@ -11,6 +11,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
+from lab_control.discovery.addresses import can_recheck_network_conflict
 from lab_control.domain.connections import canonical_resource, network_host
 from lab_control.domain.instruments import DeviceError
 
@@ -124,9 +125,36 @@ class DiscoveryChanges:
             }
         if changed:
             # Keep other observations of the same endpoint together for admission.
+            changed_hosts = {
+                network_host(c.config.resource)
+                for now in batches.values()
+                for (_, endpoint), c in now.items()
+                if endpoint in changed
+            }
+            peer_hosts = set()
+            lease_hosts = {
+                c.descriptor.get("expectedIdentityKey"): network_host(c.config.resource)
+                for c in batches.get("dhcp_leases", {}).values()
+            }
+            for row in app.inventory.all():
+                if not can_recheck_network_conflict(row):
+                    continue
+                hosts = {
+                    network_host(address)
+                    for address, entry in row["candidates"].items()
+                    if not entry.get("retired")
+                }
+                hosts.add(lease_hosts.get(row["identityKey"], ""))
+                hosts.discard("")
+                if hosts & changed_hosts:
+                    peer_hosts.update(hosts)
             selected = []
             for name, now in batches.items():
-                peers = tuple(c for (_, endpoint), c in now.items() if endpoint in changed)
+                peers = tuple(
+                    c
+                    for (_, endpoint), c in now.items()
+                    if endpoint in changed or network_host(c.config.resource) in peer_hosts
+                )
                 if peers:
                     selected.append(Observations(name, peers))
             for provider in app.discovery.providers:

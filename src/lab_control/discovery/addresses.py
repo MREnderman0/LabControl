@@ -30,21 +30,69 @@ def identity_conflict_message(record: dict[str, Any]) -> str:
         expected = record.get("config", {}).get("expected_serial") or "未登记"
         return f"身份冲突：配置序列号 {expected} 与实机回报 {conflict.get('serial', '')} 不同"
     if conflict.get("serial"):
-        return f"身份冲突：台账与新读到的设备身份不一致（{conflict.get('model', '')} / {conflict['serial']}），请核对"
+        detail = conflict.get("recheckDetail") or "请核对"
+        return f"身份冲突：台账与设备身份记录不一致（{conflict.get('model', '')} / {conflict['serial']}），{detail}"
     return "设备身份冲突，请在设备详情核对型号、序列号和连接地址"
 
 
 def can_recheck_network_conflict(record: dict[str, Any]) -> bool:
     binding = record.get("dhcpBinding", {})
+    conflict = record.get("identityConflict") or {}
+    # Older databases stored the other instrument's identity directly when its IP was reused.
+    network_conflict = conflict.get("reason") == "same_identity_at_multiple_network_hosts" or (
+        not conflict.get("reason")
+        and conflict.get("confidence") == "exact"
+        and all(conflict.get(field) for field in ("manufacturer", "model", "serial"))
+        and any(
+            conflict[field] != record.get("identity", {}).get(field)
+            for field in ("manufacturer", "model", "serial")
+        )
+        and (
+            network_host(conflict["resource"])
+            if conflict.get("resource")
+            else all(network_host(address) for address in record.get("candidates", {}))
+        )
+    )
     return bool(
-        record.get("identityConflict", {}).get("reason") == "same_identity_at_multiple_network_hosts"
+        network_conflict
         and record.get("identityKey")
         and binding.get("identityKey") == record["identityKey"]
         and binding.get("mac")
         and not record.get("primaryResourceExplicit")
-        and record.get("config", {}).get("transport") == "visa"
+        and network_host(record.get("config", {}).get("resource", ""))
         and record.get("config", {}).get("expected_serial", "") in ("", record["identity"].get("serial"))
     )
+
+
+def fresh_network_addresses(record: dict, scan_id: str) -> list[str]:
+    return [
+        address
+        for address, entry in record["candidates"].items()
+        if network_host(address)
+        and entry.get("verifiedScanRunId") == scan_id
+        and entry.get("verifiedIdentityKey") == record.get("identityKey")
+        and entry.get("probeReason") == "identified"
+        and not entry.get("retired")
+    ]
+
+
+def matches_lease_observation(entry: dict, scan_id: str, key: str, mac: str) -> bool:
+    lease = entry.get("sources", {}).get("dhcp_leases", {})
+    descriptor = lease.get("rawDescriptor", {})
+    return (
+        lease.get("scanRunId") == scan_id
+        and descriptor.get("expectedIdentityKey") == key
+        and descriptor.get("dhcpMac") == mac
+    )
+
+
+def retire_previous_hosts(record: dict, resource: str, scan_id: str) -> None:
+    """Keep historical endpoints but release their ownership after a verified DHCP move."""
+    host = network_host(resource)
+    for address, entry in record["candidates"].items():
+        peer = network_host(address)
+        if peer and peer != host and entry.get("verifiedScanRunId") != scan_id:
+            entry.update(retired=True, presenceState="not_seen", probeReason="address_reassigned")
 
 
 def remember_identity(record: dict[str, Any], resource: str, identity: DeviceIdentity, scan_id: str) -> None:

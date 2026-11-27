@@ -557,7 +557,10 @@ class DiscoveryService:
         report["items"] = [results[index] for index in range(len(candidates))]
         if not preserve_presence:
             self.inventory.stale(scan_id, successful - {"configured"}, cancelled=self.cancelled.is_set())
-        if not preserve_presence and not scope and not self.cancelled.is_set() and "lan" in successful:
+        if not self.cancelled.is_set() and (
+            (not preserve_presence and not scope and "lan" in successful)
+            or (scope == "device_changes" and "dhcp_leases" in successful)
+        ):
             mismatches = {
                 item["expectedIdentityKey"]: item["error"]
                 for item in report["items"]
