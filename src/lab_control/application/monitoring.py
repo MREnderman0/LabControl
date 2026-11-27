@@ -75,6 +75,7 @@ class MonitoringService:
         self.recording_results: deque[dict[str, Any]] = deque(maxlen=32)
         self._recording_result_id = 0
         self.preparer = ThreadPoolExecutor(max_workers=2, thread_name_prefix="record-prepare")
+        self.sample_listeners: list[Callable[[str, MonitorFrame], None]] = []
         self.frame_listeners: list[Callable[[str], None]] = []
         self.wake = threading.Event()
         self.closing = False
@@ -88,6 +89,18 @@ class MonitoringService:
         self.recovery = MonitorRecovery(self)
         self.thread = threading.Thread(target=self._loop, name="monitor-scheduler", daemon=True)
         self.thread.start()
+
+    def subscribe_samples(self, callback):
+        """Deliver each accepted frame synchronously. Consumers must only enqueue work."""
+        with self.lock:
+            self.sample_listeners.append(callback)
+
+        def unsubscribe():
+            with self.lock:
+                if callback in self.sample_listeners:
+                    self.sample_listeners.remove(callback)
+
+        return unsubscribe
 
     def subscribe_frames(self, callback: Callable[[str], None]) -> Callable[[], None]:
         with self.lock:

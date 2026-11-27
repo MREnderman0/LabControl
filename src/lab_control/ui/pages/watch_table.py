@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QPushButton,
     QStyledItemDelegate,
     QTableView,
@@ -116,9 +117,11 @@ class WatchTableModel(QAbstractTableModel):
             return channel_label(names, row.channel)
         if col == 2:
             if row.parameters and role == Qt.ItemDataRole.ToolTipRole:
-                return f"{row.label}\n{row.parameters}"
-            return row.label
+                return f"{row.label}\n{row.parameters}\n双击查看记录曲线"
+            return "双击查看记录曲线" if role == Qt.ItemDataRole.ToolTipRole else row.label
         if col == 3:
+            if role == Qt.ItemDataRole.ToolTipRole:
+                return "双击查看记录曲线"
             return f"{reading.value:.9g}" if reading else "—"
         if col == 4:
             return reading.unit if reading else row.unit
@@ -207,8 +210,12 @@ class PresetTable(QWidget):
         self.add = QPushButton("添加监视量")
         self.remove = QPushButton("移除")
         self.once = QPushButton("采一次")
-        for button in (self.add, self.remove, self.once):
+        self.record = QPushButton("开始记录")
+        self.record.clicked.connect(self.toggle_recording)
+        self.record_status = QLabel()
+        for button in (self.add, self.remove, self.once, self.record):
             bar.addWidget(button)
+        bar.addWidget(self.record_status)
         bar.addStretch()
         layout.addLayout(bar)
         self.table = QTableView()
@@ -243,6 +250,8 @@ class PresetTable(QWidget):
         self.once.clicked.connect(self.capture)
         self.table.selectionModel().selectionChanged.connect(self.buttons)
         self.table.clicked.connect(self.edit_limit)
+        self.table.doubleClicked.connect(self.show_trend)
+        hub.changed.connect(self.buttons)
         hub.updated.connect(self.buttons)
         self.bind("")
 
@@ -261,7 +270,39 @@ class PresetTable(QWidget):
         ):
             self.table.edit(index)
 
+    def show_trend(self, index):
+        if index.isValid() and index.column() in (2, 3):
+            self.hub.open_trend(self.model.preset, self.model.rows[index.row()])
+
+    def toggle_recording(self):
+        key = self.model.preset
+        run = self.hub.recordings.get(key)
+        try:
+            if run and run.accepting:
+                self.hub.stop_recording(key)
+            else:
+                self.hub.start_recording(key)
+        except Exception as exc:
+            self.hub.ctl.message.emit(f"记录操作失败 · {exc}")
+        self.buttons()
+
     def buttons(self, *_args):
+        run = self.hub.recordings.get(self.model.preset)
+        saving = run and not run.accepting and not run.done.is_set()
+        self.record.setText("停止记录" if run and run.accepting else "正在保存…" if saving else "开始记录")
+        self.record.setEnabled(bool(self.model.rows or (run and run.accepting)) and not saving)
+        if run:
+            state = (
+                "写入失败" if run.error else "记录中" if run.accepting else "保存中" if saving else "已保存"
+            )
+            self.record_status.setText(f"{state} · {run.count} 点")
+            self.record_status.setToolTip(
+                "\n".join(filter(None, (run.error, run.last_stamp, str(run.path.parent))))
+            )
+        else:
+            self.record_status.clear()
+            self.record_status.setToolTip("")
+
         rows = self.selection()
         self.remove.setEnabled(bool(rows))
         special = len(rows) == 1 and rows[0].source in ("waveform", "phase_noise_capture")

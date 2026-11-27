@@ -12,6 +12,7 @@ from PySide6.QtCore import QObject, Signal
 
 from lab_control.application.monitoring_state import MonitorFrame
 from lab_control.application.watch_measurements import compute_metric, scalar, select_sample
+from lab_control.application.watch_recording import Route, WatchRecording, metric_window
 from lab_control.application.watchlists import Presets, bounds_status, signal_catalog
 from lab_control.domain.instruments import DeviceError
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
@@ -39,6 +40,12 @@ class WatchRuntime(QObject):
         self.metric_jobs = {}
         self.metric_cache = {}
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="watch-metrics")
+        self.recordings = {}
+        self.trends = {}
+        self.listeners = ()
+        self.reported_errors = set()
+        self.unsubscribe_samples = self.service.subscribe_samples(self._monitor_sample)
+        self.unsubscribe_direct = controller.runtime.sessions.subscribe(self._direct_sample)
         self.closed = False
         self.learned = {}
         self.retry_at = {}
@@ -68,7 +75,74 @@ class WatchRuntime(QObject):
             self.views.pop(view, None)
         self.tick()
 
+    def start_recording(self, key):
+        preset = self.presets.get(key)
+        if not preset or not preset.rows:
+            raise ValueError("请先添加监视量")
+        existing = self.recordings.get(key)
+        if existing and not existing.done.is_set():
+            raise ValueError("此列表正在记录或保存")
+        run = WatchRecording(self.ctl.runtime.repository.data_root, preset)
+        self.recordings[key] = run
+        self.reported_errors.discard(key)
+        self.listeners = tuple(r for r in self.recordings.values() if r.accepting)
+        self.tick()
+        return run
+
+    def stop_recording(self, key):
+        self.recordings[key].stop()
+        self.tick()
+
+    def open_trend(self, key, row):
+        from lab_control.ui.pages.watch_trend_view import WatchTrendDialog
+
+        token = key, row.id
+        dialog = self.trends.get(token)
+        if dialog is None:
+            dialog = WatchTrendDialog(self, key, row, self.parent().window())
+            self.trends[token] = dialog
+            dialog.finished.connect(lambda _: self.trends.pop(token, None))
+        dialog.showNormal()
+        dialog.raise_()
+        dialog.activateWindow()
+        return dialog
+
+    def _monitor_sample(self, device, frame):
+        for run in self.listeners:
+            run.capture(
+                device,
+                frame,
+                lambda optical: (
+                    self.service.power_window(device) if optical else self.service.temperature_window(device)
+                ),
+            )
+
+    def _direct_sample(self, event):
+        if self.listeners and event["event"] == "measurement" and event.get("request"):
+            device = event["device_id"]
+            frame = MonitorFrame(
+                0,
+                event["configuration_version"],
+                event["request"],
+                event["batch"],
+                event["received_at"],
+                event["session_id"],
+            )
+            for run in self.listeners:
+                run.capture(device, frame, lambda optical: self.ctl.recorded_window(device, frame, optical))
+
     def close(self):
+        if self.closed:
+            return
+        for dialog in list(self.trends.values()):
+            dialog.close()
+        self.unsubscribe_samples()
+        self.unsubscribe_direct()
+        self.listeners = ()
+        for run in self.recordings.values():
+            run.stop()
+        for run in self.recordings.values():
+            run.thread.join()
         self.views.clear()
         self.tick()
         self.closed = True
@@ -91,7 +165,12 @@ class WatchRuntime(QObject):
 
     def active_rows(self):
         active = set(self.views.values())
-        return [r for p in self.presets.items if p.id in active for r in p.rows]
+        rows = {r.id: r for p in self.presets.items if p.id in active for r in p.rows}
+        for run in self.recordings.values():
+            if run.accepting:
+                for row in run.preset.rows:
+                    rows.setdefault(row.id, row)
+        return list(rows.values())
 
     def requests(self, device, signals):
         grouped = defaultdict(set)
@@ -118,12 +197,37 @@ class WatchRuntime(QObject):
                 requests.append(request)
         return tuple(requests)
 
+    def _binding(self, row, dev):
+        if not dev or not self.ctl.has_connected_session(dev):
+            return None, "未绑定" if not dev and row.slot else "断线"
+        channels, specs = self.catalog(dev)
+        spec = specs.get((row.source, row.profile, row.metric))
+        if row.channel not in channels or not spec or (spec.profile and spec.profile.version != row.version):
+            return None, "通道或监视量不兼容"
+        quantity = spec.profile.id if spec.profile else spec.quantity
+        if (row.quantity and quantity and row.quantity != quantity) or (
+            row.unit and spec.unit and row.unit != spec.unit
+        ):
+            return None, "物理量或单位不兼容"
+        if dev != row.device and not (
+            row.quantity or row.unit or row.profile or row.adapter == self.ctl.records[dev]["adapterId"]
+        ):
+            return None, "待核对物理量"
+        return spec, ""
+
     def tick(self):
         if self.closed or self.ctl.runtime.closed:
             return
         active = self.active_rows()
+        for key, run in self.recordings.items():
+            if run.done.is_set() and run.error and key not in self.reported_errors:
+                self.reported_errors.add(key)
+                self.ctl.message.emit(f"{run.preset.name} · {run.error} · {run.path.parent}")
         if not active and not self.revisions and not self.metric_jobs:
+            if self.recordings:
+                self.updated.emit()
             return
+        bindings = {}
         groups = defaultdict(list)
         for row in active:
             dev = self.resolve(row)
@@ -133,31 +237,23 @@ class WatchRuntime(QObject):
                 # A replacement must never inherit a previous instrument's sample.
                 if dev and self.values.get(row.id, (None,))[0] not in (None, dev):
                     self.values.pop(row.id, None)
-            if not dev or not self.ctl.has_connected_session(dev):
-                self.status[row.id] = "未绑定" if not dev and row.slot else "断线"
-                continue
-            channels, specs = self.catalog(dev)
-            spec = specs.get((row.source, row.profile, row.metric))
-            if (
-                row.channel not in channels
-                or not spec
-                or (spec.profile and spec.profile.version != row.version)
-            ):
-                self.status[row.id] = "通道或监视量不兼容"
-                continue
-            quantity = spec.profile.id if spec.profile else spec.quantity
-            if (row.quantity and quantity and row.quantity != quantity) or (
-                row.unit and spec.unit and row.unit != spec.unit
-            ):
-                self.status[row.id] = "物理量或单位不兼容"
-                continue
-            if dev != row.device and not (
-                row.quantity or row.unit or row.profile or row.adapter == self.ctl.records[dev]["adapterId"]
-            ):
-                self.status[row.id] = "待核对物理量"
+            spec, reason = self._binding(row, dev)
+            record = self.ctl.records.get(dev, {})
+            ident = record.get("identity", {})
+            name = (
+                record.get("displayName")
+                or " ".join(filter(None, (ident.get("model"), ident.get("serial"))))
+                or row.adapter
+            )
+            bindings[row.id] = Route(row, dev, name, sid or "", spec, reason)
+            if reason:
+                self.status[row.id] = reason
                 continue
             groups[dev].append((row, spec))
 
+        for run in self.recordings.values():
+            if run.accepting:
+                run.bind(replace(bindings[r.id], row=r) for r in run.preset.rows)
         for dev in set(self.revisions) - groups.keys():
             self.service.sync_watch(dev, (), 0, "", self.revisions.pop(dev)[1])
             self.retry_at.pop(dev, None)
@@ -257,6 +353,13 @@ class WatchRuntime(QObject):
                     "已过期" if age > max(5, period * 3) else bounds_status(reading.value, row)
                 )
         if self.learned:
+            self.learned = {
+                r.id: self.learned[r.id]
+                for p in self.presets.items
+                for r in p.rows
+                if r.id in self.learned and (r.quantity, r.unit) != self.learned[r.id]
+            }
+        if self.learned:
             items = [
                 replace(
                     p,
@@ -314,20 +417,7 @@ class WatchRuntime(QObject):
                     history = (
                         self.service.power_window(dev) if optical else self.service.temperature_window(dev)
                     )
-                if optical:
-                    w = history
-                    points = next((h.points for h in w.channels if h.channel == row.channel), ()) if w else ()
-                    window = (tuple(p.watts for p in points), "W")
-                else:
-                    h = next((h for h in (history or ()) if h.channel == row.channel), None)
-                    window = (
-                        ()
-                        if not h or h.count == 0
-                        else (h.minimum,)
-                        if h.count == 1
-                        else (h.minimum, h.maximum),
-                        h.unit if h else "",
-                    )
+                window = metric_window(history, optical, row.channel)
             self.metric_jobs[key] = (
                 token,
                 self.worker.submit(compute_metric, spec, frame, row.channel, row.parameters, window),
@@ -380,6 +470,8 @@ class WatchRuntime(QObject):
         def done(batch):
             actual = batch.configuration.get("_session_configuration_version", version)
             self.samples[dev] = MonitorFrame(0, actual, request, batch, session_id=sid)
+            for run in self.listeners:
+                run.capture(dev, self.samples[dev], lambda _: None)
             self.errors.pop(dev, None)
             self.tick()
 

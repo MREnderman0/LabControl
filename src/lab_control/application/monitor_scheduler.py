@@ -206,6 +206,11 @@ class MonitorScheduler:
                 recording=task.recorder.snapshot() if task.recorder else {},
             )
             task.timing_report_at = now
+        for listener in tuple(owner.sample_listeners):
+            try:
+                listener(device_id, task.frames[key])
+            except Exception as exc:
+                owner.audit.try_record("sample_listener_failed", device_id=device_id, error=str(exc))
         for callback in tuple(owner.frame_listeners):
             try:
                 callback(device_id)

@@ -116,8 +116,13 @@ def test_ongoing_scope_and_recording_take_priority(workspace, qtbot, monkeypatch
         rows = tuple(spec.row(win.controller.records[scope], ch, {}) for ch in (1, 2))
         preset = Preset("波形", rows)
         hub.save([preset])
+        trend = hub.start_recording(preset.id)
         dlg = page.open_window(preset.id)
         qtbot.waitUntil(lambda: rows[0].id in hub.values, timeout=9000)
+        qtbot.waitUntil(lambda: trend.count >= 2, timeout=8000)
+        hub.stop_recording(preset.id)
+        qtbot.waitUntil(trend.done.is_set)
+        assert not trend.error
         assert hub.values[rows[0].id][1].unit == "V"
         assert hub.status[rows[1].id] == "等待兼容数据"
         with pytest.raises(DeviceError):
@@ -155,6 +160,51 @@ def test_slot_replacement_keeps_row_and_revalidates_unit(workspace, qtbot, monke
     assert hub.status[row.id] == "物理量或单位不兼容"
     assert hub.presets.get(p.id).rows[0].unit == "°C"
     assert not rt.monitoring.tasks[replacement].running
+
+
+def test_recording_follows_preset_across_views_and_reopens_history(workspace, qtbot):
+    import csv
+    import sqlite3
+    from contextlib import closing
+
+    from lab_control.ui.pages.watch_table import PresetTable
+
+    win, rt, page, meter, _ = workspace
+    hub = page.hub
+    row = hub.catalog(meter)[1][("reading", "", "")].row(win.controller.records[meter], 204, {})
+    preset = Preset("温度记录", (row,))
+    hub.save([preset])
+    popup = page.open_window(preset.id)
+    page.table.record.click()
+    run = hub.recordings[preset.id]
+    qtbot.waitUntil(lambda: run.count >= 1, timeout=8000)
+    assert popup.findChild(PresetTable).record.text() == "停止记录"
+    task = rt.monitoring.tasks[meter]
+    popup.close()
+    win.navigate("首页")
+    first = run.count
+    qtbot.waitUntil(lambda: run.count > first, timeout=9000)
+    assert rt.monitoring.tasks[meter] is task
+    win.navigate("监视列表")
+    page.table.record.click()
+    qtbot.waitUntil(run.done.is_set)
+    assert not run.error
+    with closing(sqlite3.connect(run.path)) as db:
+        assert db.execute("SELECT state FROM batch").fetchone()[0] == "complete"
+        points = db.execute("SELECT value,unit,stamp,session FROM points WHERE value IS NOT NULL").fetchall()
+    assert len(points) == run.count >= 2 and len({p[2] for p in points}) >= 2
+    assert {(p[0], p[1], p[3]) for p in points} == {(22.000001, "°C", rt.sessions.sessions[meter].session_id)}
+    with next(run.path.parent.glob("*.csv")).open(encoding="utf-8-sig", newline="") as stream:
+        assert len(list(csv.DictReader(stream))) == len(points)
+    hub.recordings.clear()  # Same on-disk history available to a fresh runtime.
+    index = page.table.model.index(0, 3)
+    pos = page.table.table.visualRect(index).center()
+    qtbot.mouseClick(page.table.table.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    qtbot.mouseDClick(page.table.table.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    dlg = hub.trends[(preset.id, row.id)]
+    qtbot.waitUntil(lambda: len(dlg.points[0]) >= 2, timeout=5000)
+    assert dlg.batches.currentData() == run.path
+    assert dlg.points[2] == "°C"
 
 
 def test_single_sided_limits():
@@ -249,9 +299,15 @@ def test_attaches_to_direct_recorder_without_claiming_it(workspace, qtbot):
     run = rt.sessions.start_acquisition(meter, request, interval=0.4, count=8)
     original_worker = rt.sessions.sessions[meter].stream_future
     row = hub.catalog(meter)[1][("reading", "", "")].row(win.controller.records[meter], 204, {})
-    hub.save([Preset("独立记录", (row,))])
+    preset = Preset("独立记录", (row,))
+    hub.save([preset])
+    trend = hub.start_recording(preset.id)
     qtbot.waitUntil(lambda: row.id in hub.values, timeout=5000)
     assert not run.done()
+    qtbot.waitUntil(lambda: trend.count >= 2, timeout=5000)
+    hub.stop_recording(preset.id)
+    qtbot.waitUntil(trend.done.is_set)
+    assert not trend.error
     assert meter not in rt.monitoring.tasks
     assert hub.values[row.id][1].unit == "°C"
     win.navigate("首页")
