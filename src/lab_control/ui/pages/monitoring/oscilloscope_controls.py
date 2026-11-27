@@ -32,6 +32,7 @@ from lab_control.domain.instruments import DeviceCommand, DeviceError, Parameter
 from lab_control.domain.oscilloscope import COLORS, CONTROL_NAMES, coarse_steps, engineering
 from lab_control.domain.readback import boolean_value, normalized_value, usable_reading
 from lab_control.ui.kit import Dot, Pill, Segmented, Switch, set_property, style_button
+from lab_control.ui.kit.numeric import ReadingLabel
 from lab_control.ui.pages.monitoring.frame import show_sync_health
 from lab_control.ui.pages.monitoring.scope_depth import ScopeDepth
 from lab_control.ui.pages.monitoring.scope_points import ScopePoints
@@ -186,7 +187,7 @@ class ScopeSlider(QWidget):
         self.setMinimumHeight(40)
         self.title = QLabel(title)
         self.title.setObjectName("scopeControlLabel")
-        self.value_label = QLabel("—")
+        self.value_label = ReadingLabel("—")
         self.value_label.setObjectName("scopeControlValue")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(self.title)
@@ -373,7 +374,7 @@ class ScopeSlider(QWidget):
             self.slider.setPageStep(10)
         self.slider.blockSignals(False)
         self.value_label.setText(self.text(actual))
-        self.value_label.setToolTip(f"实际读回：{actual:.12g} {self.unit}")
+        self.value_label.setToolTip(f"实际读回：{actual} {self.unit}")
         self.minimum_label.setText(engineering(self.steps[0] if self.coarse else self.low, self.unit))
         self.maximum_label.setText(engineering(self.steps[-1] if self.coarse else self.high, self.unit))
         self.slider.setToolTip(

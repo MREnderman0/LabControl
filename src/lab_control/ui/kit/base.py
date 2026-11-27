@@ -6,7 +6,16 @@ from html import escape
 
 from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QFontMetrics, QPainter
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QToolButton, QWidget
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QToolButton,
+    QWidget,
+)
 
 from lab_control.ui.kit import icons
 from lab_control.ui.styles import tokens as tk
@@ -220,6 +229,77 @@ class Pill(QFrame):
         if icon is not None or dot is not None:
             self.set_icon(self.icon_name if icon is None else icon, dot=dot)
         self.set_kind(kind, live=live)
+
+
+class VersionChip(QAbstractButton):
+    """Clickable 20 px version capsule beside the brand; ``ok`` turns it green with a trailing icon."""
+
+    HEIGHT = 20
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("versionChip")
+        self.kind = "neutral"
+        self.icon_name = ""
+        self.setText(text)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def _font(self):
+        font = self.font()
+        font.setPixelSize(11)
+        font.setWeight(font.Weight.DemiBold)
+        return font
+
+    def set_state(self, text: str, kind: str = "neutral", icon: str = "") -> None:
+        if (text, kind, icon) == (self.text(), self.kind, self.icon_name):
+            return
+        self.setText(text)
+        self.kind, self.icon_name = kind, icon
+        self.updateGeometry()
+        self.update()
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        width = QFontMetrics(self._font()).horizontalAdvance(self.text()) + 16
+        if self.icon_name:
+            width += 15
+        return QSize(width, self.HEIGHT)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return self.sizeHint()
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        hovered = self.underMouse() or self.isDown() or self.hasFocus()
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        if self.kind == "ok":
+            fill, border, ink = QColor(tk.OK), QColor(tk.OK), QColor(tk.OK)
+            fill.setAlphaF(0.2 if hovered else 0.12)
+            border.setAlphaF(0.55 if hovered else 0.32)
+        else:
+            fill = QColor(tk.HOVER if hovered else tk.SURFACE_2)
+            border = QColor(tk.BORDER_HOVER if hovered else tk.BORDER)
+            ink = QColor(tk.TEXT if hovered else tk.TEXT_2)
+        painter.setPen(border)
+        painter.setBrush(fill)
+        painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
+        painter.setFont(self._font())
+        painter.setPen(ink)
+        text_rect = QRect(8, 0, self.width() - 16 - (15 if self.icon_name else 0), self.height())
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, self.text())
+        if self.icon_name:
+            icons.paint(painter, self.icon_name, ink.name(), QRect(self.width() - 19, 4, 12, 12))
 
 
 class IconButton(QToolButton):

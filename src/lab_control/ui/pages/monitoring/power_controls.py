@@ -19,6 +19,7 @@ from lab_control.application.settings_sync import SettingsSync
 from lab_control.domain.instruments import DeviceError
 from lab_control.domain.readback import usable_reading
 from lab_control.ui.kit import Dot, Pill, style_button
+from lab_control.ui.kit.numeric import ReadingLabel, number_text
 from lab_control.ui.pages.device_control.power_supply import PowerOutput
 from lab_control.ui.pages.device_control.signal_source import ParameterGroup, newer_token
 from lab_control.ui.pages.monitoring.frame import show_sync_health
@@ -64,7 +65,7 @@ class PowerMonitorChannel(ParameterGroup):
                 c.name == "measured_" + name and c.readable for c in schema.operations
             ):
                 continue
-            label = QLabel("实测 — " + ("V" if name == "voltage" else "A"))
+            label = ReadingLabel("实测 — " + ("V" if name == "voltage" else "A"))
             label.setObjectName("powerLiveValue")
             # Equal readout columns must not resize when a value gains digits.
             label.setMinimumWidth(0)
@@ -393,7 +394,7 @@ class PowerControls(QWidget):
         for channel, panel in self.panels.items():
             for quantity, label in panel.measurements.items():
                 m = values.get((channel, quantity))
-                value = f"{m.values[0]:.6g} {m.unit}" if m is not None else "—"
+                value = f"{number_text(m.values[0])} {m.unit}" if m is not None else "—"
                 text = f"实测 {value}" + (
                     " · 未采集" if channel not in channels else " · 已暂停" if paused and frame else ""
                 )

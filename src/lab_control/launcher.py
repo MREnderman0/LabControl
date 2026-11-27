@@ -13,6 +13,10 @@ def worker_command(folder: Path) -> list[str]:
 
 def main() -> int:
     args = sys.argv[1:]
+    if args and args[0] == "--apply-setup" and getattr(sys, "frozen", False):
+        from lab_control.deployment.installer import main as apply_setup
+
+        return apply_setup(args[1:])
     if args and args[0] == "--agent-connector":
         from lab_control.agent.connector import main as connector_main
 

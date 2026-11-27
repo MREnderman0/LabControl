@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import shutil
@@ -114,7 +115,13 @@ def main() -> int:
         assert json.loads((folder / "csv-status.json").read_text())["error"]
         assert not list(outside.rglob("hardware.lock"))
         report = json.loads(args.report.read_text(encoding="utf-8"))
+        versions = [
+            dist.version
+            for dist in importlib.metadata.distributions(name="labcontrol", path=[str(target / "_internal")])
+        ]
+        assert versions == [report["software_version"]], f"Ambiguous frozen LabControl metadata: {versions}"
         report.update(
+            frozen_project_versions=versions,
             exe_icons=verify_exe_icons(target),
             outside_source=False,
             isolated_bundle=True,

@@ -39,6 +39,7 @@
 - [示波器固定网格与记录状态（2026-09-27）](recording-grid-review.md)
 - [示波器粗细调、参数缓存与 Auto（2026-09-27）](scope-control-cache-review.md)
 - [桌面部署与环境修复验收（2026-09-25）](desktop-deployment-review.md)
+- [光功率计接入前的环境准备复核（2026-11-27）](environment-preparation-2026-11-27.md)
 
 - [菜单、长单位与已连接设备筛选验收](connected-selection-review.md)
 - [居中设备池与当前发现状态复核（2026-09-24）](device-pool-review.md)

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.settings_sync import SettingsSync
 from lab_control.domain.instruments import Capability, DeviceCommand, Quality, utc_now
 from lab_control.ui.controller import WorkspaceController
+from lab_control.ui.kit.numeric import number_text
 from lab_control.ui.pages.device_control.power_supply import PowerSupplyPage
 from lab_control.ui.pages.device_control.signal_source import ParameterGroup, newer_token
 from lab_control.ui.widgets.device_selector import DeviceSelector
@@ -243,7 +244,7 @@ class CoreMorrowE00Channel(ParameterGroup):
         if valid and frame is not None and isinstance(value, (float, int)):
             self.actual_display.display(f"{float(value):.4f}")
             self.channel_status.setText("正常" if health == "正常" else health)
-            self.actual_detail.setText(f"实际读回：{float(value):.6g} V")
+            self.actual_detail.setText(f"实际读回：{number_text(float(value))} V")
             self.actual_display.setToolTip(f"{frame.reading.timestamp}\n原始读回：{frame.reading.value}")
         else:
             self.actual_display.display("----")
@@ -266,7 +267,7 @@ class CoreMorrowE00Channel(ParameterGroup):
             self.channel_status.setText("读回已暂停")
             self.actual_display.display("----")
             self.actual_detail.setText(
-                f"历史读回：{float(value):.4f} V"
+                f"历史读回：{number_text(float(value))} V"
                 if isinstance(value, (float, int))
                 else "波形状态未确认，暂无当前读回"
             )

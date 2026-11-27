@@ -24,6 +24,7 @@ class WindowShutdown:
             return
         window._shutdown_started = True
         window.timer.stop()
+        window.updates.shutdown()
         window.agent_panel.timer.stop()
         from lab_control.ui.pages.operation_log import OperationLogPage
 
@@ -59,6 +60,7 @@ class WindowShutdown:
 
         def finish(label: str, result: Any):
             if label == "shutdown":
+                window.updates.after_shutdown()
                 window.closing = True
                 window.bridge.worker.shutdown(wait=False)
                 window.close()

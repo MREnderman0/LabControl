@@ -23,6 +23,7 @@ from lab_control.domain.oscilloscope import engineering
 from lab_control.domain.spectrum import SpectrumMarker
 from lab_control.ui.controller import display_connection_state, state_label
 from lab_control.ui.kit import Card, Dot, IconButton, ReadoutStrip, style_button
+from lab_control.ui.kit.numeric import number_text
 from lab_control.ui.pages.monitoring.frame import page_layout, show_state
 from lab_control.ui.pages.monitoring.recording_state import recording_phase, update_recording_frame
 from lab_control.ui.pages.monitoring.spectrum import SpectrumMarkerActions
@@ -233,7 +234,7 @@ class RolePage(SpectrumMarkerActions, QWidget):
             if reading and reading.position is not None and reading.amplitude is not None:
                 self.readouts.set(
                     "marker",
-                    f"{reading.amplitude:.2f} {self.marker_plot.amplitude_unit}",
+                    f"{number_text(reading.amplitude, 2)} {self.marker_plot.amplitude_unit}",
                     f"M{marker.number} · {engineering(reading.position, 'Hz')}",
                 )
                 return

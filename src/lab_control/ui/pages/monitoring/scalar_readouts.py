@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lab_control.ui.kit.numeric import ReadingLabel
+
 ReadingKey = tuple[int, str]
 
 
@@ -40,7 +42,7 @@ class ScalarReadout(QFrame):
         heading.addWidget(self.unit, 1)
         self.unit.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(heading)
-        self.value = QLabel("—")
+        self.value = ReadingLabel("—")
         self.value.setObjectName("scalarReadoutValue")
         layout.addWidget(self.value)
         for label in (self.channel, self.value, self.unit):

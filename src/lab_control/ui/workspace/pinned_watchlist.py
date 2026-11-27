@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QAbstractItemView, QLabel, QListView, QStyledItemD
 
 from lab_control.ui.kit import Card, ElideLabel, button
 from lab_control.ui.kit.base import plain_tooltip
+from lab_control.ui.kit.numeric import fit_reading
 from lab_control.ui.pages.watch_table import WatchTableModel
 from lab_control.ui.styles import tokens as tk
 
@@ -54,7 +55,11 @@ class ReadingDelegate(QStyledItemDelegate):
             x = rect.right() - width + 1 if right else rect.left()
             box = QRect(x, rect.top() + (height if second else 0), width, height)
             align = Qt.AlignmentFlag.AlignRight if right else Qt.AlignmentFlag.AlignLeft
-            shown = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, width)
+            shown = (
+                fit_reading(text, width, painter.fontMetrics())
+                if right and not second
+                else painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, width)
+            )
             painter.drawText(box, align | Qt.AlignmentFlag.AlignVCenter, shown)
         painter.setPen(QColor(tk.BORDER))
         painter.drawLine(rect.left(), option.rect.bottom(), rect.right(), option.rect.bottom())

@@ -306,6 +306,22 @@ QLabel#taskTitle { color: #ececee; font-size: 13px; font-weight: 600; }
 QLabel#taskMeta { color: #6e7179; font-size: 12px; }
 QLabel#taskTime { color: #a3a5ac; font-family: "Cascadia Mono", "Consolas", monospace; font-size: 12px; }
 
+/* ---------------------------------------------------------------- software update */
+QDialog#updateOverlay { background: transparent; }
+QFrame#updateCard { background: #16171a; border: 1px solid #34363d; border-radius: 14px; }
+QFrame#updateCard .QWidget { background: transparent; }
+QLabel#updateTitle { color: #ececee; font-size: 17px; font-weight: 700; }
+QFrame#updateVersions { background: #1c1d21; border: 1px solid #25272c; border-radius: 10px; }
+QLabel#updateVersionValue { color: #ececee; font-family: "Cascadia Mono", "Consolas", monospace; font-size: 16px; font-weight: 600; }
+QLabel#updateVersionValue[kind="ok"] { color: #3fbf6f; }
+QFrame#updateNotesFrame { background: #121315; border: 1px solid #25272c; border-radius: 8px; }
+QLabel#updateNotes { color: #a3a5ac; font-size: 13px; }
+QProgressBar#updateProgress { border: 0; border-radius: 3px; background: #222428; height: 6px; min-height: 6px; max-height: 6px; }
+QProgressBar#updateProgress::chunk { background: #3fbf6f; border-radius: 3px; }
+QLabel#updateMessage { color: #a3a5ac; font-size: 12px; }
+QLabel#updateMessage[kind="warn"] { color: #e2c34a; }
+QLabel#updateMessage[kind="err"] { color: #f2555a; }
+
 /* ---------------------------------------------------------------- device pool */
 QFrame#devicePoolOverlay { background: transparent; }
 QFrame#devicePoolDialog { background: #16171a; border: 1px solid #34363d; border-radius: 14px; }

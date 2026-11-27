@@ -18,6 +18,7 @@ from uuid import uuid4
 
 import numpy as np
 
+from lab_control import __version__
 from lab_control.domain.instruments import jsonable
 from lab_control.domain.processing import RecordedDevice
 from lab_control.storage.analysis import _snapshot, _table, _text, _zone
@@ -459,7 +460,7 @@ def process_device(
             "version": PROCESSING_VERSION,
             "state": "complete",
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "software_version": "0.3.0",
+            "software_version": __version__,
             "source": os.path.relpath(public_path(device.folder), public_path(home)),
             "inputs": source,
             "recording": device.metadata,

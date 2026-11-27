@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QFrame, QGridLayout, QSizePolicy, QVBoxLayout
 
 from lab_control.ui.kit.base import ElideLabel
+from lab_control.ui.kit.numeric import ReadingLabel
 
 
 class ReadoutCell(QFrame):
@@ -17,13 +18,13 @@ class ReadoutCell(QFrame):
         layout.setSpacing(1)
         self.label = ElideLabel(label)
         self.label.setObjectName("readoutLabel")
-        self.value = ElideLabel("—")
+        self.value = ReadingLabel("—")
         self.value.setObjectName("readoutValue")
         layout.addWidget(self.label)
         layout.addWidget(self.value)
 
     def set(self, value: str, label: str | None = None) -> None:
-        if self.value.text() != value:
+        if self.value.full_text != value:
             self.value.setText(value)
         if label is not None and self.label.text() != label:
             self.label.setText(label)
@@ -51,7 +52,7 @@ class ReadoutStrip(QFrame):
         self._arrange(event.size().width())
 
     def _arrange(self, width: int) -> None:
-        columns = min(len(self.cells), max(1, width // 94))
+        columns = min(len(self.cells), max(1, width // 132))
         if columns == self.columns:
             return
         for column in range(self.columns):

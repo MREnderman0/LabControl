@@ -27,6 +27,7 @@ from lab_control.application.processing import ProcessingService
 from lab_control.domain.oscilloscope import ScopeDisplay, engineering
 from lab_control.domain.workspace import channel_label
 from lab_control.storage.processing_results import ResultReader, plot_series
+from lab_control.ui.kit.numeric import ReadingDelegate, number_text
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.plot_export import PublicationPlotWidget
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
@@ -81,6 +82,7 @@ class ProcessingViewer(QWidget):
         layout.addWidget(self.temperature_note)
         split = QSplitter()
         self.channels = QTreeWidget()
+        self.channels.setItemDelegateForColumn(1, ReadingDelegate(self.channels))
         self.channels.setRootIsDecorated(False)
         self.channels.setHeaderLabels(["通道", "峰峰值"])
         self.channels.header().setStretchLastSection(False)
@@ -188,7 +190,7 @@ class ProcessingViewer(QWidget):
             if series["id"] in by_series:
                 row = by_series[series["id"]]
                 peak = row["peak_to_peak"]
-                item.setText(1, "—" if peak is None else f"{peak:.6g} {row['unit']}")
+                item.setText(1, "—" if peak is None else f"{number_text(peak)} {row['unit']}")
                 item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 item.setToolTip(
                     1,
@@ -466,8 +468,8 @@ class ProcessingViewer(QWidget):
                 index = min(int(np.searchsorted(xx, point.x())), xx.size - 1)
                 if index and abs(xx[index - 1] - point.x()) < abs(xx[index] - point.x()):
                     index -= 1
-                values.append(f"{label}: {yy[index]:.9g} {unit}")
-        self.cursor_text.setText(f"X = {point.x():.9g} {axis_unit} · " + "；".join(values))
+                values.append(f"{label}: {number_text(float(yy[index]))} {unit}")
+        self.cursor_text.setText(f"X = {number_text(point.x())} {axis_unit} · " + "；".join(values))
 
     def display_unit(self, unit: str) -> str:
         if self.info.get("power_units") and unit in {"W", "dBm"}:

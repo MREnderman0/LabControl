@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import json
 import os
 import sys
 import tempfile
@@ -42,6 +43,14 @@ def run(destination: Path) -> int:
         from lab_control.domain.instruments import DeviceIdentity, Measurement, MeasurementBatch
         from lab_control.storage.recording import Recording, read_frames
 
+        installed_version = importlib.metadata.version("labcontrol")
+        assert installed_version, "Installed LabControl metadata has no version"
+        if getattr(sys, "frozen", False):
+            release_file = Path(__file__).with_name("release-manifest.json")
+            assert (
+                installed_version == json.loads(release_file.read_text(encoding="utf-8"))["software_version"]
+            )
+        result["software_version"] = installed_version
         destination = destination.resolve()
         destination.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="smoke-中文-", dir=destination.parent) as directory:
@@ -82,7 +91,7 @@ def run(destination: Path) -> int:
             runtime = ApplicationRuntime(root=root, hardware=False)
             window = RealWindow(runtime)
             window.navigate("系统设置")
-            assert importlib.metadata.version("labcontrol")
+            assert window.version_chip.text() == f"v{installed_version}"
             assert default_home().name == "LabControl"
             assert not os.path.lexists(default_home().with_name("TF-LabControl"))
             panel = window.agent_panel

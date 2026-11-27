@@ -29,6 +29,7 @@ from lab_control.domain.spectrum_display import amplitude_unit
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController, state_label
 from lab_control.ui.kit import Dot, EmptyState, IconButton, PageHeader, style_button
+from lab_control.ui.kit.numeric import fit_reading, number_text
 from lab_control.ui.kit.readouts import ReadoutStrip
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.recording_state import (
@@ -101,7 +102,7 @@ class SpectrumMarkerDelegate(QStyledItemDelegate):
         amp_metrics = QFontMetrics(amp_font)
         freq_metrics = QFontMetrics(freq_font)
         right_w = min(
-            132,
+            max(80, int(rect.width() * 0.47)),
             max(amp_metrics.horizontalAdvance(amp_text), freq_metrics.horizontalAdvance(freq_text)) + 6,
         )
 
@@ -121,14 +122,14 @@ class SpectrumMarkerDelegate(QStyledItemDelegate):
         painter.drawText(
             QRect(mid_x, top_y, mid_w, row_h),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            QFontMetrics(mode_font).elidedText(mode_text, Qt.TextElideMode.ElideRight, mid_w),
+            fit_reading(mode_text, mid_w, QFontMetrics(mode_font)),
         )
         painter.setFont(center_font)
         painter.setPen(QColor(tk.TEXT_3))
         painter.drawText(
             QRect(mid_x, top_y + row_h, mid_w, row_h),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            QFontMetrics(center_font).elidedText(center_text, Qt.TextElideMode.ElideRight, mid_w),
+            fit_reading(center_text, mid_w, QFontMetrics(center_font)),
         )
 
         painter.setFont(amp_font)
@@ -136,14 +137,14 @@ class SpectrumMarkerDelegate(QStyledItemDelegate):
         painter.drawText(
             QRect(right_x, top_y, right_w, row_h),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            amp_metrics.elidedText(amp_text, Qt.TextElideMode.ElideRight, right_w),
+            fit_reading(amp_text, right_w, amp_metrics),
         )
         painter.setFont(freq_font)
         painter.setPen(QColor(tk.TEXT_3))
         painter.drawText(
             QRect(right_x, top_y + row_h, right_w, row_h),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            freq_metrics.elidedText(freq_text, Qt.TextElideMode.ElideRight, right_w),
+            fit_reading(freq_text, right_w, freq_metrics),
         )
         painter.restore()
 
@@ -184,7 +185,7 @@ class SpectrumMarkerActions:
             center_text = f"中心 {frequency_text(marker.frequency)}"
             if has_value:
                 assert reading is not None and reading.amplitude is not None
-                amp_text = f"{reading.amplitude:.8g} {self.marker_plot.amplitude_unit}".replace(
+                amp_text = f"{number_text(reading.amplitude)} {self.marker_plot.amplitude_unit}".replace(
                     "-", "−"
                 ).strip()
                 freq_text = frequency_text(
@@ -205,7 +206,7 @@ class SpectrumMarkerActions:
                 (marker.number, mode_text, center_text, amp_text, freq_text, has_value),
             )
             item.setToolTip(
-                f"中心：{frequency_text(marker.frequency)} · 搜索 ±{frequency_text(marker.half_width)}"
+                f"{plain}\n中心：{frequency_text(marker.frequency)} · 搜索 ±{frequency_text(marker.half_width)}"
             )
         while self.marker_list.count() > len(self.markers):
             self.marker_list.takeItem(self.marker_list.count() - 1)
@@ -495,7 +496,8 @@ class SpectrumMonitoringPage(SpectrumMarkerActions, QWidget):
             if editor and editor.sync_token and editor.sync_token[:2] == context:
                 unit = amplitude_unit(editor.cap.parameters["value"].unit)
         self.readouts.set(
-            "ref", f"{reference:g} {unit}".replace("-", "−") if reference is not None and unit else "—"
+            "ref",
+            f"{number_text(reference)} {unit}".replace("-", "−") if reference is not None and unit else "—",
         )
         marker = self.markers[0] if self.markers else None
         reading = self.plot.readings.get(marker.number) if marker else None
@@ -503,7 +505,7 @@ class SpectrumMonitoringPage(SpectrumMarkerActions, QWidget):
             position = reading.position if reading.position is not None else marker.frequency
             self.readouts.set(
                 "marker",
-                f"{reading.amplitude:.8g} {self.plot.amplitude_unit}".replace("-", "−"),
+                f"{number_text(reading.amplitude)} {self.plot.amplitude_unit}".replace("-", "−"),
                 f"M{marker.number} {'寻峰' if marker.tracking else '固定'} · {frequency_text(position)}",
             )
         else:

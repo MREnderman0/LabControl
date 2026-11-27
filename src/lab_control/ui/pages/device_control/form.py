@@ -33,6 +33,7 @@ from lab_control.domain.readback import normalized_value, usable_reading
 from lab_control.instruments.registry import DEVICE_DEFINITIONS
 from lab_control.ui.controller import WorkspaceController
 from lab_control.ui.kit import style_button
+from lab_control.ui.kit.numeric import number_text
 from lab_control.ui.pages.device_control.editors import ArrayEditor, FeedbackLabel, ParameterEditor
 
 
@@ -61,7 +62,7 @@ def concise(value: Any) -> str:
     if isinstance(value, dict):
         return "；".join(f"{PARAMETER_LABELS.get(k, k)}: {concise(v)}" for k, v in value.items())
     if isinstance(value, float):
-        return f"{value:.9g}"
+        return number_text(value)
     return "未知" if value is None else str(value)
 
 
@@ -427,7 +428,7 @@ class OperationEditor(QFrame):
         if field and self._reading_valid:
             value = normalized_value(raw, field.spec)
             if field.spec.kind in {"number", "integer"}:
-                display = f"{value / (field.unit.currentData() or 1):.12g} {field.unit.currentText()}"
+                display = f"{number_text(value / (field.unit.currentData() or 1))} {field.unit.currentText()}"
             elif isinstance(field.input, QComboBox):
                 index = field.input.findData(value)
                 display = field.input.itemText(index) if index >= 0 else str(raw)
@@ -493,7 +494,7 @@ class OperationEditor(QFrame):
                     ((f, u) for f, u in ((1e9, "GHz"), (1e6, "MHz"), (1e3, "kHz")) if abs(raw) >= f),
                     (1, "Hz"),
                 )
-            display = f"{raw / factor:.12g} {unit}"
+            display = f"{number_text(raw / factor)} {unit}"
         if self.status_only and reading.source == "session_cache" and isinstance(reading.value, str):
             self.readback.setText(display)
         else:

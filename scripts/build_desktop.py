@@ -140,8 +140,16 @@ def main() -> int:
     build_packages = verified_packages(lock, ("pyinstaller", "pyinstaller-hooks-contrib"))
     destination = ROOT / "build" / args.distribution / "deployment"
     destination.mkdir(parents=True, exist_ok=True)
+    from lab_control.deployment.software_update import VERSION
+
+    project_version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
+    if VERSION != project_version:
+        raise ValueError(f"Installed LabControl {VERSION} differs from the requested build {project_version}")
     report = {
         "schema_version": 1,
+        "software_version": VERSION,
         "kind": "release_manifest",
         "release_ready": args.release,
         "distribution": args.distribution,

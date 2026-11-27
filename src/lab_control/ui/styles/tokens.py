@@ -18,6 +18,7 @@ PRESSED = "#2a2c31"
 INPUT = "#121315"
 CHART_BG = "#131416"
 POPUP = "#1c1d21"
+SCRIM = "#060608"  # Backdrop behind modal sheets, drawn with partial alpha.
 
 # Lines.
 BORDER = "#25272c"

@@ -1,6 +1,6 @@
 [project]
 name = "labcontrol"
-version = "0.3.0"
+version = "0.3.3"
 description = "Laboratory instrument compatibility layer and desktop workstation"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

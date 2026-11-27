@@ -52,6 +52,7 @@
 | | `IconButton`、`IconTile` | 30 px 无边框图标按钮（图表工具栏统一用 `updown`、`download`、`more`、`eye`/`eyeoff`，告警铃可带红点角标）；类别图标方块 |
 | | `ElideLabel`、`Separator` | 单行省略并自动给出完整提示；1 px 分隔线 |
 | | `NavButton`、`SubNavButton` | 侧栏条目，仅外框 `ui/workspace/chrome.py` 使用 |
+| | `VersionChip` | 品牌名旁 20 px 版本胶囊，`set_state(text, kind, icon)`；`kind="ok"` 为绿色并带尾部图标（有可用更新），仅外框使用 |
 | | `set_property`、`repolish` | 动态属性改变后重新套用样式；值不变时不刷新 |
 | `controls` | `button(text, variant, icon, size)`、`style_button(...)` | `variant`：空（次要）、`primary`、`danger`、`ghost`、`link`；`size`：空（32 px）、`sm`（26 px）、`lg`（36 px）。`style_button` 只改外观，不碰已有信号 |
 | | `Switch` | 开关，继承 `QCheckBox`，`isChecked`/`toggled` 照常使用；所有“自动/开启”类布尔参数及通道开关用它 |

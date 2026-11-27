@@ -41,6 +41,7 @@ from lab_control.ui.kit import (
     Segmented,
     SubNavButton,
     Switch,
+    VersionChip,
     button,
     label,
     paint_device_card,
@@ -218,6 +219,10 @@ def build() -> QWidget:
     watch = NavButton("监视列表", "eye")
     watch.set_badge(1)
     nav.body.addWidget(watch)
+    nav.body.addSpacing(8)
+    available = VersionChip("v0.3.2")
+    available.set_state("v0.3.2", "ok", "upgrade")
+    nav.body.addLayout(_row(VersionChip("v0.3.2"), available))
     nav.body.addSpacing(8)
     nav.body.addWidget(SearchBox("搜索设备、型号或功能槽位", shortcut=""))
     grid.addWidget(nav, 2, 0)

@@ -76,14 +76,16 @@ class ScopeDisplay:
             raise DeviceError("Invalid oscilloscope display metadata", "parse_error") from exc
 
 
-def engineering(value: float, unit: str, *, custom_scale: bool = False) -> str:
+def engineering(value: float, unit: str, *, custom_scale: bool = False, full: bool = False) -> str:
     if custom_scale and not is_coarse(value):
         return "自定义"
     if value == 0:
         return f"0 {unit}"
     exponent = max(-12, min(12, 3 * math.floor(math.log10(abs(value)) / 3)))
     prefix = {-12: "p", -9: "n", -6: "μ", -3: "m", 0: "", 3: "k", 6: "M", 9: "G", 12: "T"}[exponent]
-    return f"{value / 10**exponent:.4g} {prefix}{unit}"
+    scaled = value / 10**exponent
+    digits = str(scaled).removesuffix(".0") if full else f"{scaled:.4g}"
+    return f"{digits} {prefix}{unit}"
 
 
 def is_coarse(value: float) -> bool:

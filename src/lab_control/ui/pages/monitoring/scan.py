@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.application.acquisition_pipeline import validate_displayed_batch
 from lab_control.domain.instruments import DeviceError
+from lab_control.ui.kit.numeric import ReadingLabel, number_text
 from lab_control.ui.pages.monitoring.channel_selection import instrument_scan_channels
 from lab_control.ui.pages.monitoring.frame import displayed_frame_saver
 from lab_control.ui.pages.monitoring.optical_power import (
@@ -100,7 +101,10 @@ class ScanReadoutCard(PowerMeterReadoutCard):
         self.status.hide()
         self.meta.hide()
         layout.removeWidget(self.value)
-        self.heading.takeAt(1)  # The former card header's stretch would squeeze the reading.
+        while self.heading.count():
+            item = self.heading.takeAt(0)
+            if item is not None and (widget := item.widget()) is not None:
+                widget.hide()
         self.heading.setSpacing(6)
         self.channel_label.hide()
         self.check = QCheckBox()
@@ -112,7 +116,7 @@ class ScanReadoutCard(PowerMeterReadoutCard):
         self.unit = QLabel(self.display_unit)
         self.unit.setObjectName("scanReadoutUnit")
         self.unit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.peak = QLabel("—")
+        self.peak = ReadingLabel("—")
         self.peak.setObjectName("scanReadoutValue")
         self.peak.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         scan_columns(self.heading, (self.check, self.value, self.unit, self.peak))
@@ -124,7 +128,7 @@ class ScanReadoutCard(PowerMeterReadoutCard):
         if measurement:
             self.display_unit = measurement.unit
         super().update_measurement(measurement, timestamp)
-        self.value.setText(self.value.text().removesuffix(f" {self.display_unit}"))
+        self.value.setText(self.value.full_text.removesuffix(f" {self.display_unit}"))
         self.unit.setText(self.display_unit)
         self.value.setAccessibleName(f"CH {self.channel} · {self.value.text()} {self.display_unit}")
         if measurement and measurement.quantity == "temperature":
@@ -140,28 +144,36 @@ class ScanReadoutCard(PowerMeterReadoutCard):
 
     def update_temperature_window(self, snapshot) -> None:
         value = snapshot.peak_to_peak if snapshot else None
-        self.peak.setText("—" if value is None else f"{value:.6g}")
+        self.peak.setText(number_text(value))
         self.peak.setAccessibleName(f"CH {self.channel} 温度峰峰值 {self.peak.text()}")
         self.peak.setToolTip(
             "不足 30 min 使用本轮全部有效样本；超过后仅使用最近 30 min（含边界）。\n"
             + (
-                f"最小值：{snapshot.minimum:.9g} {snapshot.unit}\n"
-                f"最大值：{snapshot.maximum:.9g} {snapshot.unit}\n"
-                f"峰峰值：{value:.9g} {snapshot.unit} · 样本数：{snapshot.count}"
+                f"最小值：{number_text(snapshot.minimum)} {snapshot.unit}\n"
+                f"最大值：{number_text(snapshot.maximum)} {snapshot.unit}\n"
+                f"峰峰值：{number_text(value)} {snapshot.unit} · 样本数：{snapshot.count}"
                 if value is not None
                 else "窗口内无有效温度样本"
             )
         )
 
 
+SCAN_COLUMNS = ((65, 2), (58, 2), (27, 0), (78, 2))
+
+
 def scan_columns(layout: QHBoxLayout, fields: tuple[QWidget, ...]) -> None:
     layout.setSpacing(6)
-    for field, (width, stretch) in zip(fields, ((65, 2), (53, 1), (27, 0), (78, 0)), strict=True):
+    for field, (width, stretch) in zip(fields, SCAN_COLUMNS, strict=True):
         add_readout_column(layout, field, width, stretch)
 
 
-def scan_readout_header(parent=None) -> QWidget:
-    header = QWidget(parent)
+class ScanReadoutHeader(QWidget):
+    channel_labels: list[QLabel]
+
+
+def scan_readout_header(parent=None) -> ScanReadoutHeader:
+    header = ScanReadoutHeader(parent)
+    header.channel_labels = []
     grid = QGridLayout(header)
     grid.setContentsMargins(0, 0, 0, 0)
     grid.setHorizontalSpacing(12)
@@ -171,6 +183,7 @@ def scan_readout_header(parent=None) -> QWidget:
         row.setContentsMargins(4, 0, 4, 0)
         channel, value, unit = QLabel("曲线 · 通道"), QLabel("读数"), QLabel("单位")
         channel.setObjectName("powerReadoutHeading")
+        header.channel_labels.append(channel)
         value.setObjectName("powerReadoutHeading")
         unit.setObjectName("powerReadoutHeading")
         value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -239,31 +252,34 @@ class ScanMonitoringPage(OpticalPowerMonitoringPage):
 
     def _reflow_readout_cards(self) -> None:
         width = self.readout_scroll.viewport().width()
-        columns = 2 if width >= 520 else 1
-        # Two compact groups share the viewport. Give a named sensor the full row
-        # when its checkbox and the aligned numeric columns cannot fit side by side.
         named = self.plot.names
-        for channel, card in self.cards.items():
-            if str(channel) in named and isinstance(card, ScanReadoutCard):
-                cell_width = (width - self.readout_grid.horizontalSpacing()) // 2
-                available = (
-                    cell_width - 8 - 3 * card.heading.spacing() - card.unit.width() - card.peak.width()
-                )
-                if card.check.sizeHint().width() > min(
-                    available * 2 // 3, available - card.value.minimumWidth()
-                ):
-                    columns = 1
-                    break
+        name_width = max(
+            (
+                card.check.sizeHint().width()
+                for channel, card in self.cards.items()
+                if str(channel) in named and isinstance(card, ScanReadoutCard)
+            ),
+            default=SCAN_COLUMNS[0][0],
+        )
+        # Reserve the row margins, three gaps and all three numeric/unit columns.
+        reserved = 8 + 3 * 6 + sum(minimum for minimum, _ in SCAN_COLUMNS[1:])
+        half = (width - self.readout_grid.horizontalSpacing()) // 2
+        columns = 2 if width >= 540 and half >= reserved + name_width else 1
+        channel_width = max(SCAN_COLUMNS[0][0], min(name_width, (half if columns == 2 else width) - reserved))
         order = self.cards if named else sorted(self.cards)
         for index, channel in enumerate(order):
             card = self.cards[channel]
+            if isinstance(card, ScanReadoutCard):
+                card.check.setMinimumWidth(channel_width)
             self.readout_grid.addWidget(card, index // columns, index % columns)
             card.show()
         self.readout_grid.setColumnStretch(0, 1)
         self.readout_grid.setColumnStretch(1, int(columns == 2))
-        if self.readout_heading is not None:
+        if isinstance(self.readout_heading, ScanReadoutHeader):
             grid = self.readout_heading.layout()
             assert isinstance(grid, QGridLayout)
+            for channel_label in self.readout_heading.channel_labels:
+                channel_label.setMinimumWidth(channel_width)
             second_group = grid.itemAtPosition(0, 1)
             assert second_group is not None
             heading = second_group.widget()

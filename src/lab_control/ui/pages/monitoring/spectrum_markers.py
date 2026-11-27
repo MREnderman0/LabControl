@@ -8,7 +8,7 @@ from typing import Any
 
 import pyqtgraph as pg
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QGradient, QLinearGradient
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QGradient, QLinearGradient
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -24,6 +24,7 @@ from lab_control.domain.instruments import Parameter
 from lab_control.domain.spectrum import MarkerReading, SpectrumMarker, locate_marker
 from lab_control.domain.spectrum_display import display_values
 from lab_control.ui.kit import style_button
+from lab_control.ui.kit.numeric import fit_reading, number_text
 from lab_control.ui.pages.device_control.editors import ParameterEditor
 from lab_control.ui.pages.monitoring.plot import LivePlot
 from lab_control.ui.pages.monitoring.spectrum_view import SpectrumCanvas, SpectrumView
@@ -37,7 +38,7 @@ def frequency_text(value: float) -> str:
     scale, unit = next(
         ((s, u) for s, u in ((1e9, "GHz"), (1e6, "MHz"), (1e3, "kHz")) if abs(value) >= s), (1, "Hz")
     )
-    return f"{value / scale:.8g} {unit}"
+    return f"{number_text(value / scale)} {unit}"
 
 
 class MarkerDialog(QDialog):
@@ -348,19 +349,9 @@ class SpectrumPlot(LivePlot):
             if visible:
                 assert reading.position is not None and reading.sample_frequency is not None
                 line.setValue(reading.position)
-                amp_text = (
-                    f"{reading.amplitude:.8g} {self.amplitude_unit}".replace("-", "−").strip()
-                    if reading.amplitude is not None
-                    else ""
-                )
-                label.setText(
-                    f" M{marker.number}  {frequency_text(reading.position)}  {amp_text} "
-                    if amp_text
-                    else f" M{marker.number}  {frequency_text(reading.position)} "
-                )
                 label.setToolTip(
                     f"采样频率：{frequency_text(reading.sample_frequency)}\n"
-                    f"{reading.amplitude:.8g} {self.amplitude_unit}"
+                    f"{number_text(reading.amplitude)} {self.amplitude_unit}"
                 )
                 point.setData([reading.position], [reading.amplitude])
         self.position_labels()
@@ -380,6 +371,11 @@ class SpectrumPlot(LivePlot):
             if reading.position is None or reading.amplitude is None:
                 continue
             label = self.overlays[number][1]
+            amplitude = number_text(reading.amplitude).replace("-", "−")
+            full = f" M{number}  {frequency_text(reading.position)}  {amplitude} {self.amplitude_unit} "
+            shown = fit_reading(full, max(0, int(width) - 24), QFontMetrics(label.textItem.font()))
+            if label.toPlainText() != shown:
+                label.setText(shown)
             rect = label.boundingRect()
             bw, bh = max(40.0, rect.width()), max(20.0, rect.height())
             px = (reading.position - left) / x_span * width

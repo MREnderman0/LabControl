@@ -24,6 +24,7 @@ from lab_control.application.settings_sync import SettingsSync
 from lab_control.domain.instruments import DeviceCommand, Quality
 from lab_control.domain.readback import boolean_value
 from lab_control.ui.controller import WorkspaceController
+from lab_control.ui.kit.numeric import ReadingLabel, number_text
 from lab_control.ui.pages.device_control.signal_source import ParameterGroup, newer_token
 from lab_control.ui.widgets.device_selector import DeviceSelector
 
@@ -208,7 +209,7 @@ class PowerChannel(ParameterGroup):
             if fit_contents := getattr(field.unit, "fit_contents", None):
                 fit_contents(62)
             field.unit.setFixedWidth(62)
-            measurement = QLabel(self)
+            measurement = ReadingLabel(parent=self)
             measurement.setObjectName("powerMeasured")
             measurement.setWordWrap(True)
             cast(QVBoxLayout, field.layout()).insertWidget(1, measurement)
@@ -294,7 +295,7 @@ class PowerChannel(ParameterGroup):
                 if field.range_label.text() != range_text:
                     field.range_label.setText(range_text)
                 factor, unit = field.unit.currentData() or 1, field.unit.currentText()
-            display = f"{cast(float, value) / factor:.6g} {unit}" if valid else "—"
+            display = f"{number_text(cast(float, value) / factor)} {unit}" if valid else "—"
             text = ("实测电压：" if name == "voltage" else "实测电流：") + display
             if health != "正常":
                 text += " · " + health

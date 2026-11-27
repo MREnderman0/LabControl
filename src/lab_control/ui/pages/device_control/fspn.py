@@ -28,6 +28,7 @@ from shiboken6 import isValid
 from lab_control.domain.instruments import AcquisitionRequest, DeviceCommand
 from lab_control.instruments.devices.rs_fspn26.settings import LABELS
 from lab_control.storage.recording import read_frames
+from lab_control.ui.kit.numeric import ReadingDelegate, ReadingLabel, number_text
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.workspace_combo import WorkspaceComboBox
 
@@ -89,7 +90,7 @@ class FspnPanel(QWidget):
         for col, (key, metric_name, _) in enumerate(METRICS):
             caption = QLabel(metric_name)
             caption.setObjectName("mutedText")
-            self.metrics[key] = QLabel("—")
+            self.metrics[key] = ReadingLabel("—")
             self.metrics[key].setProperty("role", "value")
             summary.addWidget(caption, 0, col)
             summary.addWidget(self.metrics[key], 1, col)
@@ -113,6 +114,7 @@ class FspnPanel(QWidget):
         title.setObjectName("controlTitle")
         side.addWidget(title)
         self.spots = QTableWidget(0, 3)
+        self.spots.setItemDelegate(ReadingDelegate(self.spots))
         self.spots.setHorizontalHeaderLabels(["迹线", "频偏 (Hz)", "相噪 (dBc/Hz)"])
         self.spots.verticalHeader().setMinimumSectionSize(18)
         self.spots.verticalHeader().setDefaultSectionSize(23)
@@ -272,9 +274,9 @@ class FspnPanel(QWidget):
                 text = f"约 {v:.1f} s"
             elif name == "carrier_hz" and v is not None and v >= 1e6:
                 scale, label = (1e9, "GHz") if v >= 1e9 else (1e6, "MHz")
-                text = f"{v / scale:.9g} {label}"
+                text = f"{number_text(v / scale)} {label}"
             else:
-                text = "—" if v is None else f"{v:,.8g} {unit}"
+                text = "—" if v is None else f"{number_text(v)} {unit}"
             self.metrics[name].setText(text)
         for name, field in self.fields.items():
             if preserve and field.isModified():
@@ -413,9 +415,12 @@ class FspnPanel(QWidget):
         self.spots.setHorizontalHeaderLabels(["频偏 (Hz)"] + [f"W{w}·T{t}" for w, t in traces])
         for row, (offset, levels) in enumerate(sorted(by_offset.items())):
             self.spots.insertRow(row)
-            values = [f"{offset:.10g}"] + [f"{levels[t]:.2f}" if t in levels else "—" for t in traces]
+            values = [f"{number_text(offset)}"] + [
+                f"{number_text(levels[t], 2)}" if t in levels else "—" for t in traces
+            ]
             for col, text in enumerate(values):
                 item = QTableWidgetItem(text)
+                item.setToolTip(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
                 self.spots.setItem(row, col, item)
         label = "面板已有结果 · 读取于" if cfg["origin"] == "display" else "最近完成轮次"

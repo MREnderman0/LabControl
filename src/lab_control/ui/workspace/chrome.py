@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import shutil
 import time
 from collections import Counter
@@ -34,14 +33,10 @@ from lab_control.ui.kit import (
     SubNavButton,
 )
 from lab_control.ui.kit.base import plain_tooltip
+from lab_control.ui.kit.numeric import number_text
 
 if TYPE_CHECKING:
     from lab_control.ui.real_window import RealWindow
-
-try:
-    VERSION = importlib.metadata.version("labcontrol")
-except importlib.metadata.PackageNotFoundError:  # pragma: no cover - source checkout without metadata
-    VERSION = ""
 
 
 def _gigabytes(path) -> str:
@@ -266,8 +261,8 @@ class WorkspaceChrome:
                 limit = row.upper if above else row.lower
                 if limit is None:
                     continue
-                limit_text = f"{'上限' if above else '下限'} {limit:.9g} {reading.unit}".strip()
-                value_text = f"{reading.value:.9g} {reading.unit}".replace("-", "−").strip()
+                limit_text = f"{'上限' if above else '下限'} {number_text(limit)} {reading.unit}".strip()
+                value_text = f"{number_text(reading.value)} {reading.unit}".replace("-", "−").strip()
                 detail = " · ".join((slot_label or preset.name, channel))
                 icon_name = "thermo" if "°" in reading.unit or "temp" in reading.quantity else "alert"
                 alarms.append(
@@ -337,9 +332,6 @@ class WorkspaceChrome:
         window.message.setWordWrap(False)
         window.message.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(window.message, 1)
-        self.status_version = QLabel(f"LabControl {VERSION}".strip())
-        self.status_version.setObjectName("appStatusText")
-        row.addWidget(self.status_version)
         return bar
 
     def refresh(self) -> None:
@@ -368,10 +360,9 @@ class WorkspaceChrome:
             self._disk = (str(root), _gigabytes(root), now)
         self.status_storage.setText(f"记录目录 {_compact_path(root)} · 剩余 {self._disk[1]}")
         self.status_storage.setToolTip(plain_tooltip(f"记录目录：{root}\n磁盘剩余：{self._disk[1]}"))
-        # Give the actionable notice priority over the path and version on a narrow window.
+        # Give the actionable notice priority over the path on a narrow window.
         compact_error = window.message.property("kind") == "err" and window.status_bar.width() < 720
         self.status_storage.setVisible(not compact_error)
-        self.status_version.setVisible(not compact_error)
         problems = self._problems()
         watch_alarms = self.watchlist_alarms()
         if watch_nav := window.nav_buttons.get("监视列表"):

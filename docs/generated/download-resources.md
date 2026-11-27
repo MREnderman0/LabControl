@@ -346,6 +346,18 @@ Moku:Pro 可选厂商上位机，用于首次手工部署和备份四槽；日�
 
 验证状态：国内镜像下载与官方 SHA256 一致，安装包签名有效；Windows 11 x64 安装返回 0，Git 与 Git LFS 版本读取通过；详细证据另存维护报告。
 
+### NSIS 3.13
+
+构建石墨版 Windows 当前用户安装包；仅发布机需要。
+
+[国内镜像](https://sourceforge.net/projects/nsis/files/NSIS%203/3.13/nsis-3.13-setup.exe/download)、[官方直连](https://sourceforge.net/projects/nsis/files/NSIS%203/3.13/nsis-3.13-setup.exe/download)、[版本说明](https://nsis.sourceforge.io/Download)。
+
+大小：1567985 字节；SHA256：`db9a1038bbc0e53fef24f423fd609979bd578e942f1be1198db186d1c42652a3`。
+
+签名：NotSigned，官方 SHA-256 校验；发布者：NSIS Contributors；许可：zlib/libpng；LZMA 模块适用附链接例外的 CPL 1.0。。
+
+验证状态：已下载并校验官方安装包。编译与覆盖安装使用本机已部署的 makensis 3.13。。
+
 ## 锁定的 Python 材料
 
 由 `scripts/generate_python_materials.py` 核对锁文件、Windows x64 wheel 与已安装版本后登记。哈希用于下载验证；目标电脑、局域网与实机验收仍分别留档。wheel 不适用 Authenticode 签名。

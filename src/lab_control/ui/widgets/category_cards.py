@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.ui.kit import icons
 from lab_control.ui.kit.base import Dot, ElideLabel, set_property
+from lab_control.ui.kit.numeric import ReadingLabel
 from lab_control.ui.styles import tokens as tk
 
 DEVICE_ROWS = 3
@@ -132,7 +133,8 @@ class CategoryCard(QFrame):
         self.device_grid.setVerticalSpacing(0)
         self.device_grid.setColumnMinimumWidth(1, 84)
         self.device_grid.setColumnStretch(2, 1)
-        self.device_rows: list[tuple[Dot, ElideLabel, ElideLabel, QLabel]] = []
+        self.device_grid.setColumnStretch(3, 2)
+        self.device_rows: list[tuple[Dot, ElideLabel, ElideLabel, ReadingLabel]] = []
         for row in range(DEVICE_ROWS):
             dot = Dot("idle", 7, box=12)
             name = ElideLabel()
@@ -140,7 +142,7 @@ class CategoryCard(QFrame):
             name.setMaximumWidth(124)
             detail = ElideLabel()
             detail.setObjectName("cardDeviceDetail")
-            state = QLabel()
+            state = ReadingLabel()
             state.setObjectName("cardDeviceState")
             state.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             for column, widget in enumerate((dot, name, detail, state)):
@@ -218,7 +220,7 @@ class CategoryCard(QFrame):
                 name.setText(title)
             if detail.text() != info:
                 detail.setText(info)
-            if state.text() != state_text:
+            if state.full_text != state_text:
                 state.setText(state_text)
             set_property(state, "alert", is_alert)
 

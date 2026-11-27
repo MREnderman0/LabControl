@@ -4,7 +4,7 @@ Every page builds from these pieces instead of styling widgets locally:
 
 - ``base``: status ``Dot`` (semantic or channel color) and ``Pill`` (optional dot or leading icon),
   ``IconButton``, ``IconTile``, ``ElideLabel``, ``Separator``, ``label`` (including ``value``/``mono``
-  numeric roles), sidebar ``NavButton`` / ``SubNavButton``, ``repolish`` / ``set_property``.
+  numeric roles), sidebar ``NavButton`` / ``SubNavButton``, brand ``VersionChip``, ``repolish`` / ``set_property``.
 - ``controls``: ``button`` / ``style_button`` variants (primary, danger, ghost, link; sizes sm/lg),
   ``Switch`` (a QCheckBox), ``Segmented``, ``FieldBox`` (value + unit in one frame), ``SearchBox``.
 - ``layout``: ``Card`` (header / body / footer), ``Section``, ``EmptyState``, ``Hint``.
@@ -25,6 +25,7 @@ from lab_control.ui.kit.base import (
     Pill,
     Separator,
     SubNavButton,
+    VersionChip,
     label,
     repolish,
     set_property,
@@ -55,6 +56,7 @@ __all__ = [
     "Separator",
     "SubNavButton",
     "Switch",
+    "VersionChip",
     "button",
     "label",
     "paint_device_card",

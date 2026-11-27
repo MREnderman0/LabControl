@@ -77,6 +77,7 @@ STROKE = {
     "save": '<path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M8 3v5h7V3M7 21v-7h10v7"/>',
     "power": '<path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
     "info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.5"/>',
+    "upgrade": '<circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8 11.5l4-4 4 4"/>',
     "channels": '<path d="M4 7h16M4 12h16M4 17h16"/>',
     "single": '<path d="M4 12h3l2-6 3 12 2-6h6"/>',
 }

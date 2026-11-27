@@ -37,6 +37,7 @@ from lab_control.ui.controller import (
 )
 from lab_control.ui.kit import ElideLabel, IconButton, Pill, icons, style_button
 from lab_control.ui.kit.base import set_property
+from lab_control.ui.kit.numeric import number_text
 from lab_control.ui.styles import tokens as tk
 from lab_control.ui.widgets.category_cards import CategoryCard, CategoryCardGrid
 from lab_control.ui.widgets.device_pool import DeviceDetails, DevicePool, DeviceRowDelegate
@@ -384,7 +385,11 @@ class WorkspaceOverview:
                 finite = arr[np.isfinite(arr)]
                 if finite.size:
                     unit = measurements[0].unit
-                    return status_key, f"{float(finite.max()):.8g} {unit}".strip().replace("-", "−"), False
+                    return (
+                        status_key,
+                        f"{number_text(float(finite.max()), 0)} {unit}".strip().replace("-", "−"),
+                        False,
+                    )
             elif category == "oscilloscope":
                 cfg = latest_frame.batch.configuration
                 interval = cfg.get("sample_interval_s")
@@ -405,11 +410,11 @@ class WorkspaceOverview:
                 if volts is not None:
                     v_arr = np.real(np.asarray(volts.values)).astype(float, copy=False).ravel()
                     if v_arr.size and math.isfinite(float(v_arr[-1])):
-                        parts.append(f"{float(v_arr[-1]):.3f} {volts.unit or 'V'}")
+                        parts.append(f"{number_text(float(v_arr[-1]), 3)} {volts.unit or 'V'}")
                 if amps is not None:
                     a_arr = np.real(np.asarray(amps.values)).astype(float, copy=False).ravel()
                     if a_arr.size and math.isfinite(float(a_arr[-1])):
-                        parts.append(f"{float(a_arr[-1]):.3f} {amps.unit or 'A'}")
+                        parts.append(f"{number_text(float(a_arr[-1]), 3)} {amps.unit or 'A'}")
                 if parts:
                     return status_key, f"CH{channel} 实测 " + " · ".join(parts).replace("-", "−"), False
             else:
@@ -421,10 +426,10 @@ class WorkspaceOverview:
                     unit = "°C" if first.unit == "degC" else (first.unit or "")
                     if unit == "W" and val > 0:
                         dbm = 10.0 * math.log10(val * 1000.0)
-                        return status_key, f"{dbm:.2f} dBm".replace("-", "−"), False
+                        return status_key, f"{number_text(dbm, 2)} dBm".replace("-", "−"), False
                     if unit in {"Hz", "V", "A", "s", "W"}:
-                        return status_key, engineering(val, unit), False
-                    return status_key, f"{val:.2f} {unit}".replace("-", "−").strip(), False
+                        return status_key, engineering(val, unit, full=True), False
+                    return status_key, f"{number_text(val, 2)} {unit}".replace("-", "−").strip(), False
 
         if recording:
             return "recording", "记录中", False
@@ -454,19 +459,19 @@ class WorkspaceOverview:
                 i = self._extract_number(vals.get("current"))
                 parts = []
                 if v is not None:
-                    parts.append(f"设定 {v:.3f} V")
+                    parts.append(f"设定 {number_text(v, 3)} V")
                 if i is not None:
-                    parts.append(f"限流 {i:.3f} A")
+                    parts.append(f"限流 {number_text(i, 3)} A")
                 if parts:
                     return "connected", "CH1 · " + " · ".join(parts), False
             elif category == "temperature_controller":
                 temp = self._extract_number(vals.get("temperature") or vals.get("target_temperature"))
                 if temp is not None:
-                    return "connected", f"{temp:.2f} °C".replace("-", "−"), False
+                    return "connected", f"{number_text(temp, 2)} °C".replace("-", "−"), False
             elif category == "electronic_load":
                 curr = self._extract_number(vals.get("current"))
                 if curr is not None:
-                    return "connected", f"{curr:.3f} A", False
+                    return "connected", f"{number_text(curr, 3)} A", False
 
         if category in {
             "spectrum_analyzer",

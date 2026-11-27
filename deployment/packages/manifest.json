@@ -51,6 +51,27 @@
       }
     },
     {
+      "path": "deployment/packages/installers/nsis-3.13-setup.exe",
+      "kind": "developer-tool-installer",
+      "name": "NSIS",
+      "version": "3.13",
+      "purpose": "构建石墨版 Windows 当前用户安装包；仅发布机需要。",
+      "size": 1567985,
+      "sha256": "db9a1038bbc0e53fef24f423fd609979bd578e942f1be1198db186d1c42652a3",
+      "source": "https://sourceforge.net/projects/nsis/files/NSIS%203/3.13/nsis-3.13-setup.exe/download",
+      "official_source": "https://sourceforge.net/projects/nsis/files/NSIS%203/3.13/nsis-3.13-setup.exe/download",
+      "source_page": "https://nsis.sourceforge.io/Download",
+      "publisher": "NSIS Contributors",
+      "signature_status": "NotSigned，官方 SHA-256 校验",
+      "license": "zlib/libpng；LZMA 模块适用附链接例外的 CPL 1.0。",
+      "validation": "已下载并校验官方安装包。编译与覆盖安装使用本机已部署的 makensis 3.13。",
+      "installation": {
+        "requires_admin": false,
+        "arguments": [],
+        "scope": "build-only"
+      }
+    },
+    {
       "path": "deployment/packages/installers/Tftpd64_Service_Installer_v4.74.exe",
       "kind": "vendor-installer",
       "size": 820872,

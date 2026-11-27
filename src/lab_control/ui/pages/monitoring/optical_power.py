@@ -35,6 +35,7 @@ from lab_control.domain.power import watts_to_dbm
 from lab_control.domain.workspace import channel_label
 from lab_control.ui.controller import WorkspaceController, state_label
 from lab_control.ui.kit import Dot, EmptyState, IconButton, PageHeader, icons
+from lab_control.ui.kit.numeric import ReadingLabel, number_text
 from lab_control.ui.pages.monitoring.connection import refresh_reconnect_button
 from lab_control.ui.pages.monitoring.frame import (
     chart_card,
@@ -330,7 +331,7 @@ class PowerMeterReadoutCard(QFrame):
         self.status.setObjectName("powerMeterStatus")
         heading.addWidget(self.status)
         layout.addLayout(heading)
-        self.value = QLabel(f"— {self.display_unit}")
+        self.value = ReadingLabel(f"— {self.display_unit}")
         self.value.setObjectName("powerMeterValue")
         self.value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.value.setMinimumWidth(0)
@@ -359,18 +360,12 @@ class PowerMeterReadoutCard(QFrame):
             self.value.setToolTip("")
             self.status.setText("不可用")
         else:
-            shown = f"{watts:.6g} {self.display_unit}"
+            shown = f"{number_text(watts)} {self.display_unit}".rstrip()
             self.value.setText(shown)
-            # Keep the compact six-significant-digit label stable while
-            # retaining the full converted and device-returned values for
-            # inspection without changing the card geometry.
-            full = f"{watts:.17g} {self.display_unit}"
-            if full != shown:
-                full += f" · 原始 {raw:.17g} {measurement.unit}"
-            # The label keeps the compact text for legacy accessibility and
-            # snapshot callers; hovering the fixed card exposes the complete
-            # converted value and the original instrument value.
-            self.value.setToolTip(shown)
+            full = shown
+            if measurement.unit != self.display_unit or raw != watts:
+                full += f" · 原始 {number_text(raw)} {measurement.unit}"
+            self.value.setToolTip(full)
             self.setToolTip(full)
             self.status.setText("正常" if quality in {"good", "simulated"} else quality)
         if isinstance(timestamp, str):
@@ -504,11 +499,17 @@ class OpticalPowerMonitoringPage(QWidget):
             readout_title.setObjectName("powerMeterTitle")
             right_layout.addWidget(readout_title)
             target_right_layout = right_layout
-        self.readout_heading = readout_header(right) if self.rolling_power else None
-        if self.readout_heading is not None:
+        self.readout_heading: QWidget | None = None
+        if self.rolling_power:
+            self.power_header = readout_header(right)
+            self.readout_heading = self.power_header
             target_right_layout.addWidget(self.readout_heading)
             right.setMinimumWidth(340)
-            right.setMaximumWidth(400)
+            columns_key = "monitoring_layout/optical_power_meter/columns"
+            repository = controller.runtime.repository
+            self.power_header.apply_widths(repository.load_workspace(columns_key))
+            self.power_header.changed.connect(self._apply_power_columns)
+            self.power_header.committed.connect(lambda widths: repository.save_workspace(columns_key, widths))
         self.readout_scroll = QScrollArea()
         self.readout_scroll.setWidgetResizable(True)
         self.readout_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -524,7 +525,7 @@ class OpticalPowerMonitoringPage(QWidget):
         target_right_layout.addWidget(self.readout_scroll, 1)
         self.splitter.addWidget(right)
         self.splitter.setStretchFactor(0, 3)
-        self.splitter.setStretchFactor(1, 0 if self.rolling_power else 2)
+        self.splitter.setStretchFactor(1, 1 if self.rolling_power else 2)
         self.splitter.setSizes([830, 352])
         layout.addWidget(self.splitter, 1)
         if manage_selection:
@@ -593,8 +594,17 @@ class OpticalPowerMonitoringPage(QWidget):
             f"monitoring_channels/{self.category}", self.channel_preferences
         )
 
+    def _apply_power_columns(self, widths):
+        for card in self.cards.values():
+            if isinstance(card, PowerMeterReadoutRow):
+                layout = card.layout()
+                assert isinstance(layout, QHBoxLayout)
+                for i, width in enumerate(widths, 1):
+                    layout.setStretch(i, width)
+
     def _reflow_readout_cards(self) -> None:
         if self.rolling_power:
+            self._apply_power_columns(self.power_header.weights)
             for index, (channel, card) in enumerate(sorted(self.cards.items())):
                 self.readout_grid.addWidget(card, index, 0)
                 card.show()

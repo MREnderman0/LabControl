@@ -2,24 +2,104 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QWidget
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QSizePolicy, QWidget
 
 from lab_control.application.power_window import PowerChannelSnapshot
 from lab_control.domain.power import power_span, watts_to_dbm
+from lab_control.ui.kit.base import ElideLabel
+from lab_control.ui.kit.numeric import ReadingButton, ReadingLabel, number_text
 from lab_control.ui.pages.monitoring.readout_columns import add_readout_column
+from lab_control.ui.styles import tokens
 
 
 def set_columns(widget: QWidget, fields: tuple[QWidget, ...]) -> None:
     layout = QHBoxLayout(widget)
     layout.setContentsMargins(4, 0, 4, 0)
     layout.setSpacing(8)
-    for field, (width, stretch) in zip(fields, ((28, 0), (46, 2), (85, 1), (85, 1)), strict=True):
+    for field, (width, stretch) in zip(fields, ((28, 0), (44, 22), (86, 40), (86, 38)), strict=True):
         add_readout_column(layout, field, width, stretch)
 
 
-def readout_header(parent=None) -> QWidget:
-    header = QWidget(parent)
+class ColumnGrip(QWidget):
+    def __init__(self, header, column):
+        super().__init__(header)
+        self.header = header
+        self.column = column
+        self.setCursor(Qt.CursorShape.SplitHCursor)
+        self.setToolTip("拖动调整相邻列宽")
+
+    def paintEvent(self, event):  # noqa: N802
+        painter = QPainter(self)
+        painter.setPen(QColor(tokens.BORDER_HOVER if self.underMouse() else tokens.BORDER_STRONG))
+        x = self.width() // 2
+        painter.drawLine(x, 6, x, self.height() - 6)
+
+    def mousePressEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.start = event.globalPosition().x()
+            self.widths = [w.width() for w in self.header.labels[1:]]
+            event.accept()
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        if event.buttons() & Qt.MouseButton.LeftButton and hasattr(self, "widths"):
+            i = self.column
+            widths = self.widths.copy()
+            left, right = self.header.labels[i + 1 : i + 3]
+            delta = round(event.globalPosition().x() - self.start)
+            delta = max(left.minimumWidth() - widths[i], min(delta, widths[i + 1] - right.minimumWidth()))
+            widths[i] += delta
+            widths[i + 1] -= delta
+            self.header.apply_widths(widths)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton and hasattr(self, "widths"):
+            del self.widths
+            self.header.committed.emit(self.header.weights)
+            event.accept()
+
+
+class ReadoutHeader(QWidget):
+    labels: list[QLabel]
+    grips: list[ColumnGrip]
+    changed = Signal(list)
+    committed = Signal(list)
+
+    def apply_widths(self, weights):
+        if (
+            isinstance(weights, list)
+            and len(weights) == 3
+            and all(type(x) is int and 0 < x < 100000 for x in weights)
+        ):
+            self.weights = list(weights)
+            layout = self.layout()
+            assert isinstance(layout, QHBoxLayout)
+            for i, weight in enumerate(weights, 1):
+                layout.setStretch(i, weight)
+            layout.activate()
+            self.changed.emit(self.weights)
+            self.position_grips()
+
+    def position_grips(self):
+        for grip, label in zip(self.grips, self.labels[1:3], strict=True):
+            grip.setGeometry(label.geometry().right() + 1, 0, 8, self.height())
+            grip.raise_()
+
+    def event(self, event):
+        result = super().event(event)
+        if hasattr(self, "grips") and event.type() in (
+            QEvent.Type.Resize,
+            QEvent.Type.LayoutRequest,
+            QEvent.Type.Show,
+        ):
+            self.position_grips()
+        return result
+
+
+def readout_header(parent=None) -> ReadoutHeader:
+    header = ReadoutHeader(parent)
     header.setObjectName("powerReadoutHeader")
     fields = []
     for column, text in enumerate(("监测", "通道", "功率", "峰峰值 · 30 min")):
@@ -31,6 +111,9 @@ def readout_header(parent=None) -> QWidget:
         )
         fields.append(label)
     set_columns(header, tuple(fields))
+    header.labels = fields
+    header.weights = [22, 40, 38]
+    header.grips = [ColumnGrip(header, i) for i in range(2)]
     header.setFixedHeight(26)
     return header
 
@@ -48,14 +131,14 @@ class PowerMeterReadoutRow(QFrame):
         self.check = QCheckBox()
         self.check.setAccessibleName(f"CH {channel} 参与监测")
         self.check.setToolTip("参与此通道的监测与记录；取消后保留最近 30 分钟历史")
-        self.channel_label = QLabel(f"CH {channel}")
+        self.channel_label = ElideLabel(f"CH {channel}")
         self.channel_label.setObjectName("powerReadoutChannel")
         self.channel_label.setProperty("channel", str(((channel - 1) % 8) + 1))
-        self.value = QPushButton("— W")
+        self.value = ReadingButton("— W")
         self.value.setObjectName("powerReadoutValue")
         self.value.setCursor(Qt.CursorShape.PointingHandCursor)
         self.value.setAccessibleName(f"CH {channel} 功率；点击切换全部读数和曲线单位")
-        self.peak = QLabel("— W")
+        self.peak = ReadingLabel("— W")
         self.peak.setObjectName("powerReadoutPeak")
         self.peak.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         set_columns(self, (self.check, self.channel_label, self.value, self.peak))
@@ -111,4 +194,4 @@ class PowerMeterReadoutRow(QFrame):
     def format_value(value: float | None, unit: str) -> str:
         if value is None:
             return f"— {unit}"
-        return f"{value:.6g} {unit}" if unit == "W" else f"{value:.3f} {unit}"
+        return f"{number_text(value, 0 if unit == 'W' else 3)} {unit}"

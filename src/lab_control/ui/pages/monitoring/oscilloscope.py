@@ -716,8 +716,8 @@ class OscilloscopeMonitoringPage(QWidget):
             interval = config.get("sample_interval_s")
             rate_text = interval_text = "—"
             if isinstance(interval, (int, float)) and interval > 0:
-                rate_text = engineering(1 / interval, "Sa/s")
-                interval_text = engineering(interval, "s") + "/点"
+                rate_text = engineering(1 / interval, "Sa/s", full=True)
+                interval_text = engineering(interval, "s", full=True) + "/点"
             self.readouts.set("rate", rate_text)
             index = config.get("timebase")
             timebase_text = (
@@ -737,7 +737,9 @@ class OscilloscopeMonitoringPage(QWidget):
         timebase = values.get((1, "timebase"))
         self.readouts.set(
             "timebase",
-            engineering(float(timebase), "s") + "/格" if isinstance(timebase, (int, float)) else "—",
+            engineering(float(timebase), "s", full=True) + "/格"
+            if isinstance(timebase, (int, float))
+            else "—",
         )
         rate = controls.sample_rate.text().partition("：")[2].strip()
         self.readouts.set("rate", rate or "—")
@@ -768,7 +770,7 @@ class OscilloscopeMonitoringPage(QWidget):
             for p in (
                 f"CH{channel}" if channel else (str(source) if source else ""),
                 (arrow + " " if arrow else "")
-                + (engineering(float(level), "V") if level is not None else ""),
+                + (engineering(float(level), "V", full=True) if level is not None else ""),
             )
             if p
         )

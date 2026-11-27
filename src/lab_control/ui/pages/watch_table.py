@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTableView,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 from lab_control.application.watchlists import WatchRow
 from lab_control.domain.workspace import channel_label
 from lab_control.ui.kit import Pill, icons, style_button
+from lab_control.ui.kit.numeric import fit_reading, number_text
 from lab_control.ui.pages.watch_picker import WatchPicker
 from lab_control.ui.styles import tokens as tk
 
@@ -31,6 +33,12 @@ STATUS_DOTS = {"正常": tk.OK, "高于上限": tk.ERR, "低于下限": tk.ERR}
 class WatchReadingDelegate(QStyledItemDelegate):
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
+        if index.column() in (3, 5, 6) and option.rect.width() > 0:
+            view = option.widget
+            style = view.style() if view is not None else QApplication.style()
+            area = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, option, view)
+            margin = style.pixelMetric(QStyle.PixelMetric.PM_FocusFrameHMargin, option, view) + 1
+            option.text = fit_reading(option.text, area.width() - 2 * margin, option.fontMetrics)
         color = index.data(Qt.ItemDataRole.ForegroundRole)
         if color is not None:
             option.palette.setColor(QPalette.ColorRole.HighlightedText, color)
@@ -143,15 +151,17 @@ class WatchTableModel(QAbstractTableModel):
                 return f"{row.label}\n{row.parameters}\n双击查看记录曲线"
             return "双击查看记录曲线" if role == Qt.ItemDataRole.ToolTipRole else row.label
         if col == 3:
+            value = number_text(reading.value) if reading else "—"
             if role == Qt.ItemDataRole.ToolTipRole:
-                return "双击查看记录曲线"
-            return f"{reading.value:.9g}" if reading else "—"
+                return f"{value} {reading.unit}\n双击查看记录曲线" if reading else "双击查看记录曲线"
+            return value
         if col == 4:
             return reading.unit if reading else row.unit
         if col in (5, 6):
             v = row.lower if col == 5 else row.upper
             if role == Qt.ItemDataRole.ToolTipRole:
-                return f"单击设置{self.columns[col]}，留空可清除"
+                value = "" if v is None else f"{number_text(v)} {row.unit}\n"
+                return f"{value}单击设置{self.columns[col]}，留空可清除"
             if v is None:
                 return "" if role == Qt.ItemDataRole.EditRole else "—"
             return str(v)

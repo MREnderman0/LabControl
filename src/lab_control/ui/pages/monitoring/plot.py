@@ -14,6 +14,7 @@ from lab_control.application.acquisition_pipeline import validate_displayed_batc
 from lab_control.application.controls import DataSource
 from lab_control.application.monitoring import MonitorFrame
 from lab_control.domain.instruments import DeviceError
+from lab_control.ui.kit.numeric import number_text
 from lab_control.ui.pages.monitoring.scalar_readouts import ScalarReadouts
 from lab_control.ui.pages.monitoring.trace_view import TraceView
 from lab_control.ui.styles import tokens as tk
@@ -205,8 +206,7 @@ class LivePlot(QWidget):
                 self.plot.setLabel("left", y_label, units=unit or None)
                 self.plot.setLogMode(x=log_x, y=source.quantity == "stability")
                 self.axis_signature = axis_signature
-            digits = 12 if measurement.quantity == "frequency" else 6
-            readings[key] = (f"{values[-1]:.{digits}g}", unit)
+            readings[key] = (number_text(float(values[-1])), unit)
         for key, curve in self.curves.items():
             if key not in used:
                 curve.hide()

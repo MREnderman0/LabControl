@@ -201,12 +201,24 @@ class RealWindow(QMainWindow):
         brand_row.setContentsMargins(8, 0, 4, 14)
         brand_row.setSpacing(10)
         self.brand_logo = BrandIcon()
+        self.brand_logo.clicked.connect(self.open_updates)
         brand_row.addWidget(self.brand_logo)
         brand_text = QVBoxLayout()
         brand_text.setSpacing(0)
+        brand_title = QHBoxLayout()
+        brand_title.setSpacing(7)
         self.brand = QLabel("LabControl")
         self.brand.setObjectName("commandBrand")
-        brand_text.addWidget(self.brand)
+        brand_title.addWidget(self.brand)
+        from lab_control.ui.pages.software_update import SoftwareUpdates, UpdateChip
+
+        self.updates = SoftwareUpdates(self)
+        self.version_chip = UpdateChip(self.updates)
+        self.version_chip.clicked.connect(self.open_updates)
+        self.updates.changed.connect(self._sync_brand_badge)
+        brand_title.addWidget(self.version_chip, 0, Qt.AlignmentFlag.AlignVCenter)
+        brand_title.addStretch(1)
+        brand_text.addLayout(brand_title)
         self.brand_subline = QLabel("实验室测控工作站")
         self.brand_subline.setObjectName("commandEyebrow")
         brand_text.addWidget(self.brand_subline)
@@ -362,6 +374,16 @@ class RealWindow(QMainWindow):
         self.setCentralWidget(root)
         self.navigate("首页", "", "")
 
+    def open_updates(self) -> None:
+        from lab_control.ui.pages.software_update import open_update_dialog
+
+        open_update_dialog(self, self.updates)
+
+    def _sync_brand_badge(self) -> None:
+        collapsed = self._manual_sidebar_collapsed
+        self.brand_logo.set_badge(collapsed and self.updates.has_update)
+        self.brand_logo.setToolTip(self.updates.summary())
+
     def toggle_sidebar(self) -> None:
         self._manual_sidebar_collapsed = not self._manual_sidebar_collapsed
         self.update_sidebar()
@@ -372,6 +394,8 @@ class RealWindow(QMainWindow):
         if layout := self.sidebar.layout():
             layout.setContentsMargins(10, 16, 10, 12)
         self.brand.setVisible(not collapsed)
+        self.version_chip.setVisible(not collapsed)
+        self._sync_brand_badge()
         self.brand_subline.setVisible(not collapsed)
         self.sidebar_section.setVisible(not collapsed)
         self.runtime_badge.setVisible(not collapsed)
