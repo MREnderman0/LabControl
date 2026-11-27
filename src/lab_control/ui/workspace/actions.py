@@ -37,6 +37,8 @@ class WorkspaceActions:
         from lab_control.ui.pages.component_preparation import show_preparation
 
         show_preparation(window.runtime, window, first_run=True)
+        if window.runtime.hardware:
+            window.runtime.device_changes.start()
         window.scan()
         if window.runtime.hardware:
             window.runtime.serial_autoconnect.start()
@@ -252,16 +254,8 @@ class WorkspaceActions:
                 "扫描完成；" + (json.dumps(failures, ensure_ascii=False) if failures else "已有会话保持不变")
             )
         elif label == "address_scan":
-            failures = {name: data for name, data in result["providers"].items() if data["state"] == "error"}
-            failed_items = [item for item in result.get("items", ()) if item.get("error")]
             if window._static_address_status is not None:
-                if failures or failed_items:
-                    detail = {"providers": failures, "items": failed_items}
-                    window._static_address_status.setText(
-                        "地址扫描完成，但有失败：" + json.dumps(detail, ensure_ascii=False)
-                    )
-                else:
-                    window._static_address_status.setText("地址扫描完成；已更新设备池")
+                window._static_address_status.setProperty("scanReport", result)
             window.message.setText("地址列表扫描完成")
             if window._refresh_static_address_dialog is not None:
                 window._refresh_static_address_dialog()

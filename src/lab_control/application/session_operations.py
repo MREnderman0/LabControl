@@ -48,6 +48,7 @@ class SessionOperations:
             request.consistency == "live" and not getattr(session.adapter, "supports_live_acquisition", False)
         ):
             request = replace(request, consistency="full")
+        manager.prepare_first_acquisition(session, request)
         started = time.perf_counter()
         started_utc = utc_now()
         with (
@@ -234,6 +235,7 @@ class SessionOperations:
                 elif result.outcome != "success":
                     manager._invalidate_acquisition(session, "error")
             elif operation == "single":
+                manager.prepare_first_acquisition(session, argument.request)
                 result = argument.capture(
                     adapter, lambda request: manager._acquire(session, request, submitted_at)
                 )

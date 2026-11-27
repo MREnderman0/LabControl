@@ -280,6 +280,8 @@ class AcquisitionRequest:
     # Operator verified the analyzer is in linear sweep for this monitoring run.
     panel_linear_sweep: bool = False
     spectrum_display: bool = False
+    # Session preparation can be authorized independently of per-frame setup.
+    prepare_session: bool | None = None
 
     def validate(self) -> None:
         if not isinstance(self.spectrum_display, bool) or (self.spectrum_display and self.kind != "spectrum"):

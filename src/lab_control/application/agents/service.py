@@ -812,7 +812,8 @@ class AgentService:
             or definition.acquisition_requires_confirmation
         ):
             self._check(client, grant, device, "output_trigger")
-        return replace(request, allow_setup="acquisition_setup" in scope["actions"])
+        allowed = "acquisition_setup" in scope["actions"]
+        return replace(request, allow_setup=allowed, prepare_session=allowed)
 
     def _single_read(self, client, grant, device, acquisition, cancel, guard):
         from lab_control.instruments.scope_single import SingleCapture

@@ -56,7 +56,11 @@ def start_recording(runtime, device_id, adapter):
             timing = runtime.repository.load_workspace(f"monitor-timing/general/{device_id}", {})
             future = runtime.monitoring.start(
                 device_id,
-                (AcquisitionRequest(channels=channels, confirmed=True, allow_setup=False),),
+                (
+                    AcquisitionRequest(
+                        channels=channels, confirmed=True, allow_setup=False, prepare_session=True
+                    ),
+                ),
                 interval=timing.get("interval", 0.5),
                 cadence=timing.get("cadence", "interval"),
                 record_interval=timing.get("record_interval"),

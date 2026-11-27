@@ -125,7 +125,8 @@ class DhcpLeaseDiscoveryProvider:
 
     name = "dhcp_leases"
 
-    def __init__(self, inventory: Inventory, settings: LanDiscoverySettings):
+    def __init__(self, inventory: Inventory, settings: LanDiscoverySettings, *, include_hints: bool = False):
+        self.include_hints = include_hints
         self.inventory, self.settings = inventory, settings
 
     def enumerate(self) -> tuple[DiscoveryCandidate, ...]:
@@ -204,4 +205,23 @@ class DhcpLeaseDiscoveryProvider:
                     safe_scpi=not bool(model_config),
                 )
             )
+        if self.include_hints:
+            known_hosts = {network_host(c.config.resource) for c in candidates}
+            for lease in leases:
+                ip = ipaddress.IPv4Address(lease.address)
+                if (
+                    lease.address not in known_hosts
+                    and any(
+                        ip in net and ip not in (net.network_address, net.broadcast_address)
+                        for net in networks
+                    )
+                    and (not restriction or any(ip in net for net in restriction))
+                ):
+                    candidates.append(
+                        DiscoveryCandidate(
+                            ConnectionConfig(f"TCPIP0::{ip}::inst0::INSTR"),
+                            "lease_hint",
+                            {"dhcpMac": lease.mac},
+                        )
+                    )
         return tuple(candidates)

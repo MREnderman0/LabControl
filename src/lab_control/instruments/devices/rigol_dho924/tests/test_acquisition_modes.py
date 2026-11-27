@@ -75,6 +75,26 @@ def test_timebase_readback_updates_mode_cache_without_unrelated_queries():
     assert peer.history == [":WAV:PRE?", ":WAV:DATA?", ":WAV:PRE?"]
 
 
+def test_desktop_auto_connection_preserves_roll_until_first_waveform(tmp_path):
+    from lab_control.application.runtime import ApplicationRuntime
+
+    obj, peer = adapter()
+    peer.state.update({":TIM:MODE": "ROLL", ":TIM:ROLL": 1, ":TIM:MAIN:SCAL": 0.5})
+    peer.history.clear()
+    with ApplicationRuntime(root=tmp_path, hardware=False) as app:
+        app.sessions.factory = lambda config: obj
+        key = app.add(obj.config)
+        app.connect(key, configure_acquisition=None).result(4)
+        original = app.sessions.sessions[key].session_id
+        assert all(command.endswith("?") for command in peer.history)
+        assert peer.state[":TIM:MODE"] == "ROLL" and peer.state[":TIM:MAIN:SCAL"] == 0.5
+        assert peer.state[":WAV:FORM"] == "BYTE"
+        for _ in range(2):
+            app.sessions.submit(key, "acquire", AcquisitionRequest("waveform")).result(4)
+        assert app.sessions.sessions[key].session_id == original
+        assert peer.history.count(":TIM:MODE MAIN") == peer.history.count(":WAV:FORM WORD") == 1
+
+
 def test_explicit_connection_preparation_returns_from_roll():
     obj, peer = adapter()
     peer.state.update({":TIM:MODE": "ROLL", ":TIM:ROLL": 1, ":TIM:MAIN:SCAL": 20})

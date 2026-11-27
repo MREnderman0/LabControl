@@ -30,9 +30,22 @@ class VisaDiscoveryProvider:
                     safe = int(parts[1], 0) in allowlist
                 except (ValueError, IndexError):
                     pass
-            candidates.append(
-                DiscoveryCandidate(ConnectionConfig(resource), self.name, {"visa_resource": resource}, safe)
-            )
+            descriptor = {"visa_resource": resource}
+            if safe and len(parts) >= 5:
+                from lab_control.domain.instruments import readable_serial
+
+                if readable_serial(parts[3]):
+                    descriptor["usbInstrumentSerial"] = parts[3]
+                    descriptor["usbManufacturer"] = {
+                        0x1AB1: "rigol",
+                        0xF4EC: "siglent",
+                        0x0699: "tektronix",
+                        0x0AAD: "rohde",
+                        0x0957: "agilent",
+                        0x2A8D: "keysight",
+                        0x05FF: "lecroy",
+                    }[int(parts[1], 0)]
+            candidates.append(DiscoveryCandidate(ConnectionConfig(resource), self.name, descriptor, safe))
         return tuple(candidates)
 
 
@@ -108,6 +121,12 @@ class VendorSdkDiscoveryProvider:
             )
             if enumerate_resources:
                 for resource in enumerate_resources(config):
+                    parts = resource.split("::")
+                    serial = (
+                        parts[3]
+                        if len(parts) >= 5 and parts[0].upper().startswith("USB")
+                        else (parts[1] if len(parts) == 2 and parts[0].upper() == "PICO" else "")
+                    )
                     result.append(
                         DiscoveryCandidate(
                             config
@@ -118,6 +137,7 @@ class VendorSdkDiscoveryProvider:
                                 config.transport,
                                 timeout=config.timeout,
                                 sdk_path=config.sdk_path,
+                                expected_serial=serial,
                             ),
                             self.name,
                             {"enumeration": "vendor SDK metadata; no open"},

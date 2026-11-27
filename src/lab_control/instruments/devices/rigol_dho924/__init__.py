@@ -1,5 +1,6 @@
 """Importing the DHO924 definition never opens hardware."""
 
+import re
 from pathlib import Path
 
 from lab_control.domain.processing import ProcessingProfile
@@ -9,6 +10,15 @@ from lab_control.instruments.devices.definition import DeviceDefinition, DeviceD
 from .adapter import DHO924Adapter
 from .profile import profile
 
+
+def advertised_socket_port(host, fetch):
+    page = fetch(host, "/welcome.html")
+    match = re.search(rb"SCPI\s+Socket\s+Port\s*:\s*</td>\s*<td[^>]*>\s*(\d{1,5})\s*<", page, re.I)
+    if match and 1 <= int(match[1]) <= 65535:
+        return int(match[1])
+    return None
+
+
 DEFINITION = DeviceDefinition(
     profile(),
     DHO924Adapter,
@@ -16,6 +26,8 @@ DEFINITION = DeviceDefinition(
         "RIGOL DHO924", "oscilloscopes/rigol-dho924", "LAN PyVISA / VISA SOCKET", "64 位 VISA Runtime"
     ),
     Path(__file__).parent,
+    socket_port=5555,
+    advertised_socket_port=advertised_socket_port,
     deployment_components=("rs-visa",),
     offline_processing=ProcessingProfile("frames", separate_channel_pngs=True),
     multi_channel_sources=("waveform",),

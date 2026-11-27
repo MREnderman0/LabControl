@@ -112,6 +112,8 @@ class DeviceDefinition:
     canonical_serial: Callable[[str], str] | None = None
     readonly_probe: Callable[[ConnectionConfig], DeviceIdentity] | None = None
 
+    advertised_socket_port: Callable[[str, Callable[[str, str], bytes]], int | None] | None = None
+
     def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
         return self.manual_usb_id is None or self.manual_usb_id == (
             descriptor.get("vid"),

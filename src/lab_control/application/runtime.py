@@ -133,7 +133,7 @@ class ApplicationRuntime:
                     providers += (
                         LanDiscoveryProvider(self.visa, self.lan_settings),
                         RememberedLanDiscoveryProvider(self.inventory, self.lan_settings),
-                        DhcpLeaseDiscoveryProvider(self.inventory, self.lan_settings),
+                        DhcpLeaseDiscoveryProvider(self.inventory, self.lan_settings, include_hints=True),
                     )
                 # Explicitly saved endpoints are safe to query even when
                 # service advertisement discovery is disabled. The provider
@@ -144,6 +144,14 @@ class ApplicationRuntime:
                     definition = DEVICE_DEFINITIONS.get(config.adapter)
                     if definition and config.transport in definition.discovery_transports:
                         sdk_groups.setdefault((config.transport, config.sdk_path), []).append(config)
+                for definition in DEVICE_DEFINITIONS.values():
+                    for transport in definition.discovery_transports:
+                        if definition.discovery_enumerator and not any(
+                            group[0] == transport for group in sdk_groups
+                        ):
+                            sdk_groups[(transport, "")] = [
+                                ConnectionConfig("ENUMERATION", definition.adapter_id, transport)
+                            ]
                 providers += tuple(VendorSdkDiscoveryProvider(tuple(group)) for group in sdk_groups.values())
             self.discovery = DiscoveryService(
                 providers,
@@ -170,7 +178,14 @@ class ApplicationRuntime:
 
             self.connections = ConnectionRetry(self)
             self.monitoring.settings_sync.on_disconnect = self.connections.settings_failed
+            from lab_control.discovery.changes import DiscoveryChanges
+
+            self.device_changes = DiscoveryChanges(self)
             if hardware:
+                from lab_control.discovery.lxi import enrich_candidates
+
+                self.discovery.on_enumeration = self.device_changes.observed
+                self.discovery.enrich_candidates = enrich_candidates
                 from lab_control.application.network_recovery import NetworkRecovery
 
                 self.network_recovery = NetworkRecovery(self)
@@ -279,7 +294,7 @@ class ApplicationRuntime:
         self,
         device_id: str,
         *,
-        configure_acquisition: bool = True,
+        configure_acquisition: bool | None = True,
         admission: Callable[[DeviceIdentity | None], None] | None = None,
     ):
         from lab_control.domain.instruments import DeviceError
@@ -394,7 +409,7 @@ class ApplicationRuntime:
         self,
         device_id: str,
         *,
-        configure_acquisition: bool = True,
+        configure_acquisition: bool | None = True,
         admission: Callable[[DeviceIdentity | None], None] | None = None,
         manual: bool = False,
     ) -> Future[DeviceIdentity]:
@@ -636,6 +651,7 @@ class ApplicationRuntime:
                 errors.append(exc)
         for resource in (
             getattr(self, "_processing", None),
+            getattr(self, "device_changes", None),
             getattr(self, "serial_autoconnect", None),
             self.bulk_connection,
             self.connections,

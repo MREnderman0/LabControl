@@ -72,6 +72,7 @@ class RecordedAcquisitionRunner:
                 mode=mode,
             )
             recording.note_event("acquisition_started", {"requested_count": count})
+            manager.prepare_first_acquisition(session, request)
             run = run_factory(request, session.stop) if run_factory else None
             index = 0
             next_save = 0.0
