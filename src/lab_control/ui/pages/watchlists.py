@@ -34,16 +34,17 @@ class WatchlistsPage(QWidget):
         self.windows: dict[str, QDialog] = {}
         layout = QHBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
-        split = QSplitter(Qt.Orientation.Horizontal)
+        self.split = split = QSplitter(Qt.Orientation.Horizontal)
+        self.compact = False
         split.setObjectName("watchSplit")
         split.setHandleWidth(14)
         layout.addWidget(split)
         pane = QFrame()
         pane.setObjectName("watchPresetPane")
-        left = QVBoxLayout(pane)
+        self.preset_layout = left = QVBoxLayout(pane)
         left.setContentsMargins(10, 10, 10, 10)
         left.setSpacing(8)
-        bar = QHBoxLayout()
+        self.preset_bar = bar = QHBoxLayout()
         bar.setContentsMargins(4, 0, 0, 0)
         title = QLabel("预设")
         title.setObjectName("panelTitle")
@@ -72,7 +73,7 @@ class WatchlistsPage(QWidget):
         self.pin_button.setIcon(icons.icon("pin", tk.TEXT_2))
         self.pin_button.clicked.connect(self.toggle_pin)
         left.addWidget(self.pin_button)
-        hint = QLabel("双击打开独立窗口 · 拖动调整顺序")
+        self.hint = hint = QLabel("双击打开独立窗口 · 拖动调整顺序")
         hint.setObjectName("watchHint")
         left.addWidget(hint)
         self.table = PresetTable(self.hub)
@@ -89,6 +90,24 @@ class WatchlistsPage(QWidget):
         self.list.model().rowsMoved.connect(self.reordered)
         self.hub.changed.connect(self.reload)
         self.reload()
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        compact = self.width() < 900
+        if compact == self.compact:
+            return
+        self.compact = compact
+        self.hint.setVisible(not compact)
+        if compact:
+            self.preset_bar.insertWidget(self.preset_bar.indexOf(self.create_button), self.pin_button)
+            self.list.setFlow(QListWidget.Flow.LeftToRight)
+            self.split.setOrientation(Qt.Orientation.Vertical)
+            self.split.setSizes([96, max(128, self.height() - 96)])
+        else:
+            self.preset_layout.insertWidget(self.preset_layout.indexOf(self.hint), self.pin_button)
+            self.list.setFlow(QListWidget.Flow.TopToBottom)
+            self.split.setOrientation(Qt.Orientation.Horizontal)
+            self.split.setSizes([230, max(320, self.width() - 230)])
 
     @staticmethod
     def key(item):

@@ -171,7 +171,8 @@ class WatchTrendDialog(QDialog):
             self.batch_state = state
             self.batches.blockSignals(True)
             self.batches.clear()
-            for path, stamp, status, error in matches:
+            restore_selection = not (new_batch and latest_selected and self.follow.isChecked())
+            for index, (path, stamp, status, error) in enumerate(matches):
                 live = run and path == run.path and not run.done.is_set()
                 label = {
                     "open": "记录中" if live else "上次记录中断",
@@ -184,10 +185,8 @@ class WatchTrendDialog(QDialog):
                 self.batches.setItemData(
                     self.batches.count() - 1, error or str(path.parent), Qt.ItemDataRole.ToolTipRole
                 )
-            if previous and not (new_batch and latest_selected and self.follow.isChecked()):
-                idx = self.batches.findData(previous)
-                if idx >= 0:
-                    self.batches.setCurrentIndex(idx)
+                if restore_selection and path == previous:
+                    self.batches.setCurrentIndex(index)
             self.batches.blockSignals(False)
             if previous != self.batches.currentData():
                 self.selected()

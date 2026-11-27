@@ -683,3 +683,41 @@ def test_home_cards_share_available_height_and_scroll_independently(workspace, q
     qtbot.waitUntil(lambda: card.height() < heights[0] and side.tasks.height() < heights[1])
     assert abs(card.height() - side.tasks.height()) <= 1
     assert card.list.verticalScrollBar().maximum() > 0
+
+
+def test_closing_watch_runtime_finalizes_active_csv_and_batch(workspace, qtbot):
+    import sqlite3
+    from contextlib import closing
+
+    win, _, page, meter, _ = workspace
+    hub = page.hub
+    row = hub.catalog(meter)[1][("reading", "", "")].row(win.controller.records[meter], 204, {})
+    preset = Preset("退出收尾", (row,))
+    hub.save([preset])
+    run = hub.start_recording(preset.id)
+    qtbot.waitUntil(lambda: run.count > 0, timeout=8000)
+    hub.close()
+    assert run.done.is_set() and not run.error and not run.thread.is_alive()
+    with closing(sqlite3.connect(run.path)) as db:
+        assert db.execute("SELECT state FROM batch").fetchone() == ("complete",)
+    assert len(list(run.path.parent.glob("*.csv"))) == 1
+
+
+def test_small_workspace_keeps_record_actions_and_current_value_visible(workspace, qtbot):
+    win, _, page, meter, _ = workspace
+    row = page.hub.catalog(meter)[1][("reading", "", "")].row(win.controller.records[meter], 204, {})
+    preset = Preset("温度记录", (row,))
+    page.hub.save([preset])
+    win.setMinimumSize(850, 500)
+    win.resize(850, 500)
+    page.select_id(preset.id)
+    qtbot.waitUntil(lambda: page.compact)
+    table = page.table.table
+    assert page.split.orientation() == Qt.Orientation.Vertical
+    qtbot.waitUntil(lambda: table.horizontalScrollBar().maximum() == 0)
+    assert table.viewport().rect().contains(table.visualRect(page.table.model.index(0, 3)))
+    assert page.table.record.isVisible() and page.pin_button.isVisible()
+    win.resize(1440, 900)
+    qtbot.waitUntil(lambda: not page.compact)
+    assert page.split.orientation() == Qt.Orientation.Horizontal
+    assert page.table.model.preset == preset.id

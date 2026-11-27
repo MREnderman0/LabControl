@@ -147,3 +147,25 @@ finally { Exit-LabMaintenanceLease $lease }
         environment,
     )
     assert result.stdout.split() == ["process_busy", "acquired"]
+
+
+def test_maintenance_default_never_moves_old_workspace_or_chooses_between_two_roots(tmp_path):
+    from lab_control.storage.brand_migration import _link_directory
+
+    env = dict(
+        os.environ, LOCALAPPDATA=str(tmp_path), LAB_TEST_HELPER=str(SCRIPTS / "maintenance-common.ps1")
+    )
+    command = """
+. $env:LAB_TEST_HELPER
+try { Split-Path -Leaf (Get-LabDefaultRoot) }
+catch { 'needs-review' }
+"""
+    old, new = tmp_path / "TF-LabControl", tmp_path / "LabControl"
+    assert powershell(command, env).stdout.strip() == "LabControl"
+    old.mkdir()
+    assert powershell(command, env).stdout.strip() == "TF-LabControl" and not new.exists()
+    new.mkdir()
+    assert powershell(command, env).stdout.strip() == "needs-review"
+    old.rmdir()
+    _link_directory(old, new)
+    assert powershell(command, env).stdout.strip() == "LabControl" and old.is_junction()

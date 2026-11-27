@@ -78,3 +78,23 @@ def test_trend_menu_exports_current_image_and_complete_row_at_click(qtbot, tmp_p
     qtbot.waitUntil(lambda: vb.viewRange()[0][1] >= start.timestamp() + 2500)
     assert dialog.follow.isChecked() and dialog.batches.currentData() == path
     dialog.close()
+
+
+def test_historical_batch_remains_selected_when_recording_finishes(qtbot, tmp_path):
+    from threading import Event
+
+    row = WatchRow("meter", "", "keithley.2701", 204, "reading", "温度", unit="°C")
+    preset = Preset("温度记录", (row,))
+    older = create_batch(tmp_path, preset)
+    current = create_batch(tmp_path, preset)
+    run = SimpleNamespace(accepting=True, path=current, root=tmp_path, revision=0, done=Event())
+    ctl = SimpleNamespace(runtime=SimpleNamespace(repository=SimpleNamespace(data_root=tmp_path)))
+    hub = SimpleNamespace(ctl=ctl, recordings={preset.id: run}, presets={preset.id: preset})
+    dialog = WatchTrendDialog(hub, preset.id, row, None)
+    qtbot.addWidget(dialog)
+    dialog.batches.setCurrentIndex(next(i for i in range(2) if dialog.batches.itemData(i) == older))
+    run.accepting = False
+    run.done.set()
+    dialog.refresh()
+    assert dialog.batches.currentData() == older
+    dialog.close()

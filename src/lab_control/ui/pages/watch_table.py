@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.application.watchlists import WatchRow
 from lab_control.domain.workspace import channel_label
-from lab_control.ui.kit import Pill, icons, set_property
+from lab_control.ui.kit import Pill, icons, style_button
 from lab_control.ui.pages.watch_picker import WatchPicker
 from lab_control.ui.styles import tokens as tk
 
@@ -244,7 +244,6 @@ class PresetTable(QWidget):
             for button in (self.add, self.remove, self.once):
                 button.setProperty("buttonSize", "compact")
         self.record = QPushButton("开始记录")
-        self.record.setObjectName("recordButton")
         self.record.setProperty("buttonSize", "compact")
         self.record.clicked.connect(self.toggle_recording)
         self.record_status = Pill(dot=True)
@@ -288,10 +287,12 @@ class PresetTable(QWidget):
             if detached
             else (140, 226, 130, 102, 52, 70, 70, 88, 115)
         )
+        self.column_weights: tuple[int, ...] = widths
         for i, width in enumerate(widths):
             self.table.setColumnWidth(i, width)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
+        header.sectionResized.connect(self.remember_column_widths)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(64 if detached else 34)
         layout.addWidget(self.table)
@@ -316,8 +317,39 @@ class PresetTable(QWidget):
         self.model.rowsRemoved.connect(self.update_summary)
         self.bind("")
 
+    def remember_column_widths(self, *_args):
+        header = self.table.horizontalHeader()
+        if header.underMouse() and QApplication.mouseButtons() == Qt.MouseButton.LeftButton:
+            self.column_weights = tuple(header.sectionSize(i) for i in range(header.count()))
+
+    def fit_columns(self):
+        # Reserve readable headers, then divide the remaining room by the user's column proportions.
+        header = self.table.horizontalHeader()
+        metrics = header.fontMetrics()
+        minimums = [
+            max(header.minimumSectionSize(), metrics.horizontalAdvance(title) + 14)
+            for title in self.model.columns
+        ]
+        cells = self.table.fontMetrics()
+        # These cells carry a sign/exponent, a clock, or an extra status dot.
+        samples = ((3, "-1e-123", 22), (7, "23:59:59", 22), (8, "高于上限", 38))
+        wanted = {
+            i: max(0, cells.horizontalAdvance(sample) + pad - minimums[i]) for i, sample, pad in samples
+        }
+        available = self.table.viewport().width()
+        fraction = min(1.0, max(0, available - sum(minimums)) / max(1, sum(wanted.values())))
+        for column, pixels in wanted.items():
+            minimums[column] += int(pixels * fraction)
+        extra = max(0, available - sum(minimums))
+        total = sum(self.column_weights)
+        for i, (minimum, weight) in enumerate(zip(minimums[:-1], self.column_weights)):
+            header.resizeSection(i, minimum + extra * weight // total)
+        header.resizeSection(len(minimums) - 1, minimums[-1])
+
     def eventFilter(self, watched, event):
         if watched is self.table.viewport() and event.type() == QEvent.Type.Resize:
+            if event.size().width() != event.oldSize().width():
+                self.fit_columns()
             self.empty.setGeometry(self.table.viewport().rect())
         return super().eventFilter(watched, event)
 
@@ -374,8 +406,8 @@ class PresetTable(QWidget):
         saving = run and not run.accepting and not run.done.is_set()
         self.record.setText("停止记录" if run and run.accepting else "正在保存…" if saving else "开始记录")
         self.record.setEnabled(bool(self.model.rows or (run and run.accepting)) and not saving)
-        phase = "recording" if run and run.accepting else "draining" if saving else "idle"
-        set_property(self.record, "recordingPhase", phase)
+        active = bool(run and run.accepting)
+        style_button(self.record, "danger" if active else "", "stop" if active else "record", "sm", tk.ERR)
         self.record_status.setVisible(bool(run))
         if run:
             state = (

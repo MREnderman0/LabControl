@@ -2,10 +2,24 @@
 function Get-LabDefaultRoot {
     $newRoot = Join-Path $env:LOCALAPPDATA 'LabControl'
     $oldRoot = Join-Path $env:LOCALAPPDATA 'TF-LabControl'
-    if (-not (Test-Path -LiteralPath $newRoot) -and (Test-Path -LiteralPath $oldRoot)) {
-        return $oldRoot
+    $newItem = Get-Item -LiteralPath $newRoot -Force -ErrorAction SilentlyContinue
+    $oldItem = Get-Item -LiteralPath $oldRoot -Force -ErrorAction SilentlyContinue
+    if ($newItem -and (-not $newItem.PSIsContainer -or $newItem.LinkType)) {
+        throw "Verify the default data directory: $newRoot"
     }
-    return $newRoot
+    if (-not $oldItem) { return $newRoot }
+    if ($oldItem.LinkType -in @('Junction', 'SymbolicLink')) {
+        $target = [string](@($oldItem.Target)[0])
+        if ($newItem -and $target -and
+            [IO.Path]::GetFullPath([IO.Path]::Combine($oldItem.Parent.FullName, $target)) -eq $newRoot) {
+            return $newRoot
+        }
+        throw "Verify the legacy directory link: $oldRoot"
+    }
+    if ($newItem -or -not $oldItem.PSIsContainer) {
+        throw "Verify the data directories before maintenance: $oldRoot and $newRoot"
+    }
+    return $oldRoot
 }
 
 function Get-LabRuntimeRoot {
