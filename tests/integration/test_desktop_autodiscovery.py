@@ -1,5 +1,6 @@
 """Desktop plug-in, identity and deferred initialization with no physical I/O."""
 
+import json
 import threading
 import time
 from dataclasses import replace
@@ -80,9 +81,15 @@ def test_first_discovery_during_recording_aliases_and_operator_disconnect(tmp_pa
         app.discovery.providers = (lan, dhcp)
         try:
             app.device_changes.poll()
+            row = next(r for r in app.inventory.all() if r.get("adapterId") == "rigol.dho924")
+            target = row["id"]
+            assert row["identity"]["serial"] == "DHO-A001"
+            assert probes == ["TCPIP0::192.0.2.21::5777::SOCKET"]
+            assert not opened and target not in app.connections.snapshots()
+            first = app.connections.request(target, configure=None)
             assert pause.wait(3)
-            target = next(r["id"] for r in app.inventory.all() if r.get("adapterId") == "rigol.dho924")
             click = app.connections.request(target)
+            assert click is first
         finally:
             release.set()
         click.result(5)
@@ -103,7 +110,10 @@ def test_first_discovery_during_recording_aliases_and_operator_disconnect(tmp_pa
         lan.items = (*lan.items, advertised("192.0.2.22"))
         app.discovery.providers = (lan, dhcp, visa, Observations("serial", (unknown,)))
         app.device_changes.poll()
-        wait(lambda: len(opened) == 2 and len(app.sessions.snapshots()) == 3)
+        assert len(opened) == 1 and len(app.sessions.snapshots()) == 2
+        assert {
+            r["identity"]["serial"] for r in app.inventory.all() if r.get("adapterId") == "rigol.dho924"
+        } == {"DHO-A001", "DHO-A002"}
         rows = app.inventory.all()
         assert len(rows) == 4
         assert app.inventory.by_resource(usb)["id"] == target
@@ -115,12 +125,63 @@ def test_first_discovery_during_recording_aliases_and_operator_disconnect(tmp_pa
         app.connections.disconnect(target).result(3)
         app.discovery.scan().result(3)
         assert target in app.connections.suppressed_devices()
-        assert len(opened) == 2
+        assert len(opened) == 1
         app.discovery.scan(
             (Observations("lan", (advertised("192.0.2.21"),)),), preserve_presence=True, scope="address_retry"
         ).result(3)
-        wait(lambda: len(opened) == 3 and target not in app.connections.suppressed_devices())
+        wait(lambda: len(opened) == 2 and target not in app.connections.suppressed_devices())
         app.monitoring.stop(old).result(3)
+
+
+def test_only_named_assets_keep_connection_behavior_across_startup(tmp_path):
+    hosts = {"192.0.2.21": "DHO-A001", "192.0.2.22": "DHO-A002", "192.0.2.23": "DHO-A003"}
+    observation = Observations("lan", tuple(advertised(host) for host in hosts))
+
+    def configure(app):
+        app.discovery.enrich_candidates = lambda cs: enrich_candidates(cs, lambda host: metadata(hosts[host]))
+        app.discovery.probe = lambda c: metadata(c.config.expected_serial)[:2]
+
+    with ApplicationRuntime(root=tmp_path, hardware=False) as before:
+        configure(before)
+        before.discovery.scan((observation,)).result(3)
+        ids = {r["identity"]["serial"]: r["id"] for r in before.inventory.all()}
+        allowed, manual, wrong_adapter = (ids[s] for s in hosts.values())
+        before.repository.save_workspace(
+            before.connections.discovery_exceptions_key,
+            {allowed: "rigol.dho924", wrong_adapter: "rs.rtm3004"},
+        )
+        config = before.repository.root / "config" / "record-on-connect.json"
+        config.parent.mkdir(exist_ok=True)
+        config.write_text(json.dumps({manual: "rigol.dho924"}), encoding="utf-8")
+
+    with ApplicationRuntime(root=tmp_path, hardware=False) as after:
+        configure(after)
+        after.device_changes.enabled = True
+        assert after.record_on_connect == {manual: "rigol.dho924"}
+        opened = []
+
+        def factory(cfg):
+            opened.append(cfg.expected_serial)
+            adapter = SimulatedInstrument(cfg)
+            adapter.identity = metadata(cfg.expected_serial)[0]
+            return adapter
+
+        after.sessions.factory = factory
+        # Evaluate the real completion handler synchronously before asserting absence of sessions.
+        after.discovery.on_complete = None
+        report = after.discovery.scan((observation,)).result(3)
+        after.connections.discovered(report)
+        wait(lambda: after.connections.snapshots().get(allowed, {}).get("phase") == "online")
+        assert set(after.sessions.sessions) == {allowed}
+        assert set(after.connections.snapshots()) == {allowed}
+        assert opened == ["DHO-A001"]
+        assert not after.monitoring.snapshots().get(manual, {}).get("recording")
+        after.connections.disconnect(allowed).result(3)
+        report = after.discovery.scan((observation,)).result(3)
+        after.connections.discovered(report)
+        assert allowed in after.connections.suppressed_devices()
+        assert not after.connections.snapshots() and not after.sessions.sessions
+        assert opened == ["DHO-A001"]
 
 
 def test_lxi_and_socket_must_agree_before_auto_connect(tmp_path):

@@ -199,7 +199,7 @@ def scan_result_text(runtime, report):
         elif review := identity_review_reason(record):
             result = f"待核对：{review}"
         elif item.get("reason") in {"identified", "sdk_identity_requires_explicit_connection"}:
-            result = retry.get(key, {}).get("label") or ("正在连接" if retry.get(key) else "已识别")
+            result = retry.get(key, {}).get("label") or ("正在连接" if retry.get(key) else "已识别，未连接")
         elif item.get("reason") == "deferred_possible_alias_of_active_device":
             result = "待核对：该入口可能属于已占用的设备"
         else:

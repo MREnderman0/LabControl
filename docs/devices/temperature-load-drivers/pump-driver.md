@@ -4,7 +4,7 @@
 
 # 光梳地检泵浦驱动（自制）
 
-适配器 `custom.optical_comb_pump` 在电脑内置 RS232 口或已登记的泵浦串口上自动连接。每次连接先只读核验 CH 1 的六帧设置回复，完整匹配后开放操作。设备协议没有序列号字段。
+适配器 `custom.optical_comb_pump` 在电脑内置 RS232 口或已登记的泵浦串口上发现候选设备，由用户点击连接。每次连接先只读核验 CH 1 的六帧设置回复，完整匹配后开放操作。设备协议没有序列号字段。
 
 ## 能力与协议
 
@@ -38,7 +38,7 @@ Windows COM 口对应 VISA ASRL 资源，使用现有 PyVISA 与系统 VISA 运�
 
 | 功能 | 接口及条件 | 验证范围 / 状态 | 证据位置 |
 | --- | --- | --- | --- |
-| 自动连接、设置及遥测 | VISA ASRL，CH 1 | 软件测试覆盖；实机待测 | [实机计划](../../../src/lab_control/instruments/devices/custom_optical_comb_pump/hardware/README.md) |
+| 手动连接、设置及遥测 | VISA ASRL，CH 1 | 软件测试覆盖；实机待测 | [实机计划](../../../src/lab_control/instruments/devices/custom_optical_comb_pump/hardware/README.md) |
 | 关断 CH 1 | 已连接并明确确认 | 软件测试覆盖应答及读回；物理关断待测 | [实机计划](../../../src/lab_control/instruments/devices/custom_optical_comb_pump/hardware/README.md) |
 
 ## 已知限制与待测

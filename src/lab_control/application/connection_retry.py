@@ -51,8 +51,12 @@ class Intent:
 
 
 class ConnectionRetry:
+    discovery_exceptions_key = "discovery/connection-exceptions/v1"
+
     def __init__(self, runtime: ApplicationRuntime):
         self.runtime = runtime
+        saved = runtime.repository.load_workspace(self.discovery_exceptions_key, {})
+        self.discovery_exceptions = saved if isinstance(saved, dict) else {}
         self.condition = threading.Condition()
         self.intents: dict[str, Intent] = {}
         self.disconnected: set[str] = set()
@@ -143,6 +147,19 @@ class ConnectionRetry:
             item.future = self.workers.submit(self._disconnect, item)
             return item.future
 
+    def connect_on_discovery(self, key, adapter):
+        """Only an opted-in asset or a previously connected, detached serial device may open here."""
+        with self.condition:
+            if self.closed or self.runtime.discovery.closing or key in self.disconnected:
+                return None
+            item = self.intents.get(key)
+            if item is None:
+                if not adapter or self.discovery_exceptions.get(key) != adapter:
+                    return None
+            elif not (item.serial_detached and item.phase == "waiting" and not item.disconnecting):
+                return None
+            return self.request(key, configure=None, hotplug=item is not None)
+
     def request(self, key, *, batch=None, configure=True, reconnect=False, hotplug=False):
         with self.condition:
             if self.closed or self.runtime.discovery.closing:
@@ -152,6 +169,8 @@ class ConnectionRetry:
             if batch and batch.is_set():
                 raise DeviceError("已停止批量连接", "recovery_cancelled")
             item = self.intents.get(key)
+            if hotplug and item is None:
+                raise DeviceError("设备已发现，请手动连接", "manual_connection_required")
             if item and item.disconnecting:
                 raise DeviceError("连接正在释放", "task_busy")
             self.disconnected.discard(key)
@@ -366,10 +385,11 @@ class ConnectionRetry:
         auto = desktop.enabled and not desktop.stop.is_set()
         if auto:
             desktop.resolved(report)
-        records = {r["id"]: r for r in self.runtime.inventory.all()} if auto else {}
         explicit_retry = report.get("scope") == "address_retry"
+        check_open = auto and (explicit_retry or bool(self.discovery_exceptions))
+        records = {r["id"]: r for r in self.runtime.inventory.all()} if check_open else {}
         for result in report["items"]:
-            if auto:
+            if check_open:
                 key = result.get("device_id")
                 if not key:
                     continue
@@ -395,11 +415,14 @@ class ConnectionRetry:
                             and self._state(key).get("connectionState")
                             not in {"connected", "busy", "connecting"}
                         )
-                        or (not self.owns(key) and not self._state(key))
+                        or (self.discovery_exceptions.get(key) == row["adapterId"] and not self._state(key))
                     )
                 ):
                     try:
-                        self.request(key, configure=None, hotplug=not explicit_retry)
+                        if explicit_retry:
+                            self.request(key, configure=None)
+                        else:
+                            self.connect_on_discovery(key, row["adapterId"])
                     except DeviceError as exc:
                         if exc.code not in {"recovery_cancelled", "runtime_closing"}:
                             self.runtime.repository.audit(
