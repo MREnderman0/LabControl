@@ -113,6 +113,8 @@ class DeviceDefinition:
     readonly_probe: Callable[[ConnectionConfig], DeviceIdentity] | None = None
 
     inspect_component: Callable[[dict], tuple[str, str]] | None = None
+    # Local watch rows can consume existing frames without advertising a remote metric.
+    watch_only_profiles: tuple[MetricProfile, ...] = ()
 
     def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
         return self.manual_usb_id is None or self.manual_usb_id == (
@@ -121,7 +123,8 @@ class DeviceDefinition:
         )
 
     def __post_init__(self) -> None:
-        if len({p.id for p in self.metric_profiles}) != len(self.metric_profiles):
+        profiles = self.metric_profiles + self.watch_only_profiles
+        if len({p.id for p in profiles}) != len(profiles):
             raise ValueError("Duplicate metric profile ID")
         if self.acquisition_channel_selection not in {"single", "multiple"}:
             raise ValueError("Invalid acquisition channel selection")

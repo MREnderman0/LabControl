@@ -121,7 +121,8 @@ def signal_catalog(record, snapshot):
             unit = snapshot.details.get("reading_unit", unit)
         spec = SignalSpec(s, None, "", "温度" if quantity == "temperature" else s.label, unit, quantity)
         specs[spec.key] = spec
-    for profile in definition.metric_profiles if definition else ():
+    profiles = definition.metric_profiles + definition.watch_only_profiles if definition else ()
+    for profile in profiles:
         source = next((sources[k] for k in profile.watch_sources if k in sources), None)
         if source:
             for metric in profile.metrics:

@@ -374,8 +374,12 @@ class WatchRuntime(QObject):
                 return
             if request.kind != "waveform":
                 raise DeviceError("此监视量随仪器采集刷新")
-            job = SingleCapture(request)
-            future = sessions.submit_single(dev, job)
+            if self.catalogs[dev][0].details.get("single_acquisition"):
+                future = sessions.submit_single(dev, SingleCapture(request))
+            else:
+                # Read one complete frame from the current input routing.
+                request = replace(request, allow_setup=False)
+                future = sessions.submit(dev, "acquire", request)
 
         def done(batch):
             actual = batch.configuration.get("_session_configuration_version", version)

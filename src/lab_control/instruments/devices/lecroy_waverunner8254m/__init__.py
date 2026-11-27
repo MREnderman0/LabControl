@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from lab_control.domain.processing import ProcessingProfile
+from lab_control.domain.voltage_waveform_metrics import WAVEFORM_MEAN_VPP_WATCH_PROFILE
 from lab_control.instruments.devices.definition import DeviceDefinition, DeviceDocumentation
 
 from .adapter import WaveRunner8254MAdapter
@@ -31,5 +32,6 @@ DEFINITION = DeviceDefinition(
     acquisition_initiate_editable=False,
     offline_processing=ProcessingProfile("frames", separate_channel_pngs=True),
     multi_channel_sources=("waveform",),
+    watch_only_profiles=(WAVEFORM_MEAN_VPP_WATCH_PROFILE,),
     readonly_check=_readonly_check,
 )

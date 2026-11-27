@@ -130,6 +130,77 @@ def test_ongoing_scope_and_recording_take_priority(workspace, qtbot, monkeypatch
         rt.monitoring.stop(scope).result(8)
 
 
+def pick_waveform_levels(workspace, qtbot, adapter):
+    from lab_control.ui.pages.watch_picker import WatchPicker
+
+    win, rt, page, _, _ = workspace
+    hub = page.hub
+    dev = rt.add(ConnectionConfig("mock://waveform-levels", adapter, "mock", expected_serial="88"))
+    rt.connect(dev).result(5)
+    win.controller.refresh_snapshot()
+    picker = WatchPicker(hub, page)
+    qtbot.addWidget(picker)
+    signals = {}
+    for leaf, record, ch, spec, _ in picker.entries:
+        if record["id"] == dev:
+            signals[ch, spec.metric] = (leaf.text(0), leaf.text(1), spec.source.key)
+            if ch in (2, 4):
+                leaf.setCheckState(0, Qt.CheckState.Checked)
+    assert signals == {
+        (ch, metric): (label, "V", "waveform")
+        for ch in range(1, 5)
+        for metric, label in (("mean", "平均值"), ("peak_to_peak", "峰峰值"))
+    }
+    picker.accept()
+    hub.save([Preset("波形读数", tuple(picker.result_rows))])
+    rows = {(row.channel, row.metric): row for row in picker.result_rows}
+    assert set(rows) == {(ch, metric) for ch in (2, 4) for metric in ("mean", "peak_to_peak")}
+    return dev, rows
+
+
+def test_8254m_watch_waveform_levels_on_two_channels(workspace, qtbot):
+    import numpy as np
+
+    _, rt, page, _, _ = workspace
+    dev, rows = pick_waveform_levels(workspace, qtbot, "lecroy.8254m")
+    rt.monitoring.start(dev, (AcquisitionRequest("waveform", (2, 4), points=256),), interval=0.5)
+    qtbot.waitUntil(lambda: all(row.id in page.hub.values for row in rows.values()), timeout=8000)
+    for m in rt.monitoring.latest(dev, "waveform").batch.measurements:
+        for metric, value in (("mean", np.mean(m.values)), ("peak_to_peak", np.ptp(m.values))):
+            assert page.hub.values[rows[m.channel, metric].id][1].value == pytest.approx(value)
+
+
+def test_moku_watch_waveform_levels_follow_physical_input(workspace, qtbot):
+    from lab_control.domain.instruments import DeviceCommand
+    from lab_control.instruments.devices.liquid_moku_pro.adapter import Adapter
+    from lab_control.instruments.devices.liquid_moku_pro.tests.test_protocol import Wire
+
+    win, rt, page, _, _ = workspace
+    hub = page.hub
+    wire = Wire()
+    # The scope returns logical trace 2 for physical input 4. The spectrum uses that same input.
+    wire.routes.update(Slot1InA="Input4", Slot3InA="Input4")
+    rt.sessions.factory = lambda config: Adapter(config, wire)
+    dev, rows = pick_waveform_levels(workspace, qtbot, "liquid.moku_pro")
+    rt.monitoring.apply(dev, DeviceCommand("attach_workspace", confirmed=True)).result(3)
+    rt.monitoring.start_role(dev, AcquisitionRequest("spectrum", (4,)))
+    qtbot.waitUntil(lambda: rt.monitoring.latest(dev, "spectrum") is not None)
+    hub.tick()
+    assert not hub.metric_jobs and all(row.id not in hub.values for row in rows.values())
+    rt.monitoring.start_role(dev, AcquisitionRequest("waveform", (4,)))
+    mean, vpp = rows[4, "mean"].id, rows[4, "peak_to_peak"].id
+    qtbot.waitUntil(lambda: mean in hub.values and vpp in hub.values, timeout=8000)
+    assert hub.values[mean][1].value == pytest.approx(0.05 / 3)
+    assert hub.values[vpp][1].value == pytest.approx(0.05)
+    assert all(rows[2, metric].id not in hub.values for metric in ("mean", "peak_to_peak"))
+    rt.monitoring.stop(dev).result(5)
+    win.controller.poll()
+    wire.frame = {"time": [0, 1, 2], "ch2": [-1, 1, 3]}
+    hub.take_once(rows[4, "mean"])
+    qtbot.waitUntil(lambda: hub.values[mean][1].value == 1 and hub.values[vpp][1].value == 4)
+    assert all("set_connections" not in path for _, path, _ in wire.calls)
+
+
 def test_slot_replacement_keeps_row_and_revalidates_unit(workspace, qtbot, monkeypatch):
     win, rt, page, meter, scope = workspace
     hub = page.hub
