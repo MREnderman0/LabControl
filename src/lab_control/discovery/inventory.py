@@ -9,9 +9,12 @@ from uuid import uuid4
 from lab_control.discovery.addresses import (
     can_recheck_network_conflict,
     follow_verified_address,
+    fresh_network_addresses,
     identity_conflict_message,
+    matches_lease_observation,
     network_host,
     remember_identity,
+    retire_previous_hosts,
 )
 from lab_control.discovery.presence import local_enumeration, update_record_presence
 from lab_control.discovery.types import DiscoveryCandidate
@@ -359,7 +362,13 @@ class Inventory:
                 and existing.get("identityKey")
                 and existing["identityKey"] != identity.key
                 and network_host(resource)
-                and candidate.safe_scpi
+                and (
+                    candidate.safe_scpi
+                    or (
+                        candidate.source == "dhcp_leases"
+                        and candidate.descriptor.get("expectedIdentityKey") == identity.key
+                    )
+                )
                 and reason == "identified"
             ):
                 # DHCP reuse does not transfer ownership, limits or historical data.
@@ -517,6 +526,7 @@ class Inventory:
                 identity is not None
                 and not conflict
                 and scan_id != "connected"
+                and reason not in {"cached_active_session", "announced_alias"}
                 and candidate.config.transport == "visa"
                 and record.get("config", {}).get("transport") != "visa"
                 and not record.get("primaryResourceExplicit")
@@ -537,20 +547,28 @@ class Inventory:
                 if not identity.firmware and record.get("identity"):
                     identity = identity.with_firmware_history(DeviceIdentity(**record["identity"]))
                 record["identity"], record["identityKey"] = jsonable(identity), identity.key
-                if identity.key and reason != "cached_active_session":
+                if identity.key and reason not in {"cached_active_session", "announced_alias"}:
                     remember_identity(record, resource, identity, scan_id)
                 if reason == "identified":
                     follow_verified_address(record, resource, identity, candidate.config)
                     if (
-                        candidate.source == "dhcp_leases"
+                        candidate.source in {"dhcp_leases", "lease_hint", "lan"}
                         and candidate.descriptor.get("expectedIdentityKey") == identity.key
                         and candidate.descriptor.get("dhcpMac")
+                        and record.get("dhcpBinding", {}).get("mac", candidate.descriptor["dhcpMac"])
+                        == candidate.descriptor["dhcpMac"]
                     ):
+                        if (
+                            candidate.source == "dhcp_leases"
+                            and not record.get("identityConflict")
+                            and not record.get("primaryResourceExplicit")
+                        ):
+                            retire_previous_hosts(record, resource, scan_id)
                         record["dhcpBinding"] = {
                             "mac": candidate.descriptor["dhcpMac"],
                             "identityKey": identity.key,
                         }
-                if reason != "cached_active_session":
+                if reason not in {"cached_active_session", "announced_alias"}:
                     record["lastProbeAt"] = now
             if adapter:
                 record["adapterId"] = adapter
@@ -573,8 +591,8 @@ class Inventory:
                     else "enumerated",
                 }
             )
-            if conflict:
-                record["identityConflict"] = jsonable(identity)
+            if conflict and identity is not None:
+                record["identityConflict"] = {**jsonable(identity), "resource": resource}
             _promote_display_name(record)
             update_record_presence(record)
             self.records[record["id"]] = record
@@ -751,10 +769,24 @@ class Inventory:
     ) -> None:
         from lab_control.discovery.lan import conflict_peer_macs
 
-        for snapshot in self.all():
-            if not can_recheck_network_conflict(snapshot):
-                continue
+        snapshots = self.all()
+        conflicts = [row for row in snapshots if can_recheck_network_conflict(row)]
+        if not conflicts:
+            return
+        # Only live reads, paired with the asset's bound MAC, can prove ownership of a reused IP.
+        observed: dict[str, set[tuple[str, str]]] = {}
+        for asset in snapshots:
+            binding = asset.get("dhcpBinding", {})
+            key = asset.get("identityKey")
+            if key and binding.get("identityKey") == key and binding.get("mac"):
+                for address in fresh_network_addresses(asset, scan_id):
+                    observed.setdefault(network_host(address), set()).add((key, binding["mac"]))
+        for snapshot in conflicts:
             key = snapshot["identityKey"]
+            if key not in mismatches and not any(
+                e.get("scanRunId") == scan_id for e in snapshot["candidates"].values()
+            ):
+                continue
             peers = {
                 network_host(address)
                 for address, entry in snapshot["candidates"].items()
@@ -762,15 +794,7 @@ class Inventory:
                 and not entry.get("retired")
                 and network_host(address)
             }
-            live = [
-                address
-                for address, entry in snapshot["candidates"].items()
-                if network_host(address) in peers
-                and entry.get("verifiedIdentityKey") == key
-                and entry.get("verifiedScanRunId") == scan_id
-                and entry.get("probeReason") == "identified"
-                and not entry.get("retired")
-            ]
+            live = fresh_network_addresses(snapshot, scan_id)
             hosts = {network_host(address) for address in live}
             macs = {}
             if len(hosts) > 1:
@@ -780,11 +804,27 @@ class Inventory:
             else:
                 host = next(iter(hosts))
                 macs = conflict_peer_macs(peers)
-                other = sorted(peer for peer in peers - {host} if macs.get(peer))
+                other = []
+                bound_mac = snapshot["dhcpBinding"]["mac"]
+                for peer in sorted(peers - {host}):
+                    mac = macs.get(peer)
+                    if not mac:
+                        continue
+                    proofs = observed.get(peer, set())
+                    if len(proofs) == 1:
+                        owner_key, owner_mac = next(iter(proofs))
+                        if owner_key != key and owner_mac == mac and mac != bound_mac:
+                            continue
+                    other.append(peer)
                 if any(macs.get(peer) is None for peer in peers) or not macs.get(host):
                     detail = "同一物理网段的网卡地址证据不足，未确认先前地址已离线"
                 elif macs[host] != snapshot["dhcpBinding"]["mac"]:
                     detail = f"{host} 返回的网卡地址 {macs[host]} 与资产绑定 {snapshot['dhcpBinding']['mac']} 不一致"
+                elif not snapshot["identityConflict"].get("reason") and not any(
+                    matches_lease_observation(snapshot["candidates"][address], scan_id, key, bound_mac)
+                    for address in live
+                ):
+                    detail = "等待当前 DHCP 租约与仪器身份同时核实"
                 elif other:
                     detail = f"{host} 返回了匹配身份，历史地址 {'、'.join(other)} 仍在线"
                 else:
@@ -805,6 +845,7 @@ class Inventory:
                 address = previous if previous in live else sorted(live)[0]
                 config = ConnectionConfig(**record["candidates"][address]["config"])
                 del record["identityConflict"]
+                retire_previous_hosts(record, address, scan_id)
                 follow_verified_address(record, address, DeviceIdentity(**record["identity"]), config)
                 record.update(
                     discoveryState="identified", probeReason="identified", lastError="", probeErrorCode=""
@@ -819,6 +860,31 @@ class Inventory:
                     previous_resource=previous,
                     peer_macs=macs,
                 )
+
+    def withdraw_observations(self, removed, seen) -> None:
+        """Withdraw only vanished physical observations, retaining history and live sessions."""
+        with self.lock:
+            for record in self.records.values():
+                dirty = False
+                for address, entry in record["candidates"].items():
+                    if entry.get("retired"):
+                        continue
+                    keys = {
+                        (
+                            source,
+                            canonical_resource(
+                                observation.get("rawDescriptor", {}).get("originalLanResource") or address
+                            ),
+                        )
+                        for source, observation in entry.get("sources", {}).items()
+                        if source == "lease_hint" or local_enumeration(source, address)
+                    }
+                    if keys & removed and not keys & seen:
+                        entry.update(presenceState="not_seen", probeReason="not_seen")
+                        dirty = True
+                if dirty:
+                    update_record_presence(record)
+                    self.repository.save(record)
 
     def stale(self, scan_id: str, successful_sources: set[str], *, cancelled: bool = False) -> None:
         with self.lock:

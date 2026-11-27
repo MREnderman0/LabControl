@@ -98,7 +98,7 @@ class SerialAutoConnect:
             for k, p in by_port.items()
         }
         if self.signature != signature:
-            # Explicit disconnect remains respected until that physical port changes.
+            # Recheck the identity when the physical port changes.
             self.completed.intersection_update(
                 k for k in signature if self.signature and self.signature.get(k) == signature[k]
             )
@@ -139,7 +139,6 @@ class SerialAutoConnect:
         routes = serial_routes(ports, records)
         now = time.monotonic()
         pending = []
-        suppressed = app.connections.suppressed_devices()
         for key in routes:
             owner = app.leases.owner(by_port[key].config.resource)
             if owner:
@@ -149,15 +148,16 @@ class SerialAutoConnect:
                     self.completed.add(key)
             elif key not in self.completed and self.retry_at.get(key, 0) <= now:
                 cfg = routes[key].config
-                if any(
-                    r["id"] in suppressed
-                    and r.get("adapterId") == cfg.adapter
-                    and (
-                        (cfg.expected_serial and r["config"].get("expected_serial") == cfg.expected_serial)
-                        or (cfg.usb_instance_id and r["config"].get("usb_instance_id") == cfg.usb_instance_id)
-                        or canonical_resource(r["config"]["resource"]) == key
+                if (
+                    app.device_changes.enabled
+                    and policy(cfg.adapter) == "usb_bridge"
+                    and not any(
+                        r.get("adapterId") == cfg.adapter
+                        and (r.get("serialBindingExplicit") or r.get("identity"))
+                        and cfg.usb_instance_id
+                        and r["config"].get("usb_instance_id") == cfg.usb_instance_id
+                        for r in records
                     )
-                    for r in records
                 ):
                     continue
                 pending.append(by_port[key])
@@ -182,11 +182,11 @@ class SerialAutoConnect:
                 continue
             if canonical_resource(row["config"]["resource"]) != key or self.stop.is_set():
                 continue
-            if app.connections.owns(row["id"]):
-                continue
             if not app.leases.owner(item["resource"]):
                 try:
-                    app.connections.request(row["id"], configure=False, hotplug=True).result()
+                    recovery = app.connections.connect_on_discovery(row["id"], row["adapterId"])
+                    if recovery is not None:
+                        recovery.result()
                 except Exception as exc:
                     app.sessions.audit.try_record(
                         "serial_autoconnect_failed",

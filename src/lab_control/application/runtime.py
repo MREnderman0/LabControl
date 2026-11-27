@@ -133,7 +133,7 @@ class ApplicationRuntime:
                     providers += (
                         LanDiscoveryProvider(self.visa, self.lan_settings),
                         RememberedLanDiscoveryProvider(self.inventory, self.lan_settings),
-                        DhcpLeaseDiscoveryProvider(self.inventory, self.lan_settings),
+                        DhcpLeaseDiscoveryProvider(self.inventory, self.lan_settings, include_hints=True),
                     )
                 # Explicitly saved endpoints are safe to query even when
                 # service advertisement discovery is disabled. The provider
@@ -144,6 +144,14 @@ class ApplicationRuntime:
                     definition = DEVICE_DEFINITIONS.get(config.adapter)
                     if definition and config.transport in definition.discovery_transports:
                         sdk_groups.setdefault((config.transport, config.sdk_path), []).append(config)
+                for definition in DEVICE_DEFINITIONS.values():
+                    for transport in definition.discovery_transports:
+                        if definition.discovery_enumerator and not any(
+                            group[0] == transport for group in sdk_groups
+                        ):
+                            sdk_groups[(transport, "")] = [
+                                ConnectionConfig("ENUMERATION", definition.adapter_id, transport)
+                            ]
                 providers += tuple(VendorSdkDiscoveryProvider(tuple(group)) for group in sdk_groups.values())
             self.discovery = DiscoveryService(
                 providers,
@@ -170,7 +178,14 @@ class ApplicationRuntime:
 
             self.connections = ConnectionRetry(self)
             self.monitoring.settings_sync.on_disconnect = self.connections.settings_failed
+            from lab_control.discovery.changes import DiscoveryChanges
+
+            self.device_changes = DiscoveryChanges(self)
             if hardware:
+                from lab_control.discovery.lxi import enrich_candidates
+
+                self.discovery.on_enumeration = self.device_changes.observed
+                self.discovery.enrich_candidates = enrich_candidates
                 from lab_control.application.network_recovery import NetworkRecovery
 
                 self.network_recovery = NetworkRecovery(self)
@@ -279,7 +294,7 @@ class ApplicationRuntime:
         self,
         device_id: str,
         *,
-        configure_acquisition: bool = True,
+        configure_acquisition: bool | None = True,
         admission: Callable[[DeviceIdentity | None], None] | None = None,
     ):
         from lab_control.domain.instruments import DeviceError
@@ -372,7 +387,9 @@ class ApplicationRuntime:
     def connect_all_discovered(self) -> Future[dict[str, Any]]:
         return self.bulk_connection.start()
 
-    def scan_static_addresses(self, ids: tuple[str, ...] | list[str] | set[str]) -> Future[dict[str, Any]]:
+    def scan_static_addresses(
+        self, ids: tuple[str, ...] | list[str] | set[str], *, retry: bool = False
+    ) -> Future[dict[str, Any]]:
         """Run one scan for selected saved addresses without changing other presence state."""
         from lab_control.domain.instruments import DeviceError
 
@@ -382,7 +399,9 @@ class ApplicationRuntime:
         if not selected:
             raise ValidationError("至少选择一个静态地址")
         provider = self.static_address_provider.for_ids(selected)
-        return self.discovery.scan((provider,), preserve_presence=True, scope="address_list")
+        return self.discovery.scan(
+            (provider,), preserve_presence=True, scope="address_retry" if retry else "address_list"
+        )
 
     def cancel_connect_all(self) -> None:
         self.bulk_connection.cancel()
@@ -394,7 +413,7 @@ class ApplicationRuntime:
         self,
         device_id: str,
         *,
-        configure_acquisition: bool = True,
+        configure_acquisition: bool | None = True,
         admission: Callable[[DeviceIdentity | None], None] | None = None,
         manual: bool = False,
     ) -> Future[DeviceIdentity]:
@@ -636,6 +655,7 @@ class ApplicationRuntime:
                 errors.append(exc)
         for resource in (
             getattr(self, "_processing", None),
+            getattr(self, "device_changes", None),
             getattr(self, "serial_autoconnect", None),
             self.bulk_connection,
             self.connections,

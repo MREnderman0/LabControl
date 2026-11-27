@@ -29,7 +29,7 @@ LABELS = {
 @dataclass
 class Intent:
     device_id: str
-    configure: bool = True
+    configure: bool | None = True
     batch: threading.Event | None = None
     phase: str = "opening"
     attempts: int = 0
@@ -51,8 +51,12 @@ class Intent:
 
 
 class ConnectionRetry:
+    discovery_exceptions_key = "discovery/connection-exceptions/v1"
+
     def __init__(self, runtime: ApplicationRuntime):
         self.runtime = runtime
+        saved = runtime.repository.load_workspace(self.discovery_exceptions_key, {})
+        self.discovery_exceptions = saved if isinstance(saved, dict) else {}
         self.condition = threading.Condition()
         self.intents: dict[str, Intent] = {}
         self.disconnected: set[str] = set()
@@ -143,6 +147,19 @@ class ConnectionRetry:
             item.future = self.workers.submit(self._disconnect, item)
             return item.future
 
+    def connect_on_discovery(self, key, adapter):
+        """Only an opted-in asset or a previously connected, detached serial device may open here."""
+        with self.condition:
+            if self.closed or self.runtime.discovery.closing or key in self.disconnected:
+                return None
+            item = self.intents.get(key)
+            if item is None:
+                if not adapter or self.discovery_exceptions.get(key) != adapter:
+                    return None
+            elif not (item.serial_detached and item.phase == "waiting" and not item.disconnecting):
+                return None
+            return self.request(key, configure=None, hotplug=item is not None)
+
     def request(self, key, *, batch=None, configure=True, reconnect=False, hotplug=False):
         with self.condition:
             if self.closed or self.runtime.discovery.closing:
@@ -152,6 +169,8 @@ class ConnectionRetry:
             if batch and batch.is_set():
                 raise DeviceError("已停止批量连接", "recovery_cancelled")
             item = self.intents.get(key)
+            if hotplug and item is None:
+                raise DeviceError("设备已发现，请手动连接", "manual_connection_required")
             if item and item.disconnecting:
                 raise DeviceError("连接正在释放", "task_busy")
             self.disconnected.discard(key)
@@ -362,7 +381,53 @@ class ConnectionRetry:
     def discovered(self, report):
         if report["state"] != "complete":
             return
+        desktop = self.runtime.device_changes
+        auto = desktop.enabled and not desktop.stop.is_set()
+        if auto:
+            desktop.resolved(report)
+        explicit_retry = report.get("scope") == "address_retry"
+        check_open = auto and (explicit_retry or bool(self.discovery_exceptions))
+        records = {r["id"]: r for r in self.runtime.inventory.all()} if check_open else {}
         for result in report["items"]:
+            if check_open:
+                key = result.get("device_id")
+                if not key:
+                    continue
+                row = records.get(key, {})
+                known = row.get("identityKey") and (
+                    result["reason"] == "identified"
+                    or (explicit_retry and result["reason"] == "cached_session_unconfirmed")
+                )
+                descriptor = row.get("candidates", {}).get(result["resource"], {})
+                sdk = (
+                    any(name.startswith("sdk:") for name in descriptor.get("sources", {}))
+                    and result["reason"] == "sdk_identity_requires_explicit_connection"
+                    and (row.get("config", {}).get("expected_serial") or row.get("identityKey"))
+                )
+                if (
+                    (known or sdk)
+                    and row.get("adapterId")
+                    and not row.get("identityConflict")
+                    and not requires_manual_connection(row["adapterId"])
+                    and (
+                        (
+                            explicit_retry
+                            and self._state(key).get("connectionState")
+                            not in {"connected", "busy", "connecting"}
+                        )
+                        or (self.discovery_exceptions.get(key) == row["adapterId"] and not self._state(key))
+                    )
+                ):
+                    try:
+                        if explicit_retry:
+                            self.request(key, configure=None)
+                        else:
+                            self.connect_on_discovery(key, row["adapterId"])
+                    except DeviceError as exc:
+                        if exc.code not in {"recovery_cancelled", "runtime_closing"}:
+                            self.runtime.repository.audit(
+                                "auto_connect_deferred", device_id=key, error=str(exc)
+                            )
             resource = result["resource"]
             if result["reason"] != "identified" or not network_host(resource):
                 continue

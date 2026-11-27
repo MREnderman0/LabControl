@@ -120,6 +120,9 @@ def test_hotplug_follows_verified_serial_through_legacy_duplicates_and_reused_po
         assert {r["id"] for r in app.inventory.all()} == {owner}
         watcher = app.serial_autoconnect
         watcher.poll(serial.enumerate())
+        assert app.inventory.records[owner]["identity"]["serial"] == "TEST001"
+        assert not opened and not app.connections.snapshots()
+        app.connections.request(owner, configure=None).result(5)
         assert opened == [("COM7", "TEST001")]
         watcher.poll(())
         assert owner not in app.sessions.sessions

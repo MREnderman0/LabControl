@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from lab_control.application.watchlists import WatchRow
 from lab_control.domain.workspace import channel_label
-from lab_control.ui.kit import icons
+from lab_control.ui.kit import Pill, icons, set_property
 from lab_control.ui.pages.watch_picker import WatchPicker
 from lab_control.ui.styles import tokens as tk
 
@@ -140,9 +140,11 @@ class WatchTableModel(QAbstractTableModel):
             return channel_label(names, row.channel)
         if col == 2:
             if row.parameters and role == Qt.ItemDataRole.ToolTipRole:
-                return f"{row.label}\n{row.parameters}"
-            return row.label
+                return f"{row.label}\n{row.parameters}\n双击查看记录曲线"
+            return "双击查看记录曲线" if role == Qt.ItemDataRole.ToolTipRole else row.label
         if col == 3:
+            if role == Qt.ItemDataRole.ToolTipRole:
+                return "双击查看记录曲线"
             return f"{reading.value:.9g}" if reading else "—"
         if col == 4:
             return reading.unit if reading else row.unit
@@ -241,6 +243,11 @@ class PresetTable(QWidget):
             self.add.setIcon(icons.icon("plus", tk.ACCENT_INK, disabled=tk.TEXT_3))
             for button in (self.add, self.remove, self.once):
                 button.setProperty("buttonSize", "compact")
+        self.record = QPushButton("开始记录")
+        self.record.setObjectName("recordButton")
+        self.record.setProperty("buttonSize", "compact")
+        self.record.clicked.connect(self.toggle_recording)
+        self.record_status = Pill(dot=True)
         for button in (self.add, self.remove, self.once):
             bar.addWidget(button)
         bar.addStretch()
@@ -255,6 +262,12 @@ class PresetTable(QWidget):
             self.window_button.clicked.connect(self.open_window)
             bar.addWidget(self.window_button)
         layout.addLayout(bar)
+        record_bar = QHBoxLayout()
+        record_bar.setSpacing(8)
+        record_bar.addWidget(self.record)
+        record_bar.addWidget(self.record_status)
+        record_bar.addStretch()
+        layout.addLayout(record_bar)
         self.table = QTableView()
         self.table.setObjectName("watchReadings")
         self.model = WatchTableModel(hub, self.table)
@@ -294,6 +307,8 @@ class PresetTable(QWidget):
         self.once.clicked.connect(self.capture)
         self.table.selectionModel().selectionChanged.connect(self.buttons)
         self.table.clicked.connect(self.edit_limit)
+        self.table.doubleClicked.connect(self.show_trend)
+        hub.changed.connect(self.buttons)
         hub.updated.connect(self.buttons)
         hub.updated.connect(self.update_summary)
         self.model.modelReset.connect(self.update_summary)
@@ -338,7 +353,43 @@ class PresetTable(QWidget):
         ):
             self.table.edit(index)
 
+    def show_trend(self, index):
+        if index.isValid() and index.column() in (2, 3):
+            self.hub.open_trend(self.model.preset, self.model.rows[index.row()])
+
+    def toggle_recording(self):
+        key = self.model.preset
+        run = self.hub.recordings.get(key)
+        try:
+            if run and run.accepting:
+                self.hub.stop_recording(key)
+            else:
+                self.hub.start_recording(key)
+        except Exception as exc:
+            self.hub.ctl.message.emit(f"记录操作失败 · {exc}")
+        self.buttons()
+
     def buttons(self, *_args):
+        run = self.hub.recordings.get(self.model.preset)
+        saving = run and not run.accepting and not run.done.is_set()
+        self.record.setText("停止记录" if run and run.accepting else "正在保存…" if saving else "开始记录")
+        self.record.setEnabled(bool(self.model.rows or (run and run.accepting)) and not saving)
+        phase = "recording" if run and run.accepting else "draining" if saving else "idle"
+        set_property(self.record, "recordingPhase", phase)
+        self.record_status.setVisible(bool(run))
+        if run:
+            state = (
+                "写入失败" if run.error else "记录中" if run.accepting else "保存中" if saving else "已保存"
+            )
+            self.record_status.set_kind("err" if run.error else "warn" if saving else "ok")
+            self.record_status.set_text(f"{state} · {run.count} 点")
+            self.record_status.setToolTip(
+                "\n".join(filter(None, (run.error, run.last_stamp, str(run.path.parent))))
+            )
+        else:
+            self.record_status.set_text("")
+            self.record_status.setToolTip("")
+
         rows = self.selection()
         self.remove.setEnabled(bool(rows))
         special = len(rows) == 1 and rows[0].source in ("waveform", "phase_noise_capture")

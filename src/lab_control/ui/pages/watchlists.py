@@ -169,6 +169,8 @@ class WatchlistsPage(QWidget):
         duplicate = menu.addAction("复制预设")
         menu.addSeparator()
         delete = menu.addAction("删除预设")
+        run = self.hub.recordings.get(key)
+        delete.setEnabled(not run or run.done.is_set())
         action = menu.exec(self.list.viewport().mapToGlobal(pos))
         if action is opened:
             self.open_window(key)

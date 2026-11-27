@@ -4,7 +4,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -95,7 +95,7 @@ class ConnectionDialogs:
         title = QLabel("添加设备")
         title.setObjectName("panelTitle")
         root.addWidget(title)
-        description = QLabel("只需要选择型号并填写 IP 或 COM 口。端口、超时和备注已放入高级选项。")
+        description = QLabel("输入 IPv4、IP:端口 或 COM 口。确认连接预览后即可保存并识别。")
         description.setObjectName("pageDescription")
         description.setWordWrap(True)
         root.addWidget(description)
@@ -113,23 +113,19 @@ class ConnectionDialogs:
         for adapter_id, definition in sorted(DEVICE_DEFINITIONS.items()):
             if adapter_id not in PROFILES and definition.socket_port is not None:
                 model.addItem(f"{definition.documentation.title} · {adapter_id}", adapter_id)
-        default_model = model.findData("ceyear.6362d")
-        if default_model >= 0:
-            model.setCurrentIndex(default_model)
         endpoint = QLineEdit()
         endpoint.setObjectName("staticAddressInput")
         endpoint.setPlaceholderText("例如 192.168.5.241 或 COM3")
-        form.addRow("设备型号", model)
-        form.addRow("IP / COM 口", endpoint)
+        from lab_control.ui.workspace.endpoint_fields import EndpointFields
+
+        fields = EndpointFields(dialog, form, window, model, endpoint)
+        port = fields.port
         root.addLayout(form)
 
         advanced_toggle = QCheckBox("显示高级连接选项")
         root.addWidget(advanced_toggle)
         advanced = QWidget()
         advanced_form = QFormLayout(advanced)
-        port = QSpinBox()
-        port.setRange(1, 65535)
-        port.setValue(10001)
         baud = QSpinBox()
         baud.setRange(300, 3_000_000)
         baud.setValue(9600)
@@ -141,7 +137,6 @@ class ConnectionDialogs:
         source_address = QLineEdit()
         source_address.setObjectName("staticSourceAddressInput")
         source_address.setPlaceholderText("可选，填写实验网卡 IPv4；6362D 留空自动选择物理网卡")
-        advanced_form.addRow("Socket 端口（IP）", port)
         advanced_form.addRow("串口波特率（COM）", baud)
         advanced_form.addRow("通信超时（秒）", timeout)
         advanced_form.addRow("备注（可选）", label)
@@ -149,14 +144,6 @@ class ConnectionDialogs:
         advanced.setVisible(False)
         advanced_toggle.toggled.connect(advanced.setVisible)
         root.addWidget(advanced)
-
-        def update_model_defaults() -> None:
-            definition = DEVICE_DEFINITIONS.get(str(model.currentData() or ""))
-            if definition and definition.socket_port:
-                port.setValue(definition.socket_port)
-
-        model.currentIndexChanged.connect(update_model_defaults)
-        update_model_defaults()
 
         address_count = QLabel()
         address_count.setObjectName("overviewNote")
@@ -169,10 +156,13 @@ class ConnectionDialogs:
         actions = QHBoxLayout()
         save_scan = QPushButton("保存并扫描")
         save_scan.setObjectName("primaryButton")
+        editing = ""
+        edit = QPushButton("修改选中")
         remove = QPushButton("删除选中")
-        scan_selected = QPushButton("扫描选中")
+        scan_selected = QPushButton("重试连接")
         scan_all = QPushButton("扫描全部")
         actions.addWidget(save_scan)
+        actions.addWidget(edit)
         actions.addWidget(remove)
         actions.addWidget(scan_selected)
         actions.addWidget(scan_all)
@@ -183,7 +173,19 @@ class ConnectionDialogs:
         status.setWordWrap(True)
         root.addWidget(status)
 
+        def update_results():
+            report = status.property("scanReport")
+            if report:
+                from lab_control.ui.workspace.endpoint_fields import scan_result_text
+
+                status.setText(scan_result_text(window.runtime, report))
+
+        tick = QTimer(dialog)
+        tick.timeout.connect(update_results)
+        tick.start(500)
+
         def refresh_addresses() -> None:
+            update_results()
             entries = window.runtime.static_addresses.entries()
             selected = {str(item.data(Qt.ItemDataRole.UserRole)) for item in address_list.selectedItems()}
             address_list.blockSignals(True)
@@ -193,7 +195,7 @@ class ConnectionDialogs:
                 model_name = entry.adapter or "自动识别"
                 suffix = f" · {entry.label}" if entry.label else ""
                 source_suffix = f" · 源 {entry.source_address}" if entry.source_address else ""
-                item = QListWidgetItem(f"{kind} {entry.address} · {model_name}{suffix}{source_suffix}")
+                item = QListWidgetItem(f"{kind} {entry.resource} · {model_name}{suffix}{source_suffix}")
                 item.setData(Qt.ItemDataRole.UserRole, entry.id)
                 address_list.addItem(item)
                 item.setSelected(entry.id in selected)
@@ -205,41 +207,83 @@ class ConnectionDialogs:
             has_selection = bool(address_list.selectedItems())
             has_items = address_list.count() > 0
             busy = window.runtime.discovery.is_scanning
+            edit.setEnabled(len(address_list.selectedItems()) == 1)
             remove.setEnabled(has_selection)
             scan_selected.setEnabled(has_selection and not busy)
             scan_all.setEnabled(has_items and not busy)
-            save_scan.setEnabled(not busy)
+            save_scan.setEnabled(not busy and not fields.waiting())
+
+        fields.changed = update_address_actions
 
         window._refresh_static_address_dialog = refresh_addresses
 
         def selected_ids() -> tuple[str, ...]:
             return tuple(str(item.data(Qt.ItemDataRole.UserRole)) for item in address_list.selectedItems())
 
-        def scan_addresses(ids: tuple[str, ...]) -> None:
+        def scan_addresses(ids: tuple[str, ...], *, retry=False) -> None:
+            status.setProperty("scanReport", None)
             if not ids:
                 status.setText("请先选择至少一个设备地址。")
                 return
             try:
-                window.bridge.watch(window.runtime.scan_static_addresses(ids), "address_scan")
+                window.bridge.watch(window.runtime.scan_static_addresses(ids, retry=retry), "address_scan")
                 status.setText("正在扫描所选设备地址…")
                 refresh_addresses()
             except (DeviceError, ValueError) as exc:
                 status.setText(str(exc))
 
         def save_endpoint() -> None:
-            value = endpoint.text().strip()
-            kind = "serial" if re.fullmatch(r"(?:COM|ASRL)\s*\d+(?:::INSTR)?", value, re.I) else "ip"
+            nonlocal editing
+            status.setProperty("scanReport", None)
             try:
+                kind, value, suffix = fields.input()
+                chosen = str(model.currentData() or "")
+                answer = fields.reported.get(value)
+                if answer and chosen and answer.adapter != chosen:
+                    raise ValueError(
+                        f"型号不匹配：仪器回报 {answer.identity.model} · {answer.identity.serial}"
+                    )
+                from lab_control.application.static_addresses import StaticAddress
+
+                resource = StaticAddress("", value, suffix or port.value(), chosen, kind=kind).resource
+                existing = next(
+                    (
+                        item
+                        for item in window.runtime.static_addresses.entries()
+                        if item.id != editing
+                        and (
+                            item.resource == resource
+                            or (
+                                not editing
+                                and suffix is None
+                                and not fields.custom_port
+                                and item.address == value
+                            )
+                        )
+                    ),
+                    None,
+                )
+                if existing:
+                    for i in range(address_list.count()):
+                        item = address_list.item(i)
+                        if item.data(Qt.ItemDataRole.UserRole) == existing.id:
+                            address_list.setCurrentItem(item)
+                            address_list.scrollToItem(item)
+                            break
+                    status.setText("已定位到已有地址，可点击「重试连接」或「修改选中」更正。")
+                    return
                 entry = window.runtime.static_addresses.add(
                     value,
                     kind=kind,
-                    port=port.value(),
-                    adapter=str(model.currentData() or ""),
+                    port=suffix or port.value(),
+                    adapter=chosen or (answer.adapter if answer else ""),
+                    edit_id=editing,
                     timeout=timeout.value(),
                     label=label.text(),
                     baud_rate=baud.value(),
                     source_address=source_address.text(),
                 )
+                editing = ""
                 endpoint.clear()
                 label.clear()
                 source_address.clear()
@@ -251,6 +295,25 @@ class ConnectionDialogs:
             except (DeviceError, ValueError) as exc:
                 status.setText(str(exc))
 
+        def edit_selected():
+            nonlocal editing
+            entries = window.runtime.static_addresses.by_ids(selected_ids())
+            if len(entries) != 1:
+                return
+            entry = entries[0]
+            status.setProperty("scanReport", None)
+            editing = entry.id
+            fields.search.clear()
+            model.setCurrentIndex(max(0, model.findData(entry.adapter)))
+            endpoint.setText(entry.address)
+            port.setValue(entry.port)
+            baud.setValue(entry.baud_rate)
+            timeout.setValue(entry.timeout)
+            label.setText(entry.label)
+            source_address.setText(entry.source_address)
+            status.setText("正在修改选中地址，保存后将重新识别。")
+
+        edit.clicked.connect(edit_selected)
         save_scan.clicked.connect(save_endpoint)
 
         def remove_selected() -> None:
@@ -258,7 +321,7 @@ class ConnectionDialogs:
             refresh_addresses()
 
         remove.clicked.connect(remove_selected)
-        scan_selected.clicked.connect(lambda: scan_addresses(selected_ids()))
+        scan_selected.clicked.connect(lambda: scan_addresses(selected_ids(), retry=True))
         scan_all.clicked.connect(
             lambda: scan_addresses(tuple(entry.id for entry in window.runtime.static_addresses.entries()))
         )

@@ -201,8 +201,13 @@ class Keithley2701Adapter(ScpiAdapter):
             "closed_relays": "(@)",
         }
         for key, value in required.items():
-            if original[key] != value:
-                raise DeviceError(f"2701 {key}={original[key]} (requires {value})", "not_configured")
+            if original[key] == value:
+                continue
+            if key in {"system_channel", "closed_relays"}:
+                message = f"2701 的 7708 测量线路仍闭合（{QUERIES[key]} 返回 {original[key]}）。确认线路空闲并断开继电器后，可再次开始监测。"
+            else:
+                message = f"2701 的 {QUERIES[key]} 返回 {original[key]}，采集要求 {value}。核对仪器设置后可再次开始监测。"
+            raise DeviceError(message, "acquisition_setup_blocked")
         elements = original["elements"].split(",")
         if not all(e in {"READ", "UNIT", "RNUM", "TST", "CHAN", "LIM"} for e in elements):
             raise Unsupported("Unrecognized 2701 response format")

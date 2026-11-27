@@ -70,9 +70,8 @@ def default_home() -> Path:
     destination = base / "LabControl"
     if os.name != "nt" or "LOCALAPPDATA" not in os.environ:
         return destination
-    from lab_control.storage.brand_migration import migrate_default_home
-
-    for root in (destination, base / "TF-LabControl"):
+    legacy = base / "TF-LabControl"
+    for root in (destination, legacy):
         marker = root / "inventory.sqlite3"
         if marker.is_file() and _packaged_redirect(root, physical_path(marker).parent):
             from lab_control.domain.instruments import DeviceError
@@ -81,8 +80,20 @@ def default_home() -> Path:
                 "默认目录被重定向到 Windows 应用私有副本，请使用 run.bat 或核对 LAB_CONTROL_HOME。",
                 "path_redirected",
             )
-    base.mkdir(parents=True, exist_ok=True)
-    return migrate_default_home(base)[0]
+    # The desktop and maintenance scripts must use the existing installation's lock.
+    # Choosing a runtime location during startup must never move an inventory or its data.
+    if destination.is_symlink() or destination.is_junction():
+        raise ValueError(f"新数据目录已指向另一个位置，请核对：{destination}")
+    if os.path.lexists(legacy):
+        if destination.is_dir() and legacy.is_dir() and legacy.samefile(destination):
+            return destination
+        if not legacy.is_dir() or legacy.is_symlink() or legacy.is_junction():
+            raise ValueError(f"旧数据目录的位置异常，请核对：{legacy}")
+        if os.path.lexists(destination):
+            raise FileExistsError(f"两个数据目录独立存在，请核对：{legacy}、{destination}")
+        return legacy
+    destination.mkdir(parents=True, exist_ok=True)
+    return destination
 
 
 def runtime_home() -> Path:

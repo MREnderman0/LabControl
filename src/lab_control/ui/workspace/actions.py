@@ -38,6 +38,8 @@ class WorkspaceActions:
         from lab_control.ui.pages.component_preparation import show_preparation
 
         show_preparation(window.runtime, window, first_run=True)
+        if window.runtime.hardware:
+            window.runtime.device_changes.start()
         window.scan()
         if window.runtime.hardware:
             window.runtime.serial_autoconnect.start()
@@ -272,6 +274,7 @@ class WorkspaceActions:
                 )
             if label == "address_scan":
                 if window._static_address_status is not None:
+                    window._static_address_status.setProperty("scanReport", result)
                     window._static_address_status.setTextFormat(Qt.TextFormat.PlainText)
                     window._static_address_status.setText(
                         "；".join(n.text for n in notices) or window.message.text()

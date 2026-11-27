@@ -12,6 +12,42 @@ from lab_control.domain.instruments import DeviceError
 from lab_control.storage import brand_migration as migration
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows installations")
+def test_startup_keeps_legacy_inventory_data_and_hardware_lock(tmp_path, monkeypatch):
+    from lab_control.storage.runtime import default_home, hardware_lock_home, runtime_home
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("LAB_CONTROL_HOME", raising=False)
+    legacy = legacy_inventory(tmp_path)
+    original = (legacy / "inventory.sqlite3").read_bytes()
+    assert default_home() == runtime_home() == hardware_lock_home() == legacy
+    assert (legacy / "inventory.sqlite3").read_bytes() == original
+    assert not (tmp_path / "LabControl").exists()
+    assert not (tmp_path / "LabControl-backups").exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows installations")
+def test_startup_selects_existing_paths_and_keeps_override_separate_from_lock(tmp_path, monkeypatch):
+    from lab_control.storage.runtime import default_home, hardware_lock_home, runtime_home
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("LAB_CONTROL_HOME", raising=False)
+    new = tmp_path / "LabControl"
+    legacy = tmp_path / "TF-LabControl"
+    assert default_home() == new and new.is_dir() and not legacy.exists()
+    legacy.mkdir()
+    with pytest.raises(FileExistsError):
+        default_home()
+    assert legacy.is_dir() and new.is_dir()
+    external = tmp_path / "external"
+    monkeypatch.setenv("LAB_CONTROL_HOME", str(external))
+    assert runtime_home() == external
+    legacy.rmdir()
+    migration._link_directory(legacy, new)
+    assert default_home() == hardware_lock_home() == new
+    assert runtime_home() == external and legacy.is_junction()
+
+
 def test_new_workspace_never_creates_legacy_directory(tmp_path):
     new = tmp_path / "LabControl"
     for _ in range(2):

@@ -26,7 +26,7 @@ from lab_control.application.catalog import instrument_category
 from lab_control.application.controls import CATEGORY_LABELS
 from lab_control.application.settings_sync import SettingsSync
 from lab_control.discovery.addresses import identity_conflict_message
-from lab_control.discovery.presence import is_current, presence_label
+from lab_control.discovery.presence import identity_review_reason, is_current, presence_label
 from lab_control.domain.oscilloscope import engineering
 from lab_control.domain.readback import boolean_value, usable_reading
 from lab_control.instruments.registry import DEVICE_DEFINITIONS, requires_manual_connection
@@ -734,6 +734,8 @@ class WorkspaceOverview:
                 + (
                     state["connectionRetry"]["label"]
                     if state.get("connectionRetry", {}).get("label")
+                    else "待核对"
+                    if connection == "disconnected" and identity_review_reason(record)
                     else "探测失败"
                     if connection == "disconnected" and record.get("presenceState") == "unreachable"
                     else status_labels.get(connection, connection)
@@ -922,6 +924,8 @@ class WorkspaceOverview:
             connection = display_connection_state(state)
             if record["discoveryState"] == "conflict":
                 identity_state = "身份冲突"
+            elif identity_review_reason(record) and connection == "disconnected":
+                identity_state = "待核对"
             elif identity:
                 identity_state = "已识别" if is_current(record, state) else "历史身份已保留"
             else:
@@ -973,14 +977,14 @@ class WorkspaceOverview:
                 "seen": seen.toLocalTime().toString("yyyy-MM-dd HH:mm:ss")
                 if seen.isValid()
                 else record.get("lastSeenAt") or "尚无发现记录",
-                "probe": {
+                "probe": identity_review_reason(record)
+                or {
                     "identified": "身份探测成功",
                     "probe_failed": "身份探测失败",
                     "pending_probe": "等待探测",
                     "metadata_only": "仅有资源描述",
                     "cached_active_session": "复用活动会话",
                     "cached_session_unconfirmed": "会话尚未确认",
-                    "deferred_possible_alias_of_active_device": "可能为活动设备别名，延后探测",
                     "sdk_identity_requires_explicit_connection": "连接时核验身份",
                     "manual_connection_required": "需手动选择串口",
                     "not_seen": "本次未发现",

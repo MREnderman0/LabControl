@@ -68,7 +68,7 @@ class FakeVisaManager:
         pass
 
 
-def test_automatic_pump_connection_control_and_monitoring_use_bound_port_only(qtbot, tmp_path, monkeypatch):
+def test_manual_pump_connection_control_and_monitoring_use_bound_port_only(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr("lab_control.storage.runtime.hardware_lock_home", lambda: tmp_path / "locks")
     monkeypatch.setattr("lab_control.storage.repository.application_home", lambda: tmp_path / "home")
     port = DiscoveryCandidate(ConnectionConfig(PORT, transport="serial"), "serial")
@@ -93,6 +93,8 @@ def test_automatic_pump_connection_control_and_monitoring_use_bound_port_only(qt
                 w.text() in {"手动连接泵浦", "手动绑定开关板"} for w in window.findChildren(QPushButton)
             )
             runtime.serial_autoconnect.poll((port,))
+            assert not manager.opens and not runtime.connections.snapshots()
+            runtime.connections.request(device_id, configure=None).result(5)
             window.refresh()
             window.navigate("设备管理", "pump_driver", device_id)
             page = window.stack.currentWidget()
