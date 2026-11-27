@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from lab_control.application.runtime import ApplicationRuntime
 from lab_control.domain.connections import ConnectionConfig
 from lab_control.domain.instruments import DeviceError
 from lab_control.instruments.registry import build_scpi_adapter
@@ -90,6 +91,37 @@ def test_changed_card_and_unbound_channels_cannot_route(bound):
     with pytest.raises(DeviceError):
         adapter.acquire(REQUEST)
     assert meter.writes == []
+
+
+def test_occupied_relays_pause_monitoring_and_retry_uses_same_session(tmp_path, qtbot):
+    meter = Thermometer()
+    meter.close = lambda: None
+    config = ConnectionConfig("mock://pt100-relays", "keithley.2701", "mock", expected_serial="TEST")
+    with ApplicationRuntime(root=tmp_path, hardware=False) as app:
+        app.sessions.factory = lambda cfg: build_scpi_adapter(cfg, meter)
+        device = app.add(config)
+        app.repository.save_workspace(
+            f"device-control-state/{device}",
+            {
+                "pt100": {
+                    "serial": "TEST",
+                    "cards": {"1": meter.serial, "2": meter.serial},
+                    "channels": [101, 201],
+                }
+            },
+        )
+        app.connections.request(device, configure=False).result(5)
+        session = app.sessions.sessions[device]
+        meter.state.update(system_channel="(@201,221)", closed_relays="(@201,221,241)")
+        app.monitoring.start(device, (REQUEST,), once=True)
+        qtbot.waitUntil(lambda: "线路仍闭合" in app.monitoring.snapshots()[device]["notice"])
+        assert session.state == "connected" and not meter.writes
+        assert not app.monitoring.latest(device, "scalar")
+        meter.state.update(system_channel="(@)", closed_relays="(@)")
+        app.monitoring.start(device, (REQUEST,), once=True)
+        qtbot.waitUntil(lambda: app.monitoring.latest(device, "scalar") is not None)
+        assert app.sessions.sessions[device] is session and session.state == "connected"
+        assert all(m.unit == "°C" for m in app.monitoring.latest(device, "scalar").batch.measurements)
 
 
 def test_valid_channel_with_no_unit_is_never_accepted():
