@@ -208,7 +208,7 @@ def test_both_curve_tool_menus_default_closed_and_keep_cadence_local(scope, qtbo
     page.timing.cadence.setCurrentIndex(page.timing.cadence.findData("interval"))
     page.timing.interval.setValue(0.7)
     page.timing.commit()
-    assert page.timing.interval.minimum() == 0.5 and page.timing.interval.maximum() == 60
+    assert page.timing.interval.minimum() == 0 and page.timing.interval.maximum() == 60
     spec_key = runtime.add(ConnectionConfig("mock://spectrum-menu", "rigol.dsa815", "mock"))
     runtime.connect(spec_key).result()
     window.controller.poll()

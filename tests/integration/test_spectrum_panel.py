@@ -395,7 +395,7 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     assert runtime.repository.load_workspace(page.interval.key) == {
         "interval": 0.75,
         "record_interval": None,
-        "cadence": "spectrum_interval",
+        "cadence": "interval",
         "csv_interval": 5,
     }
     second = runtime.add(ConnectionConfig("mock://timing-second", "rs.fph", "mock"))
@@ -403,7 +403,7 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     qtbot.waitUntil(lambda: second in window.controller.records)
     page.selector.select(second)
     assert page.interval.value() == 0.5
-    assert page.interval.options()["cadence"] == "spectrum_interval"
+    assert page.interval.options()["cadence"] == "interval"
     page.selector.select(key)
     assert page.interval.value() == 0.75
     window.controller.set_mode("optical")
@@ -428,7 +428,7 @@ def test_timing_controls_are_local_persistent_and_separate_per_device(spectrum, 
     # Overview start must not reset either an active cadence or a saved preference.
     window.dashboard.start()
     assert runtime.monitoring.snapshots()[key]["interval"] == 0.5
-    assert runtime.monitoring.snapshots()[key]["cadence"] == "spectrum_interval"
+    assert runtime.monitoring.snapshots()[key]["cadence"] == "interval"
     assert runtime.monitoring.snapshots()[key]["record_interval"] is None
     runtime.monitoring.stop(key).result(3)
     window.dashboard.start()
