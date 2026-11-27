@@ -362,8 +362,8 @@ class ConnectionRetry:
     def discovered(self, report):
         if report["state"] != "complete":
             return
-        desktop = getattr(self.runtime, "device_changes", None)
-        auto = desktop is not None and desktop.enabled and not desktop.stop.is_set()
+        desktop = self.runtime.device_changes
+        auto = desktop.enabled and not desktop.stop.is_set()
         if auto:
             desktop.resolved(report)
         records = {r["id"]: r for r in self.runtime.inventory.all()} if auto else {}

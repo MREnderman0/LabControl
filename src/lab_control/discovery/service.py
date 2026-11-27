@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Iterable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from typing import Any, Callable
@@ -61,9 +62,11 @@ class DiscoveryService:
         self.connection_batch_active = False
         self.closing = False
         self.unreleased_probes: dict[str, ProbeCleanupError] = {}
-        self.on_complete = None
-        self.on_enumeration = None
-        self.enrich_candidates = None
+        self.on_complete: Callable[[dict[str, Any]], None] | None = None
+        self.on_enumeration: Callable[[str, tuple[DiscoveryCandidate, ...]], None] | None = None
+        self.enrich_candidates: (
+            Callable[[Iterable[DiscoveryCandidate]], Iterable[DiscoveryCandidate]] | None
+        ) = None
 
     @property
     def is_scanning(self) -> bool:
@@ -90,11 +93,12 @@ class DiscoveryService:
             selected = self.providers if providers is None else tuple(providers)
             self.future = self.worker.submit(self._scan, selected, preserve_presence, scope)
             future = self.future
-        if self.on_complete:
+        on_complete = self.on_complete
+        if on_complete:
 
             def notify(completed):
                 if not completed.cancelled() and completed.exception() is None:
-                    self.on_complete(completed.result())
+                    on_complete(completed.result())
 
             future.add_done_callback(notify)
         return future
