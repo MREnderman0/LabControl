@@ -61,6 +61,7 @@ class BulkConnectionService:
                 r
                 for r in runtime.inventory.all()
                 if is_current(r, states.get(r["id"]))
+                and r.get("probeReason") != "identity_needs_review"
                 and not (runtime.hardware and requires_manual_connection(r["adapterId"]))
             )
             self.cancelled = threading.Event()

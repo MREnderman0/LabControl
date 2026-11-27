@@ -515,6 +515,7 @@ class Inventory:
                 identity is not None
                 and not conflict
                 and scan_id != "connected"
+                and reason not in {"cached_active_session", "announced_alias"}
                 and candidate.config.transport == "visa"
                 and record.get("config", {}).get("transport") != "visa"
                 and not record.get("primaryResourceExplicit")
@@ -535,12 +536,12 @@ class Inventory:
                 if not identity.firmware and record.get("identity"):
                     identity = identity.with_firmware_history(DeviceIdentity(**record["identity"]))
                 record["identity"], record["identityKey"] = jsonable(identity), identity.key
-                if identity.key and reason != "cached_active_session":
+                if identity.key and reason not in {"cached_active_session", "announced_alias"}:
                     remember_identity(record, resource, identity, scan_id)
                 if reason == "identified":
                     follow_verified_address(record, resource, identity, candidate.config)
                     if (
-                        candidate.source == "dhcp_leases"
+                        candidate.source in {"dhcp_leases", "lease_hint", "lan"}
                         and candidate.descriptor.get("expectedIdentityKey") == identity.key
                         and candidate.descriptor.get("dhcpMac")
                     ):
@@ -548,7 +549,7 @@ class Inventory:
                             "mac": candidate.descriptor["dhcpMac"],
                             "identityKey": identity.key,
                         }
-                if reason != "cached_active_session":
+                if reason not in {"cached_active_session", "announced_alias"}:
                     record["lastProbeAt"] = now
             if adapter:
                 record["adapterId"] = adapter
@@ -817,6 +818,31 @@ class Inventory:
                     previous_resource=previous,
                     peer_macs=macs,
                 )
+
+    def withdraw_observations(self, removed, seen) -> None:
+        """Withdraw only vanished physical observations, retaining history and live sessions."""
+        with self.lock:
+            for record in self.records.values():
+                dirty = False
+                for address, entry in record["candidates"].items():
+                    if entry.get("retired"):
+                        continue
+                    keys = {
+                        (
+                            source,
+                            canonical_resource(
+                                observation.get("rawDescriptor", {}).get("originalLanResource") or address
+                            ),
+                        )
+                        for source, observation in entry.get("sources", {}).items()
+                        if source == "lease_hint" or local_enumeration(source, address)
+                    }
+                    if keys & removed and not keys & seen:
+                        entry.update(presenceState="not_seen", probeReason="not_seen")
+                        dirty = True
+                if dirty:
+                    update_record_presence(record)
+                    self.repository.save(record)
 
     def stale(self, scan_id: str, successful_sources: set[str], *, cancelled: bool = False) -> None:
         with self.lock:

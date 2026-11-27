@@ -29,7 +29,7 @@ LABELS = {
 @dataclass
 class Intent:
     device_id: str
-    configure: bool = True
+    configure: bool | None = True
     batch: threading.Event | None = None
     phase: str = "opening"
     attempts: int = 0
@@ -362,7 +362,49 @@ class ConnectionRetry:
     def discovered(self, report):
         if report["state"] != "complete":
             return
+        desktop = self.runtime.device_changes
+        auto = desktop.enabled and not desktop.stop.is_set()
+        if auto:
+            desktop.resolved(report)
+        records = {r["id"]: r for r in self.runtime.inventory.all()} if auto else {}
+        explicit_retry = report.get("scope") == "address_retry"
         for result in report["items"]:
+            if auto:
+                key = result.get("device_id")
+                if not key:
+                    continue
+                row = records.get(key, {})
+                known = row.get("identityKey") and (
+                    result["reason"] == "identified"
+                    or (explicit_retry and result["reason"] == "cached_session_unconfirmed")
+                )
+                descriptor = row.get("candidates", {}).get(result["resource"], {})
+                sdk = (
+                    any(name.startswith("sdk:") for name in descriptor.get("sources", {}))
+                    and result["reason"] == "sdk_identity_requires_explicit_connection"
+                    and (row.get("config", {}).get("expected_serial") or row.get("identityKey"))
+                )
+                if (
+                    (known or sdk)
+                    and row.get("adapterId")
+                    and not row.get("identityConflict")
+                    and not requires_manual_connection(row["adapterId"])
+                    and (
+                        (
+                            explicit_retry
+                            and self._state(key).get("connectionState")
+                            not in {"connected", "busy", "connecting"}
+                        )
+                        or (not self.owns(key) and not self._state(key))
+                    )
+                ):
+                    try:
+                        self.request(key, configure=None, hotplug=not explicit_retry)
+                    except DeviceError as exc:
+                        if exc.code not in {"recovery_cancelled", "runtime_closing"}:
+                            self.runtime.repository.audit(
+                                "auto_connect_deferred", device_id=key, error=str(exc)
+                            )
             resource = result["resource"]
             if result["reason"] != "identified" or not network_host(resource):
                 continue

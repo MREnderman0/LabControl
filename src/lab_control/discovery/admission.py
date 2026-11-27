@@ -46,6 +46,13 @@ def probe_claims(candidate: DiscoveryCandidate, inventory: Inventory) -> ProbeCl
             # Connection remains barred until a complete scan reconciles the endpoints.
             return ProbeClaims(resources, "network_identity_recheck")
         return ProbeClaims(resources, "identity_conflict", conflict=True)
+    lxi_key = candidate.descriptor.get("lxiIdentityKey")
+    if lxi_key and expected == lxi_key and config.adapter and config.expected_serial:
+        return ProbeClaims((*resources, f"identity:{lxi_key}"), "instrument_metadata", trusted=True)
+    if candidate.safe_scpi and candidate.descriptor.get("usbInstrumentSerial"):
+        return ProbeClaims(resources, "instrument_usb_descriptor", trusted=True)
+    if config.expected_serial and config.adapter and candidate.source in {"ni_daqmx", "moku_mdns"}:
+        return ProbeClaims(resources, "vendor_device_metadata", trusted=True)
     if config.adapter and candidate.source in {"configured", "static_addresses"}:
         return ProbeClaims(resources, "explicit_model_resource", trusted=True)
     if expected and record and candidate.source == "dhcp_leases":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Iterable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from typing import Any, Callable
@@ -61,7 +62,11 @@ class DiscoveryService:
         self.connection_batch_active = False
         self.closing = False
         self.unreleased_probes: dict[str, ProbeCleanupError] = {}
-        self.on_complete = None
+        self.on_complete: Callable[[dict[str, Any]], None] | None = None
+        self.on_enumeration: Callable[[str, tuple[DiscoveryCandidate, ...]], None] | None = None
+        self.enrich_candidates: (
+            Callable[[Iterable[DiscoveryCandidate]], Iterable[DiscoveryCandidate]] | None
+        ) = None
 
     @property
     def is_scanning(self) -> bool:
@@ -88,11 +93,12 @@ class DiscoveryService:
             selected = self.providers if providers is None else tuple(providers)
             self.future = self.worker.submit(self._scan, selected, preserve_presence, scope)
             future = self.future
-        if self.on_complete:
+        on_complete = self.on_complete
+        if on_complete:
 
             def notify(completed):
                 if not completed.cancelled() and completed.exception() is None:
-                    self.on_complete(completed.result())
+                    on_complete(completed.result())
 
             future.add_done_callback(notify)
         return future
@@ -129,6 +135,8 @@ class DiscoveryService:
                 provider = futures[future]
                 try:
                     result = future.result()
+                    if self.on_enumeration and not scope:
+                        self.on_enumeration(provider.name, result)
                     successful.add(provider.name)
                     report["providers"][provider.name] = {"count": len(result), "state": "success"}
                     for candidate in result:
@@ -146,6 +154,12 @@ class DiscoveryService:
                     provider=provider.name,
                     result=report["providers"][provider.name],
                 )
+
+        if self.enrich_candidates:
+            enriched = self.enrich_candidates(c for group in observations.values() for c in group)
+            observations = {}
+            for item in enriched:
+                observations.setdefault(canonical_resource(item.config.resource), []).append(item)
 
         available_sources: tuple[str, ...] = ()
         if self.source_addresses is not None:
@@ -220,6 +234,30 @@ class DiscoveryService:
                 if len({c.descriptor["expectedIdentityKey"] for c in dhcp}) != 1:
                     chosen = replace(
                         chosen, error="DHCP endpoint maps to multiple assets", error_code="identity_conflict"
+                    )
+            metadata = next((c for c in group if c.descriptor.get("lxiIdentityKey")), None)
+            if metadata:
+                expected = chosen.descriptor.get("expectedIdentityKey")
+                if (
+                    (
+                        chosen.config.expected_serial
+                        and chosen.config.expected_serial != metadata.config.expected_serial
+                    )
+                    or (chosen.config.adapter and chosen.config.adapter != metadata.config.adapter)
+                    or (expected and expected != metadata.descriptor["lxiIdentityKey"])
+                ):
+                    chosen = replace(
+                        chosen, error="保存的身份与仪器当前自报身份不匹配", error_code="identity_conflict"
+                    )
+                else:
+                    chosen = replace(
+                        chosen,
+                        descriptor={**chosen.descriptor, **metadata.descriptor},
+                        config=replace(
+                            chosen.config,
+                            adapter=metadata.config.adapter,
+                            expected_serial=metadata.config.expected_serial,
+                        ),
                     )
             # The saved address may pin an interface while an older startup
             # config still supplies serial/limits. Keep those identity guards,
@@ -331,6 +369,38 @@ class DiscoveryService:
                     blocking_owners = self.leases.conflicts(claims.resources)
                     active = self.leases.owner(candidate.config.resource)
                     session = self.sessions.sessions.get(active or "")
+                    lxi_key = candidate.descriptor.get("lxiIdentityKey")
+                    usb_serial = candidate.descriptor.get("usbInstrumentSerial")
+                    sdk_serial = (
+                        candidate.config.expected_serial if candidate.source.startswith("sdk:") else ""
+                    )
+                    if lxi_key or usb_serial or sdk_serial:
+                        for peer_id, peer in self.sessions.sessions.items():
+                            if peer_id not in blockers or not peer.identity:
+                                continue
+                            sdk_match = (
+                                sdk_serial
+                                and peer.identity.serial == sdk_serial
+                                and peer.config.adapter == candidate.config.adapter
+                            )
+                            if (
+                                sdk_match
+                                or (lxi_key and peer.identity.key == lxi_key)
+                                or (usb_serial and peer.identity.serial == usb_serial)
+                            ):
+                                manufacturer = candidate.descriptor.get("usbManufacturer")
+                                if (
+                                    lxi_key
+                                    or sdk_match
+                                    or (
+                                        manufacturer and manufacturer in peer.identity.manufacturer.casefold()
+                                    )
+                                ):
+                                    active, session = peer_id, peer
+                                else:
+                                    # A USB serial alone can collide across manufacturers.
+                                    blocking_owners.add(peer_id)
+                                break
                     if claims.conflict:
                         record = self.inventory.by_resource(candidate.config.resource) or {}
                         raise DeviceError(identity_conflict_message(record), "identity_conflict")
@@ -354,6 +424,12 @@ class DiscoveryService:
                         and candidate.config.transport in definition.discovery_connection_only_transports
                     ):
                         reason = "sdk_identity_requires_explicit_connection"
+                    elif (
+                        candidate.source == "serial"
+                        and not candidate.config.adapter
+                        and not candidate.safe_scpi
+                    ):
+                        reason = "identity_needs_review"
                     elif blockers and (
                         not claims.trusted
                         or any(not self.leases.owns_resources(device_id) for device_id in blockers)
@@ -389,7 +465,7 @@ class DiscoveryService:
                     actual = identity.key or identity.raw or identity.model
                     identity, adapter = None, ""
                     raise DeviceError(
-                        f"DHCP 地址 {network_host(candidate.config.resource)} 回报 {actual}，与预期身份 {expected} 不一致",
+                        f"地址 {network_host(candidate.config.resource)} 回报 {actual}，与预期身份 {expected} 不一致",
                         "identity_conflict",
                     )
             except Exception as exc:
@@ -407,6 +483,24 @@ class DiscoveryService:
                             self.unreleased_probes[owner] = ProbeCleanupError(None, exc)
                         identity, adapter = None, ""
                         error, reason, error_code = str(exc), "probe_failed", "cleanup_failed"
+            advertised = candidate.descriptor.get("originalLanResource")
+            if (
+                advertised
+                and canonical_resource(advertised) != canonical_resource(candidate.config.resource)
+                and identity
+                and identity.key
+                and reason in {"identified", "cached_active_session"}
+            ):
+                # Fold an earlier, unresolved INSTR row into its verified asset. The
+                # advertisement is not evidence that this alternative protocol works.
+                historical = self.inventory.by_resource(advertised)
+                if (
+                    historical
+                    and not historical.get("identityKey")
+                    and not historical.get("identityConflict")
+                ):
+                    alias = replace(candidate, config=replace(candidate.config, resource=advertised))
+                    self.inventory.merge(alias, scan_id, identity, adapter, reason="announced_alias")
             record = self.inventory.merge(
                 candidate, scan_id, identity, adapter, error, reason, error_code=error_code
             )

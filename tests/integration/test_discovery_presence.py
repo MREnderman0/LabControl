@@ -100,7 +100,7 @@ def test_failed_probe_wins_over_unprobed_serial_alias():
     assert record["discoveryState"] == "unreachable"
 
 
-def test_metadata_only_serial_resource_is_not_current(store):
+def test_unidentified_serial_is_visible_for_review(store):
     _repo, inventory, scan = store
     candidate = DiscoveryCandidate(ConnectionConfig("COM7", transport="serial"), "serial")
 
@@ -108,8 +108,8 @@ def test_metadata_only_serial_resource_is_not_current(store):
 
     record = inventory.all()[0]
     assert record["presenceState"] == "present"
-    assert record["probeReason"] == "metadata_only"
-    assert not is_current(record)
+    assert record["probeReason"] == "identity_needs_review"
+    assert is_current(record)
 
 
 def test_restart_scan_excludes_unconfirmed_serial_resources(tmp_path):

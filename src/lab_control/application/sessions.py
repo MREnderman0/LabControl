@@ -103,6 +103,8 @@ class DeviceSession:
     acquisition_statistics: AcquisitionStatistics = field(default_factory=AcquisitionStatistics)
     acquisition_preparation: dict[str, Any] = field(default_factory=dict)
     acquisition_setup_enabled: bool = False
+    acquisition_setup_pending: bool = False
+    acquisition_setup_failure: str = ""
     direct_recording: Recording | None = None
     recovery: Recovery | None = None
 
@@ -352,7 +354,7 @@ class SessionManager:
         *,
         expected_firmware: str = "",
         previous_identity: dict[str, Any] | None = None,
-        configure_acquisition: bool = True,
+        configure_acquisition: bool | None = True,
         admission: Callable[[DeviceIdentity | None], None] | None = None,
     ) -> Future[DeviceIdentity]:
         # Reservation and worker submission are one admission transaction. Close
@@ -374,7 +376,7 @@ class SessionManager:
         *,
         expected_firmware: str,
         previous_identity: dict[str, Any] | None,
-        configure_acquisition: bool,
+        configure_acquisition: bool | None,
         admission: Callable[[DeviceIdentity | None], None] | None = None,
     ) -> Future[DeviceIdentity]:
         with self.lock:
@@ -425,6 +427,11 @@ class SessionManager:
                     raise DeviceError(
                         "Configured serial differs from connected instrument", "identity_conflict"
                     )
+                if configure_acquisition is None and (
+                    (previous and previous.key and identity.key != previous.key)
+                    or (config.expected_serial and identity.serial != config.expected_serial)
+                ):
+                    raise DeviceError("自动连接时读回的身份与发现结果不一致", "identity_conflict")
                 if expected_firmware and identity.firmware != expected_firmware:
                     raise DeviceError("Firmware differs from transport qualification", "qualification_stale")
                 if admission:
@@ -443,7 +450,8 @@ class SessionManager:
                         lambda value: self.repository.save_workspace(state_key, value),
                     )
                 prepare = getattr(adapter, "prepare_acquisition", None)
-                session.acquisition_setup_enabled = configure_acquisition
+                session.acquisition_setup_pending = configure_acquisition is None and callable(prepare)
+                session.acquisition_setup_enabled = configure_acquisition is True
                 if configure_acquisition and callable(prepare):
                     # Explicit connection only, after identity/ownership checks;
                     # discovery and read-only hardware preflight never run setup.
@@ -717,6 +725,37 @@ class SessionManager:
         invalidate = getattr(session.adapter, "invalidate_acquisition_context", None)
         if callable(invalidate):
             invalidate(reason)
+
+    def prepare_first_acquisition(self, session: DeviceSession, request: AcquisitionRequest) -> None:
+        """Called on the instrument worker, after request admission and before any arm/read."""
+        if session.acquisition_setup_failure:
+            raise DeviceError(session.acquisition_setup_failure, "recovery_initialization_failed")
+        authorized = request.allow_setup if request.prepare_session is None else request.prepare_session
+        if not session.acquisition_setup_pending or not authorized:
+            return
+        session.acquisition_setup_pending = False
+        try:
+            prepare = getattr(session.adapter, "prepare_acquisition", None)
+            if not callable(prepare):
+                raise DeviceError("当前适配器不支持已登记的采集初始化", "unsupported")
+            prepare()
+            self._invalidate_acquisition(session, "first_acquisition_setup")
+            self._refresh_capabilities(session)
+            session.acquisition_setup_enabled = True
+        except Exception as exc:
+            session.acquisition_setup_failure = f"首次采集初始化未确认：{exc}"
+            session.connection_error_code = "recovery_initialization_failed"
+            raise DeviceError(session.acquisition_setup_failure, "recovery_initialization_failed") from exc
+        finally:
+            session.acquisition_preparation = deepcopy(
+                getattr(session.adapter, "acquisition_preparation", {})
+            )
+            self.audit.try_record(
+                "acquisition_prepared",
+                device_id=session.device_id,
+                result=session.acquisition_preparation,
+                error=session.acquisition_setup_failure,
+            )
 
     def _prepare_acquisition_state(self, session: DeviceSession) -> bool:
         """Optional model setup, serialized with controls and forbidden while recording."""

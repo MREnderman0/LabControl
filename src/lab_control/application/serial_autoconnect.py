@@ -149,6 +149,18 @@ class SerialAutoConnect:
                     self.completed.add(key)
             elif key not in self.completed and self.retry_at.get(key, 0) <= now:
                 cfg = routes[key].config
+                if (
+                    app.device_changes.enabled
+                    and policy(cfg.adapter) == "usb_bridge"
+                    and not any(
+                        r.get("adapterId") == cfg.adapter
+                        and (r.get("serialBindingExplicit") or r.get("identity"))
+                        and cfg.usb_instance_id
+                        and r["config"].get("usb_instance_id") == cfg.usb_instance_id
+                        for r in records
+                    )
+                ):
+                    continue
                 if any(
                     r["id"] in suppressed
                     and r.get("adapterId") == cfg.adapter
@@ -186,7 +198,7 @@ class SerialAutoConnect:
                 continue
             if not app.leases.owner(item["resource"]):
                 try:
-                    app.connections.request(row["id"], configure=False, hotplug=True).result()
+                    app.connections.request(row["id"], configure=None, hotplug=True).result()
                 except Exception as exc:
                     app.sessions.audit.try_record(
                         "serial_autoconnect_failed",

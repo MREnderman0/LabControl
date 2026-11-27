@@ -60,8 +60,10 @@ class StaticAddress:
             "address",
             _serial_port(self.address) if self.kind == "serial" else _address(self.address),
         )
-        if type(self.port) is not int or not 1 <= self.port <= 65535:
+        if type(self.port) is not int or not 0 <= self.port <= 65535:
             raise ValidationError("静态地址端口必须是 1 ～ 65535")
+        if self.kind == "ip" and not self.port and self.source_address:
+            raise ValidationError("指定本地网卡时需填写仪器的 Socket 端口")
         if not isinstance(self.adapter, str) or len(self.adapter) > 120:
             raise ValidationError("设备适配器名称无效")
         if type(self.timeout) not in (int, float) or not 0.1 <= float(self.timeout) <= 60:
@@ -84,6 +86,8 @@ class StaticAddress:
     def resource(self) -> str:
         if self.kind == "serial":
             return self.address
+        if not self.port:
+            return f"TCPIP0::{self.address}::inst0::INSTR"
         return f"TCPIP0::{self.address}::{self.port}::SOCKET"
 
     def config(self) -> ConnectionConfig:
@@ -175,9 +179,10 @@ class StaticAddressStore:
         kind: str = "ip",
         baud_rate: int = 9600,
         source_address: str = "",
+        edit_id: str = "",
     ) -> StaticAddress:
         entry = StaticAddress(
-            uuid4().hex,
+            edit_id or uuid4().hex,
             address,
             port,
             adapter,
@@ -188,9 +193,13 @@ class StaticAddressStore:
             source_address.strip(),
         )
         entries = self.entries()
-        if any(item.resource.upper() == entry.resource.upper() for item in entries):
+        if edit_id and not any(item.id == edit_id for item in entries):
+            raise ValidationError("原地址已移除，请重新选择")
+        if any(item.id != edit_id and item.resource.upper() == entry.resource.upper() for item in entries):
             raise ValidationError("该静态地址已在列表中")
-        self._save((*entries, entry))
+        self._save(
+            tuple(entry if item.id == edit_id else item for item in entries) if edit_id else (*entries, entry)
+        )
         return entry
 
     def remove(self, ids: set[str] | tuple[str, ...] | list[str]) -> int:

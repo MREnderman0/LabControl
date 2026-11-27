@@ -115,6 +115,7 @@ class DeviceDefinition:
     inspect_component: Callable[[dict], tuple[str, str]] | None = None
     # Local watch rows can consume existing frames without advertising a remote metric.
     watch_only_profiles: tuple[MetricProfile, ...] = ()
+    advertised_socket_port: Callable[[str, Callable[[str, str], bytes]], int | None] | None = None
 
     def matches_manual_port(self, descriptor: dict[str, Any]) -> bool:
         return self.manual_usb_id is None or self.manual_usb_id == (
