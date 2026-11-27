@@ -146,7 +146,11 @@ class MonitorScheduler:
             task.recovery = None
         batch = immutable_batch(batch)
         now = time.monotonic()
-        completed = batch.performance.get("received_at_monotonic", now)
+        read_clock = time.perf_counter()
+        received = batch.performance.get("received_at_monotonic", read_clock)
+        # Worker frame stamps use perf_counter. Scheduling deadlines use monotonic,
+        # which has a different origin on Windows with Python 3.12.
+        completed = now - (read_clock - received)
         duration = batch.timing.get("read_duration_seconds")
         if duration is not None:
             # A worker may have waited in the device queue before starting the read.
@@ -173,8 +177,8 @@ class MonitorScheduler:
                 task.last_record_at + task.record_interval if task.record_interval is not None else 0
             )
         task.acquisition_seconds = completed - task.last_started_at
-        task.frame_interval = completed - task.last_frame_at if task.last_frame_at else None
-        task.last_frame_at = completed
+        task.frame_interval = received - task.last_frame_at if task.last_frame_at else None
+        task.last_frame_at = received
         task.last_valid_at = batch.timestamp
         task.configuration_changes, task.notice = 0, ""
         task.configuration_wait_deadline = 0
@@ -188,7 +192,7 @@ class MonitorScheduler:
             int(batch.configuration.get("_session_configuration_version", 0)),
             request,
             batch,
-            completed,
+            received,
             session_id,
         )
         if request.kind == "scalar":
@@ -355,7 +359,7 @@ class MonitorScheduler:
                     task.pending_revision = task.request_revision
                     task.last_started_at = time.monotonic()
                     task.scheduler_seconds = (
-                        max(0, task.last_started_at - task.last_frame_at) if task.last_frame_at else 0
+                        max(0, time.perf_counter() - task.last_frame_at) if task.last_frame_at else 0
                     )
                     task.pending_record_session = task.record_session if save_due else ""
                     task.pending_record_mode = task.mode
