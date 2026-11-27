@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import QModelIndex, Qt
+from PySide6.QtCore import QModelIndex, QPoint, Qt
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from lab_control.application.runtime import ApplicationRuntime
@@ -9,6 +9,7 @@ from lab_control.application.watchlists import Preset, Presets, WatchRow, bounds
 from lab_control.demo.instrument import SimulatedInstrument
 from lab_control.domain.connections import ConnectionConfig
 from lab_control.domain.instruments import AcquisitionRequest, DeviceError, Measurement
+from lab_control.ui.pages.watch_table import PresetTable
 from lab_control.ui.pages.watchlists import WatchlistsPage
 from lab_control.ui.real_window import RealWindow
 
@@ -721,3 +722,60 @@ def test_small_workspace_keeps_record_actions_and_current_value_visible(workspac
     qtbot.waitUntil(lambda: not page.compact)
     assert page.split.orientation() == Qt.Orientation.Horizontal
     assert page.table.model.preset == preset.id
+
+
+def test_dragged_widths_survive_reopen_per_preset_and_window(workspace, qtbot):
+    win, rt, page, _, _ = workspace
+    first, other = Preset("主预设"), Preset("另一预设")
+    page.hub.save((first, other))
+    win.resize(1440, 900)
+    page.select_id(first.id)
+    qtbot.waitUntil(lambda: not page.compact)
+
+    def drag(widget, delta):
+        header = widget.table.horizontalHeader()
+        width = header.sectionSize(2)
+        x = header.sectionViewportPosition(2) + width - 1
+        start = QPoint(x, header.viewport().height() // 2)
+        end = start + QPoint(delta, 0)
+        qtbot.mouseMove(header.viewport(), start)
+        qtbot.mousePress(header.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        qtbot.mouseMove(header.viewport(), end)
+        qtbot.mouseRelease(header.viewport(), Qt.MouseButton.LeftButton, pos=end)
+        assert header.sectionSize(2) == width + delta
+        return header.sectionSize(2)
+
+    main_width = drag(page.table, 42)
+    main_key = page.table.layout_key
+    saved = rt.repository.load_workspace(main_key)
+    assert saved[3] == main_width
+    page.select_id(other.id)
+    assert page.table.table.columnWidth(2) != main_width
+    assert rt.repository.load_workspace(page.table.layout_key) is None
+    page.select_id(first.id)
+    assert page.table.table.columnWidth(2) == main_width
+
+    window = page.open_window(first.id)
+    detached = window.findChild(PresetTable)
+    qtbot.waitUntil(lambda: detached.isVisible())
+    detached_width = drag(detached, 24)
+    size = window.size()
+    window.close()
+    qtbot.waitUntil(lambda: first.id not in page.windows)
+    reopened = page.open_window(first.id)
+    reopened.resize(size)
+    detached = reopened.findChild(PresetTable)
+    qtbot.waitUntil(lambda: detached.table.columnWidth(2) == detached_width)
+    assert page.table.table.columnWidth(2) == main_width
+    assert rt.repository.load_workspace(main_key) == saved
+
+    # A new main-table instance reads the stored layout without any prior in-memory weights.
+    restored = PresetTable(page.hub)
+    qtbot.addWidget(restored)
+    restored.resize(page.table.size())
+    restored.bind(first.id)
+    restored.show()
+    qtbot.waitUntil(lambda: restored.table.columnWidth(2) == main_width)
+    restored.resize(restored.width() + 120, restored.height())
+    qtbot.waitUntil(lambda: restored.table.columnWidth(2) > main_width)
+    assert rt.repository.load_workspace(main_key) == saved

@@ -297,12 +297,15 @@ class PresetTable(QWidget):
             if detached
             else (140, 226, 130, 102, 52, 70, 70, 88, 115)
         )
-        self.column_weights: tuple[int, ...] = widths
+        self.default_weights = widths
+        self.layout_key = ""
+        self.saved_widths: tuple[int, tuple[int, ...]] | None = None
+        self.drag_start: tuple[int, ...] = ()
         for i, width in enumerate(widths):
             self.table.setColumnWidth(i, width)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
-        header.sectionResized.connect(self.remember_column_widths)
+        header.viewport().installEventFilter(self)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(64 if detached else 34)
         layout.addWidget(self.table)
@@ -327,14 +330,37 @@ class PresetTable(QWidget):
         self.model.rowsRemoved.connect(self.update_summary)
         self.bind("")
 
-    def remember_column_widths(self, *_args):
-        header = self.table.horizontalHeader()
-        if header.underMouse() and QApplication.mouseButtons() == Qt.MouseButton.LeftButton:
-            self.column_weights = tuple(header.sectionSize(i) for i in range(header.count()))
+    def load_column_widths(self, preset_id):
+        mode = "detached" if self.detached else "main"
+        key = f"watchlists/column-widths/{mode}/{preset_id}" if preset_id else ""
+        if key == self.layout_key:
+            return
+        self.layout_key = key
+        self.saved_widths = None
+        self.drag_start = ()
+        if key:
+            saved = self.hub.ctl.runtime.repository.load_workspace(key)
+            if (
+                isinstance(saved, list)
+                and len(saved) == len(self.default_weights) + 1
+                and all(type(n) is int and 0 < n <= 1_048_575 for n in saved)
+            ):
+                self.saved_widths = saved[0], tuple(saved[1:])
+        if self.isVisible():
+            self.fit_columns()
 
     def fit_columns(self):
-        # Reserve readable headers, then divide the remaining room by the user's column proportions.
         header = self.table.horizontalHeader()
+        available = self.table.viewport().width()
+        if self.saved_widths is not None:
+            previous, widths = self.saved_widths
+            for column, width in enumerate(widths):
+                scaled = round(width * available / previous)
+                header.resizeSection(
+                    column, min(header.maximumSectionSize(), max(header.minimumSectionSize(), scaled))
+                )
+            return
+        # The default layout reserves room for readable headers and the live value.
         metrics = header.fontMetrics()
         minimums = [
             max(header.minimumSectionSize(), metrics.horizontalAdvance(title) + 14)
@@ -346,17 +372,29 @@ class PresetTable(QWidget):
         wanted = {
             i: max(0, cells.horizontalAdvance(sample) + pad - minimums[i]) for i, sample, pad in samples
         }
-        available = self.table.viewport().width()
         fraction = min(1.0, max(0, available - sum(minimums)) / max(1, sum(wanted.values())))
         for column, pixels in wanted.items():
             minimums[column] += int(pixels * fraction)
         extra = max(0, available - sum(minimums))
-        total = sum(self.column_weights)
-        for i, (minimum, weight) in enumerate(zip(minimums[:-1], self.column_weights)):
+        total = sum(self.default_weights)
+        for i, (minimum, weight) in enumerate(zip(minimums[:-1], self.default_weights)):
             header.resizeSection(i, minimum + extra * weight // total)
         header.resizeSection(len(minimums) - 1, minimums[-1])
 
     def eventFilter(self, watched, event):
+        header = self.table.horizontalHeader()
+        if watched is header.viewport() and self.layout_key:
+            if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self.drag_start = tuple(header.sectionSize(i) for i in range(header.count()))
+            elif (
+                event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton
+            ):
+                widths = tuple(header.sectionSize(i) for i in range(header.count()))
+                if self.drag_start and widths != self.drag_start:
+                    available = self.table.viewport().width()
+                    self.saved_widths = available, widths
+                    self.hub.ctl.runtime.repository.save_workspace(self.layout_key, [available, *widths])
+                self.drag_start = ()
         if watched is self.table.viewport() and event.type() == QEvent.Type.Resize:
             if event.size().width() != event.oldSize().width():
                 self.fit_columns()
@@ -380,6 +418,7 @@ class PresetTable(QWidget):
             self.window_button.setEnabled(bool(self.model.preset))
 
     def bind(self, key):
+        self.load_column_widths(key)
         self.model.bind(key)
         self.add.setEnabled(bool(key))
         self.buttons()
@@ -486,6 +525,7 @@ class PresetTable(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self.fit_columns()
         self.hub.subscribe(self, self.model.preset)
 
     def hideEvent(self, event):
